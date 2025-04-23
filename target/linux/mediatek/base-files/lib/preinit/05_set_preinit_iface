@@ -3,9 +3,10 @@ set_preinit_iface() {
 	cudy,m3000-v1|\
 	cudy,tr3000-v1|\
 	cudy,tr3000-v1-ubootmod|\
-	pgy,x1pro-v1-ubootmod|\
+	glinet,gl-mt2500|\
 	glinet,gl-mt3000|\
 	openembed,som7981|\
+	pgy,x1pro-v1-ubootmod|\
 	wavlink,wl-wn573hx3)
 		ip link set eth1 up
 		ifname=eth1

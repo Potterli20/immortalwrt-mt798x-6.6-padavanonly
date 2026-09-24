@@ -227,16 +227,6 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pcie_pins>;
 	status = "okay";
-
-	pcie@0,0 {
-		reg = <0x0000 0 0 0 0>;
-
-		wifi@0,0 {
-			compatible = "mediatek,mt76";
-			reg = <0x0000 0 0 0 0>;
-			mediatek,mtd-eeprom = <&factory 0xa0000>;
-		};
-	};
 };
 
 &pcie_phy {
@@ -247,12 +237,22 @@
 	status = "okay";
 };
 
+/*
+ * This board is driven by the MTK closed source Wi-Fi stack
+ * (kmod-mt_wifi + warp + conninfra): the SoC radio is bound through the
+ * "wbsys" node (mediatek,wbsys -> wifi-utility rbus -> virtual PCI id
+ * 14c3:7986) and the MT7916 card is claimed by the driver's PCI id table.
+ * The mainline mt76 nodes therefore stay disabled.
+ */
 &wifi {
-	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&wf_5g_pins>;
+	status = "disabled";
+};
 
-	mediatek,mtd-eeprom = <&factory 0x0>;
+&wbsys {
+	status = "okay";
+	pinctrl-names = "default", "dbdc";
+	pinctrl-0 = <&wf_2g_5g_pins>;
+	pinctrl-1 = <&wf_dbdc_pins>;
 };
 
 &pio {
@@ -287,15 +287,36 @@
 		};
 	};
 
-	wf_5g_pins: wf_5g-pins {
+	wf_2g_5g_pins: wf_2g_5g-pins {
 		mux {
 			function = "wifi";
-			groups = "wf_5g";
+			groups = "wf_2g", "wf_5g";
 		};
 		conf {
-			pins = "WF1_HB1", "WF1_HB2", "WF1_HB3", "WF1_HB4",
-			       "WF1_HB0", "WF1_HB5", "WF1_HB6", "WF1_HB7",
-			       "WF1_HB8", "WF1_TOP_CLK", "WF1_TOP_DATA";
+			pins = "WF0_HB1", "WF0_HB2", "WF0_HB3", "WF0_HB4",
+			       "WF0_HB0", "WF0_HB0_B", "WF0_HB5", "WF0_HB6",
+			       "WF0_HB7", "WF0_HB8", "WF0_HB9", "WF0_HB10",
+			       "WF0_TOP_CLK", "WF0_TOP_DATA", "WF1_HB1",
+			       "WF1_HB2", "WF1_HB3", "WF1_HB4", "WF1_HB0",
+			       "WF1_HB5", "WF1_HB6", "WF1_HB7", "WF1_HB8",
+			       "WF1_TOP_CLK", "WF1_TOP_DATA";
+			drive-strength = <4>;
+		};
+	};
+
+	wf_dbdc_pins: wf_dbdc-pins {
+		mux {
+			function = "wifi";
+			groups = "wf_dbdc";
+		};
+		conf {
+			pins = "WF0_HB1", "WF0_HB2", "WF0_HB3", "WF0_HB4",
+			       "WF0_HB0", "WF0_HB0_B", "WF0_HB5", "WF0_HB6",
+			       "WF0_HB7", "WF0_HB8", "WF0_HB9", "WF0_HB10",
+			       "WF0_TOP_CLK", "WF0_TOP_DATA", "WF1_HB1",
+			       "WF1_HB2", "WF1_HB3", "WF1_HB4", "WF1_HB0",
+			       "WF1_HB5", "WF1_HB6", "WF1_HB7", "WF1_HB8",
+			       "WF1_TOP_CLK", "WF1_TOP_DATA";
 			drive-strength = <4>;
 		};
 	};

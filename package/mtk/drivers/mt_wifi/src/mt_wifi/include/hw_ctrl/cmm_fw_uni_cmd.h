@@ -2956,16 +2956,10 @@ typedef struct GNU_PACKED _UNI_PARSE_EXT_EVENT_RED_TX_RPT_T {
 	UINT8 Reserve[2];
 	UINT32 staInUseBitmap[32];
 } UNI_PARSE_EXT_EVENT_RED_TX_RPT_T, *P_UNI_PARSE_EXT_EVENT_RED_TX_RPT_T;
-
 typedef struct GNU_PACKED _UNI_PARSE_RED_TX_RPT_T {
 	UINT32 u4TCPCnt;
 	UINT32 u4TCPAckCnt;
-	UINT16 u2MsduInQueShortTimes;
-	UINT16 u2MsduInQueLongTimes;
-	UINT8 u1TCPMask;
-	UINT8 u1Reserved[3];
 } UNI_PARSE_RED_TX_RPT_T, *P_UNI_PARSE_RED_TX_RPT_T;
-
 /* red enable (Tag 0x19) */
 typedef struct _UNI_CMD_VOW_RED_TX_RPT_T {
 	UINT16 u2Tag;

@@ -493,9 +493,9 @@
 
 #ifdef CONFIG_6G_SUPPORT
 #include "ap_bss_mnger.h"
-#ifdef CONFIG_6G_AFC_SUPPORT
+#if defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
 #include "afc.h"
-#endif /* CONFIG_6G_AFC_SUPPORT */
+#endif /* CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX */
 #endif /* CONFIG_6G_SUPPORT */
 #ifdef QOS_R1
 #include "qos.h"
@@ -506,5 +506,14 @@
 #include <linux/netlink.h>
 #include <linux/socket.h>
 #endif
+
+
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+#include <linux/ieee80211.h>
+#include <crypto/aead.h>
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 
 #endif	/* __RT_CONFIG_H__ */

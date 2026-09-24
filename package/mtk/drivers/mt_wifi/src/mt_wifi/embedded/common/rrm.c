@@ -1107,11 +1107,13 @@ BOOLEAN RRM_PeerMeasureRepAction(
 				LONG BcnRepLen = (LONG)eid_ptr->Len - 3;
 				NdisMoveMemory(&ReportMode, eid_ptr->Octet + 1, 1);
 				NdisMoveMemory(&ReportType, eid_ptr->Octet + 2, 1);
+				NdisMoveMemory(pDialogEntry->StaMac, pEntry->Addr, MAC_ADDR_LEN);
 				pMeasureRep = (PVOID)(eid_ptr->Octet + 3);
 				if (BcnRepLen) {
 					if (ReportType == RRM_MEASURE_SUBTYPE_BEACON)
 						RRM_BeaconReportHandler(pAd, pEntry->wdev, pMeasureRep, BcnRepLen, pDialogEntry);
 #ifdef WAPP_SUPPORT
+				if (!pAd->CommonCfg.bWappSupportDisabled)
 					wapp_send_bcn_report(pAd, pEntry, (UCHAR*)&eid_ptr->Eid, eid_ptr->Len +2);
 #endif
 					} else {
@@ -1132,6 +1134,7 @@ BOOLEAN RRM_PeerMeasureRepAction(
 						/* send Beacon Response to up-layer */
 						NetDev = pAd->ApCfg.MBSSID[pDialogEntry->ControlIndex].wdev.if_dev;
 #if defined(WAPP_SUPPORT)
+					if (!pAd->CommonCfg.bWappSupportDisabled)
 						wapp_send_bcn_report(pAd, pEntry, (UCHAR*)&eid_ptr->Eid, eid_ptr->Len + 2);
 #endif
 						wext_send_bcn_rsp_event(NetDev, pDialogEntry->StaMac,
@@ -1147,7 +1150,8 @@ BOOLEAN RRM_PeerMeasureRepAction(
 			eid_ptr = (PEID_STRUCT)((UCHAR *)eid_ptr + 2 + eid_ptr->Len);
 		}
 #ifdef WAPP_SUPPORT
-		wapp_send_bcn_report_complete(pAd, pEntry);
+		if (!pAd->CommonCfg.bWappSupportDisabled)
+			wapp_send_bcn_report_complete(pAd, pEntry);
 #endif
 	} while (FALSE);
 	/*receive multiple beacon rep*/
@@ -2555,18 +2559,21 @@ VOID RRM_PeerMeasureReqAction(
 		IN PRTMP_ADAPTER pAd,
 		IN MLME_QUEUE_ELEM *Elem)
 {
-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
 	MEASURE_REQ_INFO MeasureReqInfo;
 	RRM_BEACON_REQ_INFO BcnReq;
 	PFRAME_802_11 pFr = (PFRAME_802_11)Elem->Msg;
 	struct wifi_dev *wdev = Elem->wdev;
+	PBCN_REQ_DATA pBcnReqData = NULL;
 	UINT8 DialogToken = 0;
 	PCHAR pSsid = NULL;
 	UINT8 SsidLen = 0;
-	CHAR ssidbuf[MAX_LEN_OF_SSID + 1];
-	BSS_TABLE *ScanTab = NULL;
 	MAC_TABLE_ENTRY *pEntry = NULL;
-	UINT loop = 0;
+	SCAN_CTRL *ScanCtrl = NULL;
+	INT8 ret = 0;
+	INT8 scan_done = 0;
+	UINT16 timeout = 0;
+	UINT8 Index = 0;
+	UINT8 ReqBand = 0, TarBand = 0;
 
 	if ((wdev == NULL) || wdev->wdev_type != WDEV_TYPE_STA)
 		return;
@@ -2579,47 +2586,174 @@ VOID RRM_PeerMeasureReqAction(
 		return;
 	}
 
-	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_DEBUG, "%s:: \n", __func__);
+	/* dummy data for failure cases */
+	pBcnReqData = &wdev->Bcn_Req_Data;
 
+	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s::\n", __func__);
 	if (RRM_PeerBeaconReqSanity(pAd, Elem->Msg, Elem->MsgLen, &DialogToken, &pSsid, &SsidLen, &MeasureReqInfo, &BcnReq)) {
-		ScanTab = get_scan_tab_by_wdev(pAd, wdev);
-		if (!ScanTab)
+		pBcnReqData->DialogT = DialogToken;
+		pBcnReqData->Incap = 0;
+		if (WMODE_CAP_5G(wdev->PhyMode))
+			ReqBand = BAND_5G;
+		else if (WMODE_CAP_2G(wdev->PhyMode))
+			ReqBand = BAND_24G;
+		else {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s:: Invalid Phymode\n", __func__);
+			pBcnReqData->Ref = 1;
+			RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pFr->Hdr.Addr2, pFr->Hdr.Addr1, NULL);
 			return;
-		snprintf(ssidbuf, sizeof(ssidbuf), "%s", pSsid);
-		ssidbuf[SsidLen] = '\0';
-		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_DEBUG, "pSsid=%s\n", ssidbuf);
-		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_DEBUG, "SsidLen=%d\n", SsidLen);
+		}
 
-		for (loop = 0; loop < ScanTab->BssNr; loop++) {
-			BSS_ENTRY *pBssEntry = &ScanTab->BssEntry[loop];
-			UINT8 BssMatch = FALSE, BssIDMatch = FALSE;
-			UINT8 isWildcardBssid = FALSE;
-			UCHAR WildCardBssid[MAC_ADDR_LEN] = {0xff,0xff,0xff,0xff,0xff,0xff};
-			/*If the BSSID field in the Measurement Request contains a*/
-			/*wildcard BSSID,all observed BSSs with the requested SSID*/
-			/*shall be reported in a separate Beacon report for each*/
-			/*BSSID. If the SSID subelement is not included in the Beacon*/
-			/*request, all observed BSSs shall be reported in a separate*/
-			/*Beacon report for each BSSID.*/
-			isWildcardBssid = RTMPEqualMemory(BcnReq.Bssid, WildCardBssid, MAC_ADDR_LEN);
-			if (isWildcardBssid == TRUE) {
-				if (SsidLen != 0) {
-					BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pSsid,
-							MIN(SsidLen, pBssEntry->SsidLen));
-					if (BssMatch)
-						RRM_EnqueuePeerBeaconRep(pAd, pFr->Hdr.Addr2, pFr->Hdr.Addr1, DialogToken, MeasureReqInfo,
-						BcnReq, pBssEntry);
-				} else
-					RRM_EnqueuePeerBeaconRep(pAd, pFr->Hdr.Addr2, pFr->Hdr.Addr1, DialogToken, MeasureReqInfo,
-						BcnReq, pBssEntry);
-			} else {
-				BssIDMatch = RTMPEqualMemory(pBssEntry->Bssid, BcnReq.Bssid, MAC_ADDR_LEN);
-				if (BssIDMatch)
-					RRM_EnqueuePeerBeaconRep(pAd, pFr->Hdr.Addr2, pFr->Hdr.Addr1, DialogToken, MeasureReqInfo,
-							BcnReq, NULL);
+		TarBand = GetBandByOPClass(BcnReq.RegulatoryClass);
+		if (TarBand == 0) {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s:: Invalid RegulatoryClass\n", __func__);
+			pBcnReqData->Ref = 1;
+			RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pFr->Hdr.Addr2, pFr->Hdr.Addr1, NULL);
+			return;
+		}
+
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "Req Channel = %d Reg Class = %d\n", BcnReq.ChNumber, BcnReq.RegulatoryClass);
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "TarBand = %d\n", TarBand);
+
+		if (ReqBand == BAND_5G && TarBand == BAND_24G) {
+			for (Index = 0; Index < pAd->ApCfg.BssidNum; Index++)
+				if (WMODE_CAP_2G(pAd->ApCfg.MBSSID[Index].wdev.PhyMode))
+					break;
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s:: 2.4G band Channel\n", __func__);
+			wdev = &pAd->ApCfg.MBSSID[Index].wdev;
+		} else if (ReqBand == BAND_24G && TarBand == BAND_5G) {
+			for (Index = 0; Index < pAd->ApCfg.BssidNum; Index++)
+				if (WMODE_CAP_5G(pAd->ApCfg.MBSSID[Index].wdev.PhyMode))
+					break;
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s:: 5G band Channel\n", __func__);
+			wdev = &pAd->ApCfg.MBSSID[Index].wdev;
+		}
+
+		pBcnReqData = &wdev->Bcn_Req_Data;
+
+		/* Check for valid Channel */
+		if (!SwitchChSanityCheckByWdev(pAd, wdev, BcnReq.ChNumber)) {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+							"Invalid channel number %d\n", BcnReq.ChNumber);
+			pBcnReqData->Incap = 1;
+			pBcnReqData->Ref = 0;
+			pBcnReqData->DialogT = DialogToken;
+			RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pFr->Hdr.Addr2, pFr->Hdr.Addr1, NULL);
+			return;
+		}
+		timeout = BcnReq.MeasureDuration;
+		NdisZeroMemory(pBcnReqData, sizeof(BCN_REQ_DATA));
+		pBcnReqData->DialogT = DialogToken;
+		pBcnReqData->ReqSsid_len = SsidLen;
+		memcpy(&pBcnReqData->BcnReqInfo, &BcnReq, sizeof(RRM_BEACON_REQ_INFO));
+		memcpy(&pBcnReqData->MeasureReqInfo_scan, &MeasureReqInfo, sizeof(MEASURE_REQ_INFO));
+		memcpy(pBcnReqData->Addr1Req, pFr->Hdr.Addr1, 6);
+		memcpy(pBcnReqData->Addr2Req, pFr->Hdr.Addr2, 6);
+		ret = snprintf(pBcnReqData->ReqSsid, SsidLen+1, "%s", pSsid);
+		if (os_snprintf_error(sizeof(pBcnReqData->ReqSsid), ret)) {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s : snprintf error\n", __func__);
+			return;
+		}
+
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "pSsid=%s\n", pBcnReqData->ReqSsid);
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_NOTICE, "SsidLen=%d\n", pBcnReqData->ReqSsid_len);
+
+		/* Beacon Table mode */
+		if (BcnReq.MeasureMode == RRM_BCN_REQ_MODE_BCNTAB) {
+			RRM_SendBeaconRep(wdev, pAd);
+		} else {
+			/*To do Scanning, need TakeChannelOpCharge first*/
+			if (!TakeChannelOpCharge(pAd, wdev, CH_OP_OWNER_SCAN, FALSE)) {
+				MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR,
+					"TakeChannelOpCharge fail for SCAN!!\n");
+				pBcnReqData->Ref = 1;
+				RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pBcnReqData->Addr2Req, pBcnReqData->Addr1Req, NULL);
+				return;
+			}
+			ScanCtrl = get_scan_ctrl_by_wdev(pAd, wdev);
+			ScanCtrl->Num_Of_Channels = 1;
+			ScanCtrl->ScanTime[0] = 0;
+			ScanCtrl->CurrentGivenChan_Index = 0;
+			ScanCtrl->state = OFFCHANNEL_SCAN_START;
+			if (BcnReq.MeasureMode == RRM_BCN_REQ_MODE_PASSIVE) {
+				pBcnReqData->BcnReqScan = TRUE;
+				scan_done = ApSiteSurveyNew_by_wdev(pAd, BcnReq.ChNumber, timeout, SCAN_PASSIVE, FALSE, wdev);
+			} else if (BcnReq.MeasureMode == RRM_BCN_REQ_MODE_ACTIVE) {
+				pBcnReqData->BcnReqScan = TRUE;
+				scan_done = ApSiteSurveyNew_by_wdev(pAd, BcnReq.ChNumber, timeout, SCAN_ACTIVE, FALSE, wdev);
 			}
 		}
 	}
+}
+
+int GetBandByOPClass(int OpClass)
+{
+	if (OpClass == 81 || OpClass == 83 || OpClass == 84)
+		return BAND_24G;
+	else if (OpClass >= 115 && OpClass <= 129)
+		return BAND_5G;
+	else
+		return 0;
+}
+
+void RRM_SendBeaconRep(
+	struct wifi_dev *wdev,
+	PRTMP_ADAPTER pAd)
+{
+#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+
+	BSS_TABLE *ScanTab = NULL;
+	PBCN_REQ_DATA pBcnReqData = NULL;
+	INT ret = 0;
+	UINT8 loop = 0;
+	UINT8 blankRep = 1;
+	UINT8 sendRep = 0;
+	BSS_ENTRY *pBssEntry = NULL;
+	UINT8 BssMatch = FALSE, BssIDMatch = FALSE;
+	UINT8 isWildcardBssid = FALSE;
+	UCHAR WildCardBssid[MAC_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+	pBcnReqData = &wdev->Bcn_Req_Data;
+	if (!pBcnReqData)
+		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "BcnRep data Empty");
+
+	ScanTab = get_scan_tab_by_wdev(pAd, wdev);
+	if (!ScanTab)
+		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_ERROR, "%s : scan tab error\n", __func__);
+
+	for (loop = 0; loop < ScanTab->BssNr; loop++) {
+		pBssEntry = &ScanTab->BssEntry[loop];
+		sendRep = 0;
+		/*If the BSSID field in the Measurement Request contains a*/
+		/*wildcard BSSID,all observed BSSs with the requested SSID*/
+		/*shall be reported in a separate Beacon report for each*/
+		/*BSSID. If the SSID subelement is not included in the Beacon*/
+		/*request, all observed BSSs shall be reported in a separate*/
+		/*Beacon report for each BSSID.*/
+		isWildcardBssid = RTMPEqualMemory(pBcnReqData->BcnReqInfo.Bssid, WildCardBssid, MAC_ADDR_LEN);
+		if (isWildcardBssid == TRUE) {
+			if (pBcnReqData->ReqSsid_len != 0) {
+				BssMatch = RTMPEqualMemory(pBssEntry->Ssid, pBcnReqData->ReqSsid,
+				MIN(pBcnReqData->ReqSsid_len, pBssEntry->SsidLen));
+				if (BssMatch && (pBcnReqData->BcnReqInfo.ChNumber == pBssEntry->Channel))
+					sendRep = 1;
+			} else if (pBcnReqData->BcnReqInfo.ChNumber == pBssEntry->Channel)
+					sendRep = 1;
+		} else {
+			BssIDMatch = RTMPEqualMemory(pBssEntry->Bssid, pBcnReqData->BcnReqInfo.Bssid, MAC_ADDR_LEN);
+			if (BssIDMatch)
+				sendRep = 1;
+		}
+
+		if (sendRep) {
+			RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pBcnReqData->Addr2Req, pBcnReqData->Addr1Req, pBssEntry);
+			blankRep = 0;
+		}
+	}
+
+	if (blankRep)
+		RRM_EnqueuePeerBeaconRep(pAd, pBcnReqData, pBcnReqData->Addr2Req, pBcnReqData->Addr1Req, NULL);
+
 	return;
 }
 

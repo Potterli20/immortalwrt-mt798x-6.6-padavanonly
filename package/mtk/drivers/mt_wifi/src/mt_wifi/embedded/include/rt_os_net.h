@@ -520,6 +520,7 @@ INT rt_android_private_command_entry(
 		RTMP_COM_IoctlHandle(__pAd, NULL, CMD_RTPRIV_IOCTL_80211_REGISTER, 0, __pNetDev, 0); \
 	}
 
+
 #define RTMP_DRIVER_CFG80211_START(__pAd)									\
 	RTMP_COM_IoctlHandle(__pAd, NULL, CMD_RTPRIV_IOCTL_CFG80211_CFG_START, 0, NULL, 0)
 

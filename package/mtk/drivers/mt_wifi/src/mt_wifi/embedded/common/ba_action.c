@@ -34,6 +34,9 @@
 #define MAX_REORDERING_PACKET_TIMEOUT	((MAX_REORDERING_PACKET_TIMEOUT_IN_MS * OS_HZ)/1000)	/* system ticks -- 100 ms*/
 #define INVALID_RCV_SEQ (0xFFFF)
 
+BUILD_TIMER_FUNCTION(ba_reorder_timeout_Exec);
+DECLARE_TIMER_FUNCTION(ba_reorder_timeout_Exec);
+
 static inline void ba_enqueue_head(struct reordering_list *list,
 							struct reordering_mpdu *mpdu_blk)
 {
@@ -600,6 +603,7 @@ void ba_reordering_resource_release(RTMP_ADAPTER *pAd)
 	BA_REC_ENTRY *pBAEntry;
 	struct reordering_mpdu *mpdu_blk, *msdu_blk;
 	int i;
+	BOOLEAN Cancelled;
 #ifdef WHNAT_SUPPORT
 	RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
 
@@ -607,6 +611,9 @@ void ba_reordering_resource_release(RTMP_ADAPTER *pAd)
 		(cap->asic_caps & fASIC_CAP_BA_OFFLOAD))
 		return;
 #endif
+
+	RTMPCancelTimer(&ba_ctl->FlushTimer, &Cancelled);
+	RTMPReleaseTimer(&ba_ctl->FlushTimer, &Cancelled);
 
 	for (i = 0; i < MAX_LEN_OF_BA_REC_TABLE; i++) {
 		pBAEntry = &ba_ctl->BARecEntry[i];
@@ -684,6 +691,8 @@ BOOLEAN ba_reordering_resource_init(RTMP_ADAPTER *pAd, int num)
 		}
 		NdisReleaseSpinLock(&ba_ctl->mpdu_blk_pool[i].lock);
 	}
+
+	RTMPInitTimer(pAd, &ba_ctl->FlushTimer, GET_TIMER_FUNCTION(ba_reorder_timeout_Exec), ba_ctl, FALSE);
 
 	return TRUE;
 }
@@ -794,7 +803,7 @@ void ba_timeout_flush_by_cpu(PRTMP_ADAPTER pAd)
 				the_cpu = cap->RxSwRpsCpuMap[((pBAEntry->Wcid-1) % cap->RxSwRpsNum)];
 
 				if (cpu == the_cpu)
-					ba_flush_reordering_timeout_mpdus(pAd, ba_ctl, pBAEntry, now);
+					ba_flush_reordering_timeout_mpdus(pAd, pBAEntry);
 			}
 
 			ba_ctl->ba_timeout_bitmap_per_cpu[cpu][idx0] >>= 1;
@@ -866,7 +875,7 @@ void ba_timeout_flush(PRTMP_ADAPTER pAd)
 		while ((ba_ctl->ba_timeout_bitmap[idx0] != 0) && (idx1 < 32)) {
 			if (ba_ctl->ba_timeout_bitmap[idx0] & 0x1) {
 				pBAEntry = &ba_ctl->BARecEntry[(idx0 << 5) + idx1];
-				ba_flush_reordering_timeout_mpdus(pAd, ba_ctl, pBAEntry, now);
+				ba_flush_reordering_timeout_mpdus(pAd, pBAEntry);
 			}
 
 			ba_ctl->ba_timeout_bitmap[idx0] >>= 1;
@@ -931,64 +940,82 @@ void ba_timeout_monitor(PRTMP_ADAPTER pAd)
 	}
 }
 
-
-void ba_flush_reordering_timeout_mpdus(PRTMP_ADAPTER pAd,
-					struct ba_control *ba_ctl,
-					PBA_REC_ENTRY pBAEntry,
-					ULONG Now32)
-
+void ba_flush_reordering_timeout_mpdus(PRTMP_ADAPTER pAd, PBA_REC_ENTRY pBAEntry)
 {
-	USHORT Sequence;
-	struct tr_counter *tr_cnt = &pAd->tr_ctl.tr_cnt;
+	struct reordering_mpdu *mpdu_blk = NULL;
+	ULONG TimeOutTH = 0, TimeDelta = 0;
+	struct sk_buff *skb = NULL;
+	struct ba_control *ba_ctl = &pAd->tr_ctl.ba_ctl;
+#ifdef PROPRIETARY_DRIVER_SUPPORT
+	struct timespec64 kts64 = {0};
+	ktime_t kts;
+#endif
 
 	if ((pBAEntry == NULL) || (pBAEntry->list.qlen <= 0))
 		return;
 
-	if (RTMP_TIME_AFTER((unsigned long)Now32,
 #ifdef IXIA_C50_MODE
-	(unsigned long)(pBAEntry->LastIndSeqAtTimer + (pAd->ixia_ctl.max_BA_timeout / 6)))
+	TimeOutTH = pAd->ixia_ctl.BA_timeout;
 #else
-	(unsigned long)(pBAEntry->LastIndSeqAtTimer + (MAX_REORDERING_PACKET_TIMEOUT / 6)))
+	TimeOutTH = REORDERING_PACKET_TIMEOUT_IN_MS;
 #endif
-		&& (pBAEntry->list.qlen > 0)
-	   ) {
-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_DEBUG, "timeout[%d] (%08lx-%08lx = %d > %d): %x, flush all!\n ", pBAEntry->list.qlen, Now32, (pBAEntry->LastIndSeqAtTimer),
-				 (int)((long) Now32 - (long)(pBAEntry->LastIndSeqAtTimer)), MAX_REORDERING_PACKET_TIMEOUT,
-				 pBAEntry->LastIndSeq);
-		ba_refresh_reordering_mpdus(pAd, ba_ctl, pBAEntry);
-		tr_cnt->ba_flush_all++;
-#ifdef IXIA_C50_MODE
-		pAd->rx_cnt.rx_flush_drop[pBAEntry->Wcid]++;
-#endif
-		pBAEntry->LastIndSeqAtTimer = Now32;
-	} else if (RTMP_TIME_AFTER((unsigned long)Now32,
-#ifdef IXIA_C50_MODE
-		(unsigned long)(pBAEntry->LastIndSeqAtTimer + (pAd->ixia_ctl.BA_timeout)))
+
+	NdisAcquireSpinLock(&pBAEntry->RxReRingLock);
+	while ((mpdu_blk = ba_reordering_mpdu_probe(&pBAEntry->list))) {
+		INT sn = mpdu_blk->Sequence;
+
+		skb = RTPKT_TO_OSPKT(mpdu_blk->pPacket);
+#ifdef PROPRIETARY_DRIVER_SUPPORT
+		ktime_get_real_ts64(&kts64);
+		kts = timespec64_to_ktime(kts64);
+		TimeDelta = ktime_to_ms(ktime_sub(kts, skb->tstamp));
 #else
-		(unsigned long)(pBAEntry->LastIndSeqAtTimer + (REORDERING_PACKET_TIMEOUT)))
+		TimeDelta = ktime_to_ms(net_timedelta(skb->tstamp));
 #endif
-				&& (pBAEntry->list.qlen > 0)
-			  ) {
-		/* force LastIndSeq to shift to LastIndSeq+1*/
-		Sequence = (pBAEntry->LastIndSeq + 1) & MAXSEQ;
-		ba_indicate_reordering_mpdus_le_seq(pAd, ba_ctl, pBAEntry, Sequence);
-		pBAEntry->LastIndSeq = Sequence;
-		/* indicate in-order mpdus*/
-		Sequence = ba_indicate_reordering_mpdus_in_order(pAd, ba_ctl, pBAEntry, Sequence);
 
-		if (Sequence != INVALID_RCV_SEQ) {
-			/* update timer value only if in order frame is passed up */
-			pBAEntry->LastIndSeqAtTimer = Now32;
-			pBAEntry->LastIndSeq = Sequence;
-		}
-
-		tr_cnt->ba_flush_one++;
+		if (TimeDelta > TimeOutTH) {
+			NdisReleaseSpinLock(&pBAEntry->RxReRingLock);
+			ba_indicate_reordering_mpdus_le_seq(pAd, ba_ctl, pBAEntry, sn);
+			pBAEntry->LastIndSeq = sn;
+			sn = ba_indicate_reordering_mpdus_in_order(pAd, ba_ctl, pBAEntry, sn);
+			if (sn != INVALID_RCV_SEQ)
+				pBAEntry->LastIndSeq = sn;
+			pAd->tr_ctl.tr_cnt.ba_flush_one++;
 #ifdef IXIA_C50_MODE
-		pAd->rx_cnt.rx_flush_drop[pBAEntry->Wcid]++;
+			pAd->rx_cnt.rx_flush_drop[pBAEntry->Wcid]++;
 #endif
-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_DEBUG, "%x, flush one!\n", pBAEntry->LastIndSeq);
+			ba_ctl->ba_timeout_check = TRUE;
+			NdisAcquireSpinLock(&pBAEntry->RxReRingLock);
+		} else
+			break;
 	}
+	NdisReleaseSpinLock(&pBAEntry->RxReRingLock);
 
+	if (pBAEntry->list.qlen > 0 && !atomic_read(&ba_ctl->SetFlushTimer)) {
+		RTMPSetTimer(&ba_ctl->FlushTimer, CHK_REORDERING_PACKET_TIMEOUT_IN_MS);
+		atomic_inc(&ba_ctl->SetFlushTimer);
+	}
+}
+
+VOID ba_reorder_timeout_Exec(
+	IN PVOID SystemSpecific1,
+	IN PVOID FunctionContext,
+	IN PVOID SystemSpecific2,
+	IN PVOID SystemSpecific3)
+{
+	struct ba_control *ba_ctl = (struct ba_control *)FunctionContext;
+	INT i;
+
+	atomic_set(&ba_ctl->SetFlushTimer, 0);
+
+	for (i = 0; i < MAX_LEN_OF_BA_REC_TABLE; i++) {
+		if (ba_ctl->BARecEntry[i].REC_BA_Status != Recipient_NONE) {
+			PBA_REC_ENTRY pBAEntry = &ba_ctl->BARecEntry[i];
+			PRTMP_ADAPTER pAd = (PRTMP_ADAPTER)pBAEntry->pAdapter;
+
+			ba_flush_reordering_timeout_mpdus(pAd, pBAEntry);
+		}
+	}
 }
 
 static BA_ORI_ENTRY *ba_alloc_ori_entry(RTMP_ADAPTER *pAd, USHORT *Idx)
@@ -1387,6 +1414,7 @@ BOOLEAN ba_resrc_rec_add(
 		pBAEntry->TID = tid;
 		pBAEntry->TimeOutValue = timeout;
 		pBAEntry->check_amsdu_miss = TRUE;
+		pBAEntry->pAdapter = (PVOID)pAd;
 		pBAEntry->band = HcGetBandByWdev(pEntry->wdev);
 
 		if ((ba_ctl->dbg_flag & SN_HISTORY) && (ba_ctl->numAsRecipient < 5)) {
@@ -1868,10 +1896,9 @@ BOOLEAN bar_process(RTMP_ADAPTER *pAd, UINT16 Wcid, ULONG MsgLen, PFRAME_BA_REQ 
 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_ERROR, "frame too large, size = %ld\n", MsgLen);
 		return FALSE;
 	} else if (MsgLen != sizeof(FRAME_BA_REQ)) {
+		/*
 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_ERROR, "BlockAck Request frame length size = %ld incorrect\n", MsgLen);
-		return FALSE;
-	} else if (MsgLen != sizeof(FRAME_BA_REQ)) {
-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_ERROR, "BlockAck Request frame length size = %ld incorrect\n", MsgLen);
+		*/
 		return FALSE;
 	}
 
@@ -1999,6 +2026,9 @@ static VOID ba_enqueue_reordering_packet(
 	struct tr_counter *tr_cnt = &tr_ctl->tr_cnt;
 	struct reordering_mpdu *msdu_blk;
 	UINT16 Sequence = pRxBlk->SN;
+#ifdef PROPRIETARY_DRIVER_SUPPORT
+	struct timespec64 kts64 = {0};
+#endif
 
 	msdu_blk = ba_mpdu_blk_alloc(pAd, pRxBlk);
 
@@ -2027,6 +2057,12 @@ static VOID ba_enqueue_reordering_packet(
 		STATS_INC_RX_PACKETS(pAd, wdev_idx);
 		msdu_blk->pPacket = pRxBlk->pRxPacket;
 
+#ifdef PROPRIETARY_DRIVER_SUPPORT
+		ktime_get_real_ts64(&kts64);
+		RTPKT_TO_OSPKT(msdu_blk->pPacket)->tstamp = timespec64_to_ktime(kts64);
+#else
+		__net_timestamp(RTPKT_TO_OSPKT(msdu_blk->pPacket));
+#endif
 		if (!pBAEntry->CurMpdu) {
 			if (ba_reordering_mpdu_insertsorted(&pBAEntry->list, msdu_blk) == FALSE) {
 				tr_cnt->ba_err_dup2++;
@@ -2047,6 +2083,9 @@ static VOID ba_enqueue_reordering_packet(
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_BA, DBG_LVL_ERROR, "(qlen:%d, BAWinSize:%d)\n",
 				pBAEntry->list.qlen, pBAEntry->BAWinSize);
 			dump_ba_list(&pBAEntry->list);
+		} else if (!atomic_read(&ba_ctl->SetFlushTimer)) {
+			RTMPSetTimer(&ba_ctl->FlushTimer, REORDERING_PACKET_TIMEOUT_IN_MS);
+			atomic_inc(&ba_ctl->SetFlushTimer);
 		}
 		NdisReleaseSpinLock(&pBAEntry->RxReRingLock);
 	} else {
@@ -2086,7 +2125,6 @@ VOID ba_reorder(RTMP_ADAPTER *pAd, RX_BLK *rx_blk, UCHAR wdev_idx)
 	struct tr_counter *tr_cnt = &tr_ctl->tr_cnt;
 	UINT16 seq = rx_blk->SN;
 	PBA_REC_ENTRY ba_entry = NULL;
-	BOOLEAN amsdu_miss = FALSE;
 
 	if (VALID_UCAST_ENTRY_WCID(pAd, rx_blk->wcid)) {
 		UINT16 idx;
@@ -2159,20 +2197,8 @@ VOID ba_reorder(RTMP_ADAPTER *pAd, RX_BLK *rx_blk, UCHAR wdev_idx)
 		return;
 	}
 
-	NdisGetSystemUpTime(&Now32);
-
-	if (ba_entry->check_amsdu_miss) {
-		amsdu_miss = amsdu_sanity(pAd, seq, rx_blk->AmsduState, ba_entry, Now32);
-
-		if (amsdu_miss)
-			tr_cnt->ba_amsdu_miss++;
-	}
-
-	ba_entry->check_amsdu_miss = TRUE;
-
-	if ((rx_blk->AmsduState == FINAL_AMSDU_FORMAT)
-			|| (rx_blk->AmsduState == MSDU_FORMAT) || amsdu_miss)
-			ba_flush_reordering_timeout_mpdus(pAd, ba_ctl, ba_entry, Now32);
+	if (ba_entry->check_amsdu_miss)
+		amsdu_sanity(pAd, seq, rx_blk->AmsduState, ba_entry, Now32);
 
 ba_reorder_check:
 	/* I. Check if in order. */
@@ -2279,32 +2305,6 @@ ba_reorder_check:
 		ba_entry->CurMpdu = NULL;
 }
 
-VOID ba_reorder_buf_maintain(RTMP_ADAPTER *pAd)
-{
-	ULONG Now32;
-	UINT16 wcid;
-	UINT16 Idx;
-	UCHAR TID;
-	struct ba_control *ba_ctl = &pAd->tr_ctl.ba_ctl;
-	PBA_REC_ENTRY pBAEntry = NULL;
-	PMAC_TABLE_ENTRY pEntry = NULL;
-	/* update last rx time*/
-	NdisGetSystemUpTime(&Now32);
-
-	for (wcid = 0; VALID_UCAST_ENTRY_WCID(pAd, wcid); wcid++) {
-		pEntry = &pAd->MacTab.Content[wcid];
-
-		if (IS_ENTRY_NONE(pEntry))
-			continue;
-
-		for (TID = 0; TID < NUM_OF_TID; TID++) {
-			Idx = pAd->MacTab.Content[wcid].BARecWcidArray[TID];
-			pBAEntry = &ba_ctl->BARecEntry[Idx];
-			ba_flush_reordering_timeout_mpdus(pAd, ba_ctl, pBAEntry, Now32);
-		}
-	}
-}
-
 VOID ba_refresh_bar_all(RTMP_ADAPTER *pAd)
 {
 	UINT16 wcid;
@@ -2369,6 +2369,7 @@ VOID ba_ctl_init(RTMP_ADAPTER *pAd, struct ba_control *ba_ctl)
 	NdisAllocateSpinLock(pAd, &ba_ctl->BATabLock);
 	ba_ctl->ba_timeout_check = FALSE;
 	ba_ctl->dbg_flag |= SN_HISTORY;
+	atomic_set(&ba_ctl->SetFlushTimer, 0);
 	os_zero_mem((UCHAR *)&ba_ctl->ba_timeout_bitmap[0], sizeof(UINT32) * BA_TIMEOUT_BITMAP_LEN);
 #ifdef RX_RPS_SUPPORT
 	os_zero_mem((UCHAR *)&ba_ctl->ba_timeout_bitmap_per_cpu[0][0], sizeof(UINT32) * BA_TIMEOUT_BITMAP_LEN * NR_CPUS);

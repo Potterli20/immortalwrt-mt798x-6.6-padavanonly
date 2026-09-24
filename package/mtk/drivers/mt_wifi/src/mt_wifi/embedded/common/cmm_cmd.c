@@ -139,7 +139,6 @@ NDIS_STATUS RTEnqueueInternalCmd(
 	IN UINT32			InformationBufferLength)
 {
 	NDIS_STATUS	status;
-	ULONG	flag = 0;
 	PCmdQElmt	cmdqelmt = NULL;
 
 	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)) {
@@ -173,7 +172,7 @@ NDIS_STATUS RTEnqueueInternalCmd(
 	cmdqelmt->CmdFromNdis = FALSE;
 
 	if (cmdqelmt != NULL) {
-		RTMP_SPIN_LOCK_IRQSAVE(&pAd->CmdQLock, &flag);
+		NdisAcquireSpinLock(&pAd->CmdQLock);
 
 		if ((pAd->CmdQ.size < MAX_LEN_OF_CMD_QUEUE) &&
 			(pAd->CmdQ.CmdQState & RTMP_TASK_CAN_DO_INSERT)) {
@@ -186,7 +185,7 @@ NDIS_STATUS RTEnqueueInternalCmd(
 		} else
 			status = NDIS_STATUS_FAILURE;
 
-		RTMP_SPIN_UNLOCK_IRQRESTORE(&pAd->CmdQLock, &flag);
+		NdisReleaseSpinLock(&pAd->CmdQLock);
 
 		if (status == NDIS_STATUS_FAILURE) {
 			if (cmdqelmt->buffer)
@@ -388,7 +387,16 @@ static NTSTATUS ApCliPbcApFoundHandler(IN PRTMP_ADAPTER pAd, IN PCmdQElmt CMDQel
 	channel = pApCliTab->MlmeAux.Channel;
 	MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "cmd> channel=%d CMDTHREAD_APCLI_PBC_AP_FOUND!\n", channel);
 	/* XXX: Check if channel change is required */
+#ifdef DFS_ADJ_BW_ZERO_WAIT
+	if (pAd->CommonCfg.DfsParameter.BW160ZeroWaitSupport == TRUE) {
+		Adj_ZeroWait_Status_Update(pAd, &pApCliTab->wdev, &channel);
+		if (IS_CH_BETWEEN(pApCliTab->MlmeAux.Channel, 36, 48))
+			channel = pApCliTab->MlmeAux.Channel;
+	}
 	rtmp_set_channel(pAd, &pApCliTab->wdev, channel);
+#else
+	rtmp_set_channel(pAd, &pApCliTab->wdev, channel);
+#endif
 
 	/* Bring down ApCli If */
 	apcliEn = pApCliTab->ApcliInfStat.Enable;

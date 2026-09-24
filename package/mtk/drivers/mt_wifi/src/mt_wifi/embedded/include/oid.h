@@ -78,6 +78,7 @@ enum oid_bw {
 
 #define OID_P2P_DEVICE_NAME_LEN	32
 #define MAX_LEN_OF_SSID                 32
+#define MAX_LEN_OF_WSC_IE		512
 /*#define MAX_NUM_OF_CHS					49 */ /* 14 channels @2.4G +  12@UNII + 4 @MMAC + 11 @HiperLAN2 + 7 @Japan + 1 as NULL terminationc */
 /*#define MAX_NUM_OF_CHS				54 */ /* 14 channels @2.4G +  12@UNII(lower/middle) + 16@HiperLAN2 + 11@UNII(upper) + 0 @Japan + 1 as NULL termination */
 #define MAX_NUMBER_OF_EVENT				10	/* entry # in EVENT table */
@@ -405,6 +406,7 @@ typedef enum _NDIS_802_11_NETWORK_TYPE {
 	Ndis802_11OFDM5_AC,
 	Ndis802_11OFDM24_HE,
 	Ndis802_11OFDM5_HE,
+	Ndis802_11OFDM6_HE,
 	Ndis802_11NetworkTypeMax	/* not a real type, defined as an upper bound */
 } NDIS_802_11_NETWORK_TYPE, *PNDIS_802_11_NETWORK_TYPE;
 
@@ -849,7 +851,7 @@ typedef struct _BSSID_INFO {
 	BOOLEAN Valid;
 	UINT32 akm;
 	UCHAR ssid[MAX_LEN_OF_SSID];	/* SSID information field */
-
+	UINT8 pmk_len;
 #endif
 } BSSID_INFO, *PBSSID_INFO;
 
@@ -1372,6 +1374,7 @@ typedef struct _RT_802_11_MAC_ENTRY {
 	CHAR AvgRssi0;
 	CHAR AvgRssi1;
 	CHAR AvgRssi2;
+	CHAR AvgRssi3;
 	UINT32 ConnectedTime;
 	HTTRANSMIT_SETTING TxRate;
 	UINT32 LastRxRate;
@@ -2121,6 +2124,8 @@ struct qosmap_data {
 #define OID_802_11_CONN_FAIL_MSG				(0x1000)
 #endif
 
+#define OID_SET_SEND_CUSTOM_FRAME (0x7000)
+
 #ifdef CCAPI_API_SUPPORT
 typedef struct _CURRENT_CHANNEL_STATS{
  UINT64		SamplePeriod;
@@ -2552,12 +2557,15 @@ enum vendor_ie_subcmd_oid {
 #define OID_GET_DFS_STATE         								0x09BC
 #endif
 
-#ifdef CONFIG_6G_AFC_SUPPORT
-#define AFC_INQ_EVENT							0x09BB
-#define AFC_STOP_EVENT							0x09BC
-#define OID_GET_AFC_CONFIG						0x09BD
-#define OID_SET_AFC_CONFIG						0x09BE
-#endif /* CONFIG_6G_AFC_SUPPORT */
+#define OID_SET_BH_ASSOC_CTRL         0x09BF
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+#define AFC_INQ_EVENT							0x09C0
+#define AFC_STOP_EVENT							0x09C1
+#define OID_GET_AFC_CONFIG						0x09C2
+#define OID_SET_AFC_CONFIG						0x09C3
+
+#endif /*CONFIG_6G_SUPPORT && CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 #ifdef ACS_CTCC_SUPPORT
 #define OID_802_11_GET_ACS_CHANNEL_SCORE                0x2014
@@ -2597,6 +2605,18 @@ struct GNU_PACKED vie_op_data_s
 #define OID_AP_DABS_RULE_SET 0x1805
 #define OID_AP_DABS_RULE_DEL 0x1806
 #endif
+
+#ifdef CONFIG_TXPWR_LIMIT_SUPPORT
+#define OID_GET_TX_PWR_LIMIT		0x1807
+#endif
+
+#ifdef DFS_SLAVE_SUPPORT
+#define OID_BH_STATUS_MSG			0x1808
+struct BH_STATUS_MSG {
+	UCHAR fBhStatus;
+	UCHAR inf_name[IFNAMSIZ];
+};
+#endif /* DFS_SLAVE_SUPPORT */
 
 #ifdef TR181_SUPPORT
 #define OID_TR181_START							(0x1900)

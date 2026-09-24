@@ -1556,7 +1556,7 @@ INT32 CmdExtWtblUpdate(RTMP_ADAPTER *pAd, UINT16 u2WlanIdx, UINT8 ucOperation,
 
 	/* Send out CMD */
 	if (pWtblGenericTlv && (pWtblGenericTlv->u2Tag == WTBL_SECURITY_KEY_V2) && (ucOperation == SET_WTBL))
-		call_fw_cmd_notifieriers(WO_CMD_STA_REC, pAd, msg->net_pkt);
+		call_fw_cmd_notifieriers(WO_CMD_WTBL_SEC_UPDATE, pAd, msg->net_pkt);
 	Ret = AndesSendCmdMsg(pAd, msg);
 
 #ifdef WTBL_TDD_SUPPORT
@@ -2260,7 +2260,8 @@ static INT32 StaRecUpdateTxProc(RTMP_ADAPTER *pAd, struct cmd_msg *msg, VOID *ar
 #endif
 	CmdStaRecTxProc.u4TxProcFlag = RVLAN;
 #if defined(APCLI_AS_WDS_STA_SUPPORT) || defined(MBSS_AS_WDS_AP_SUPPORT)
-	if ((pEntry && pEntry->wdev && pEntry->wdev->bVLAN_Tag) || (bss_wdev && bss_wdev->bVLAN_Tag)) {
+	if ((pEntry && pEntry->wdev && pEntry->wdev->bVLAN_Tag) || (bss_wdev && bss_wdev->bVLAN_Tag &&
+		(!pAd->CommonCfg.bMBSSASWDSAPDisabled || !pAd->CommonCfg.bApcliASWDSSTADisabled))) {
 		AsicRxHeaderTransCtl(pAd, TRUE, FALSE, FALSE, FALSE, FALSE);
 		CmdStaRecTxProc.u4TxProcFlag = 0;
 	}
@@ -2512,6 +2513,7 @@ static INT32 sta_rec_update_muru_info(struct _RTMP_ADAPTER *ad, struct cmd_msg *
 		ul_ofdma->u1UoRa = (pEntry->cap.he_mac_cap & HE_OFDMA_RA) ? 1 : 0;
 		ul_ofdma->u12x996Tone = 0;				/* Wait he_mac_cap to support the cap */
 		ul_ofdma->u1RxTrgFrmBy11ac = 0;			/* Wait he_mac_cap to support the cap */
+		ul_ofdma->u1RxCtrlFrmToMBss = (pEntry->cap.he_mac_cap & HE_RX_CTRL_FRAME_TO_MULTIBSS) ? 1 : 0;
 
 		/* Sta Cap. of DL MIMO */
 		dl_mimo->fgVhtMuBfee = pEntry->vht_cap_ie.vht_cap.bfee_cap_mu;
@@ -2555,6 +2557,9 @@ static INT32 sta_rec_update_muru_info(struct _RTMP_ADAPTER *ad, struct cmd_msg *
 
 		MTWF_DBG(ad, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				"u1RxTrgFrmBy11ac = 0x%02X\n", ul_ofdma->u1RxTrgFrmBy11ac);
+
+		MTWF_DBG(ad, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"u1RxCtrlFrmToMBss = 0x%02X\n", ul_ofdma->u1RxCtrlFrmToMBss);
 
 		MTWF_DBG(ad, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				"fgVhtMuBfee = 0x%02X, fgParBWDlMimo = 0x%02X\n",
@@ -2992,7 +2997,8 @@ static INT32 StaRecUpdateWtbl(RTMP_ADAPTER *pAd, struct cmd_msg *msg, VOID *args
 		}
 #endif
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-		if ((wdev->wdev_type == WDEV_TYPE_STA) && (wdev->wds_enable) && pEntry->bEnable4Addr) {
+		if ((wdev->wdev_type == WDEV_TYPE_STA) && (wdev->wds_enable) && pEntry->bEnable4Addr
+			&& !pAd->CommonCfg.bApcliASWDSSTADisabled) {
 			rWtblHdrTrans.ucFd = 1;
 			rWtblHdrTrans.ucTd = 1;
 		}
@@ -4222,6 +4228,42 @@ static VOID bssUpdateHighPriRateEAPOL(
 	/* Append this feature */
 	AndesAppendCmdMsg(msg, (char *)&CmdBssInfoHighPriRate, sizeof(CMD_BSSINFO_HIGHPRI_RATE_T));
 }
+
+static VOID bssUpdateHighPriRateICMP(
+	struct _RTMP_ADAPTER *pAd,
+	BSS_INFO_ARGUMENT_T *bss_info,
+	struct cmd_msg *msg)
+{
+	CMD_BSSINFO_HIGHPRI_RATE_T CmdBssInfoHighPriRate = {0};
+
+	if (bss_info->bss_state >= BSS_ACTIVE) {
+		CmdBssInfoHighPriRate.u2HighPriTransmit = cpu2le16((UINT16)(bss_info->HighPriTransmit[HiGHPRI_ICMP].word));
+		CmdBssInfoHighPriRate.ucPreambleMode =
+			OPSTATUS_TEST_FLAG(pAd, fOP_STATUS_SHORT_PREAMBLE_INUSED);
+	}
+#ifdef TXRX_STAT_SUPPORT
+	{
+		ULONG HighPriority_Tx_Rate;
+
+		pAd->ApCfg.MBSSID[bss_info->ucBssIndex].stat_bss.LastHighPriorityTxRate[HiGHPRI_ICMP].word =
+														bss_info->HighPriTransmit[HiGHPRI_ICMP].word;
+		getRate(bss_info->HighPriTransmit[HiGHPRI_ICMP], &HighPriority_Tx_Rate);
+	}
+#endif
+	CmdBssInfoHighPriRate.u2Tag = BSS_INFO_HIGHPRI_RATE_ICMP;
+	CmdBssInfoHighPriRate.u2Length = sizeof(CMD_BSSINFO_HIGHPRI_RATE_T);
+	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+			 "%s (BSS_INFO_HIGHPRI_INFO), CmdBssInfoHighPriRate.u2HighPriTransmit = %d\n",
+			  __func__,
+			  le2cpu16(CmdBssInfoHighPriRate.u2HighPriTransmit));
+#ifdef RT_BIG_ENDIAN
+	CmdBssInfoHighPriRate.u2Tag = cpu2le16(CmdBssInfoHighPriRate.u2Tag);
+	CmdBssInfoHighPriRate.u2Length = cpu2le16(CmdBssInfoHighPriRate.u2Length);
+#endif
+	/* Append this feature */
+	AndesAppendCmdMsg(msg, (char *)&CmdBssInfoHighPriRate, sizeof(CMD_BSSINFO_HIGHPRI_RATE_T));
+}
+
 #endif
 
 static VOID bssUpdateSyncModeCtrl(
@@ -4452,6 +4494,7 @@ static UINT16 bss_update_offload_bcn_mbssid(
 	UINT16 u2SubTagLen = 0;
 #ifdef DOT11V_MBSSID_SUPPORT
 	UINT8 DbdcIdx = DBDC_BAND0;
+	UINT8 bandBssIdx = 0;
 
 	if (IS_BSSID_11V_ENABLED(ad, bss_info->ucBandIdx)) {
 		BSS_STRUCT *pMbss = NULL;
@@ -4474,19 +4517,21 @@ static UINT16 bss_update_offload_bcn_mbssid(
 			DbdcIdx = HcGetBandByWdev(&pMbss->wdev);
 			/* update TIM offset at the same band */
 			if (DbdcIdx == bss_info->ucBandIdx) {
-				MTWF_DBG(NULL, DBG_CAT_AP, CATAP_BCN, DBG_LVL_DEBUG,
-						"%s, BSS(%d), IE Offset = %d\n",
-						__func__, IdBss, pMbss->wdev.bcn_buf.TimIELocationInBeacon);
 
-				bcn_mbss_info->u2MbssidIeOffset[IdBss] = pMbss->wdev.bcn_buf.TimIELocationInBeacon;
+				bcn_mbss_info->u2MbssidIeOffset[bandBssIdx] = pMbss->wdev.bcn_buf.TimIELocationInBeacon;
 #ifdef RT_BIG_ENDIAN
-				bcn_mbss_info->u2MbssidIeOffset[IdBss] = cpu2le16(bcn_mbss_info->u2TimIeOffset[IdBss]);
+				bcn_mbss_info->u2MbssidIeOffset[bandBssIdx] = cpu2le16(bcn_mbss_info->u2MbssidIeOffset[bandBssIdx]);
 #endif
-			}
+				/* build global 11v mbssid bitmap */
+				if (ad->ApCfg.dot11v_mbssid_bitmap[DbdcIdx] & (1 << pMbss->mbss_grp_idx))
+					bcn_mbss_info->u4Dot11vMbssidBitmap |= (1 << bandBssIdx);
 
-			/* build global 11v mbssid bitmap */
-			if (ad->ApCfg.dot11v_mbssid_bitmap[DbdcIdx] & (1 << pMbss->mbss_grp_idx))
-				bcn_mbss_info->u4Dot11vMbssidBitmap |= (1 << IdBss);
+				MTWF_DBG(NULL, DBG_CAT_AP, CATAP_BCN, DBG_LVL_DEBUG,
+						"ucBandIdx(%d), BSS(%d), %s's TIMIE Offset = %d, and idx in array is %d, Bitmap: 0x%x\n",
+						bss_info->ucBandIdx, IdBss, pMbss->wdev.if_dev->name, pMbss->wdev.bcn_buf.TimIELocationInBeacon, bandBssIdx, bcn_mbss_info->u4Dot11vMbssidBitmap);
+
+				bandBssIdx++;
+			}
 		}
 #ifdef RT_BIG_ENDIAN
 		bcn_mbss_info->u4Dot11vMbssidBitmap = cpu2le32(bcn_mbss_info->u4Dot11vMbssidBitmap);
@@ -4827,17 +4872,23 @@ static VOID bss_update_11v_mbssid(
 	/* Fill TLV format */
 	CmdBssInfo11vMbssid.u2Tag = BSS_INFO_11V_MBSSID;
 	CmdBssInfo11vMbssid.u2Length = sizeof(CmdBssInfo11vMbssid);
-	CmdBssInfo11vMbssid.ucMaxBSSIDIndicator = bss_info->max_bssid_indicator;
-	CmdBssInfo11vMbssid.ucMBSSIDIndex = bss_info->mbssid_index;
+	if (bss_info->bss_state < BSS_READY) {
+		#define REMOVE_FROM_MBSS_GROUP 0
+		CmdBssInfo11vMbssid.ucMaxBSSIDIndicator = REMOVE_FROM_MBSS_GROUP;
+		CmdBssInfo11vMbssid.ucMBSSIDIndex = REMOVE_FROM_MBSS_GROUP;
+	} else {
+		CmdBssInfo11vMbssid.ucMaxBSSIDIndicator = bss_info->max_bssid_indicator;
+		CmdBssInfo11vMbssid.ucMBSSIDIndex = bss_info->mbssid_index;
+	}
 #ifdef RT_BIG_ENDIAN
 	CmdBssInfo11vMbssid.u2Tag = cpu2le16(CmdBssInfo11vMbssid.u2Tag);
 	CmdBssInfo11vMbssid.u2Length = cpu2le16(CmdBssInfo11vMbssid.u2Length);
 #endif
 
 	MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_INFO,
-			 "ucMaxBSSIDIndicator(%d),ucMBSSIDIndex(%d)\n",
+			 "ucMaxBSSIDIndicator(%d),ucMBSSIDIndex(%d) for bss(%d)\n",
 			 CmdBssInfo11vMbssid.ucMaxBSSIDIndicator,
-			 CmdBssInfo11vMbssid.ucMBSSIDIndex);
+			 CmdBssInfo11vMbssid.ucMBSSIDIndex, bss_info->ucBssIndex);
 
 	/* Append this feature */
 	AndesAppendCmdMsg(msg, (char *)&CmdBssInfo11vMbssid, sizeof(CMD_BSSINFO_11V_MBSSID_T));
@@ -4952,6 +5003,7 @@ static BSS_INFO_HANDLE_T apfBssInfoTagHandle[] = {
 	{BSS_INFO_HIGHPRI_ARP_FEATURE, bssUpdateHighPriRateARP},
 	{BSS_INFO_HIGHPRI_DHCP_FEATURE, bssUpdateHighPriRateDHCP},
 	{BSS_INFO_HIGHPRI_EAPOL_FEATURE, bssUpdateHighPriRateEAPOL},
+	{BSS_INFO_HIGHPRI_ICMP_FEATURE, bssUpdateHighPriRateICMP},
 #endif
 #ifdef ZERO_LOSS_CSA_SUPPORT
 	{BSS_INFO_APCLI_TSF_SYNC_FEATURE, bssUpdateApcliTsfInfo},
@@ -5303,6 +5355,45 @@ INT32 CmdAutoBATrigger(RTMP_ADAPTER *pAd, BOOLEAN Enable, UINT32 Timeout)
 	ExtAutoBa.u4Timeout = cpu2le32(Timeout);
 	AndesAppendCmdMsg(msg, (char *)&ExtAutoBa,
 					  sizeof(EXT_CMD_ID_AUTO_BA_T));
+	Ret = AndesSendCmdMsg(pAd, msg);
+Error0:
+	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			 "%s:(Ret = %d)\n", __func__, Ret);
+	return Ret;
+}
+
+INT32 CmdArpFlowControlEnable(RTMP_ADAPTER *pAd, UCHAR Enable, UINT16 threshold)
+{
+	struct cmd_msg *msg = NULL;
+	INT32 Ret = 0;
+	EXT_CMD_ID_ARP_FLOW_CONTROL_T ExtArpFlowControl = {0};
+	struct _CMD_ATTRIBUTE attr = {0};
+
+	msg = AndesAllocCmdMsg(pAd, sizeof(EXT_CMD_ID_ARP_FLOW_CONTROL_T));
+
+	if (!msg) {
+		Ret = NDIS_STATUS_RESOURCES;
+		goto Error0;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2CR4);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_ARP_FLOW_CONTROL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	AndesInitCmdMsg(msg, attr);
+
+	ExtArpFlowControl.ucEnable = Enable;
+	ExtArpFlowControl.threshold = threshold;
+
+	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+		"ucEnable=%d, threshold=%d\n", ExtArpFlowControl.ucEnable, ExtArpFlowControl.threshold);
+
+	AndesAppendCmdMsg(msg, (char *)&ExtArpFlowControl,
+					  sizeof(EXT_CMD_ID_ARP_FLOW_CONTROL_T));
 	Ret = AndesSendCmdMsg(pAd, msg);
 Error0:
 	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
@@ -6209,5 +6300,48 @@ error:
 	return Ret;
 }
 
+#ifdef MLR_SUPPORT
+INT32 CmdExtSetMlrThr(struct _RTMP_ADAPTER *pAd,
+	INT8 EnableCts2SelfRssiThr,
+	INT8 DisableCts2SelfRssiThr)
+{
+	struct cmd_msg *msg = NULL;
+	INT32 Ret = 0;
+	struct _CMD_ATTRIBUTE attr = {0};
+	struct EXT_CMD_SET_MLR_THRESHOLD Cts2SelMlrThr;
+
+	msg = AndesAllocCmdMsg(pAd, sizeof(struct EXT_CMD_SET_MLR_THRESHOLD));
+
+	if (!msg) {
+		Ret = NDIS_STATUS_RESOURCES;
+		goto error;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_SET_MLR);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	AndesInitCmdMsg(msg, attr);
+
+	/* Fill command related header here*/
+	Cts2SelMlrThr.EnableCts2SelfRssi = EnableCts2SelfRssiThr;
+	Cts2SelMlrThr.DisableCts2SelfRssi = DisableCts2SelfRssiThr;
+	AndesAppendCmdMsg(msg, (char *)&Cts2SelMlrThr, sizeof(struct EXT_CMD_SET_RTS_THEN_CTS_RETRY));
+
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			 "%s: set EnableCts2SelfRssiThr=%d, DisableCts2SelfRssiThr=%d\n", __func__, EnableCts2SelfRssiThr, DisableCts2SelfRssiThr);
+
+	/* Send out CMD */
+	Ret = AndesSendCmdMsg(pAd, msg);
+error:
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s:(Ret = %d)\n", __func__, Ret);
+	return Ret;
+
+}
+#endif
 
 

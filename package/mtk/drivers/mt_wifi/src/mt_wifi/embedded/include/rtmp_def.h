@@ -138,9 +138,11 @@
 #ifdef CSD_VERIFICATION
 #define RX_BUFFER_AGGRESIZE     4224
 #else
-#define RX_BUFFER_AGGRESIZE     1700	/*3904 //3968 //4096 //2048 //4096 */
+/*align with 8/16Bytes WFDMA bitwidth*/
+#define RX_BUFFER_AGGRESIZE     1712	/*3904 //3968 //4096 //2048 //4096 */
 #endif
-#define RX1_BUFFER_SIZE         1700
+/*align with 8/16Bytes WFDMA bitwidth*/
+#define RX1_BUFFER_SIZE         1712
 #define RX_BUFFER_NORMSIZE      3840	/*3904 //3968 //4096 //2048 //4096 */
 #define TX_BUFFER_NORMSIZE		RX_BUFFER_NORMSIZE
 #define MAX_FRAME_SIZE          2346	/* Maximum 802.11 frame size */
@@ -188,7 +190,7 @@
 #endif
 
 #ifdef PS_STA_FLUSH_SUPPORT
-#define MAX_MSDU_NUM_IN_HW_QUEUE		128
+#define MAX_MSDU_NUM_IN_HW_QUEUE		1024
 #define PS_FLUSH_DYNAMIC_EXCE_MULTIPE		20 /* PS_FLUSH_DYNAMIC_EXCE_MULTIPE * MLME_TASK_EXEC_INTV = 2 sec*/
 #endif
 
@@ -213,6 +215,15 @@
 #endif
 
 #define MAX_AGG_3SS_BALIMIT		31
+
+
+
+
+#define LENGTH_802_11_CAP_INFO		2
+#define LENGTH_802_11_LISTEN_INTERVAL	2
+#define LENGTH_802_11_STATUS_CODE	2
+#define LENGTH_802_11_AID	2
+
 
 /* RxFilter */
 #define STANORMAL	 0x17f97
@@ -979,7 +990,7 @@ enum nl_msg_id {
 #define IE_QOS_CAPABILITY               46	/* 802.11e d6 */
 #define IE_HT_CAP                       45	/* 802.11n d1. HT CAPABILITY. ELEMENT ID TBD */
 #define IE_AP_CHANNEL_REPORT			51	/* 802.11k d6 */
-#define IE_HT_CAP2                         52	/* 802.11n d1. HT CAPABILITY. ELEMENT ID TBD */
+#define IE_NEIGHBOR_REPORT              52
 #define IE_RSN                          48	/* 802.11i d3.0 */
 #define IE_WPA2                         48	/* WPA2 */
 #define IE_EXT_SUPP_RATES               50	/* 802.11g */
@@ -987,7 +998,7 @@ enum nl_msg_id {
 #define IE_SUPP_REG_CLASS               59	/* 802.11y. Supported regulatory classes. */
 #define IE_EXT_CHANNEL_SWITCH_ANNOUNCEMENT	60	/* 802.11n */
 #define IE_ADD_HT                         61	/* 802.11n d1. ADDITIONAL HT CAPABILITY. ELEMENT ID TBD */
-#define IE_ADD_HT2                        53	/* 802.11n d1. ADDITIONAL HT CAPABILITY. ELEMENT ID TBD */
+#define IE_RCPI                       53
 
 /* For 802.11n D3.03 */
 /*#define IE_NEW_EXT_CHA_OFFSET             62    // 802.11n d1. New extension channel offset elemet */
@@ -1169,6 +1180,10 @@ typedef struct GNU_PACKED _EID_STRUCT {
 #define WTBL_TDD_FSM			  52
 #endif /* WTBL_TDD_SUPPORT */
 
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+#define AFC_STATE_MACHINE		  53
+#endif /*CONFIG_6G_SUPPORT &&*/
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 /*
 	CONTROL/CONNECT state machine: states, events, total function #
 */
@@ -1919,8 +1934,10 @@ enum EVT_REPORT_STATUS {
 #define REGION_22_A_BAND                  22
 #define REGION_23_A_BAND                  23
 #define REGION_24_A_BAND                  24
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 #define REGION_25_A_BAND                  25
 #define REGION_26_A_BAND                  26
+#endif
 #define REGION_MAXIMUM_A_BAND             37
 
 #define REGION_0_A_BAND_6GHZ                0
@@ -2438,6 +2455,7 @@ enum {
 	HIGHPRI_ARP = 0,
 	HIGHPRI_DHCP,
 	HIGHPRI_EAPOL,
+	HiGHPRI_ICMP,
 	HIGHPRI_MAX_TYPE,
 };
 #endif

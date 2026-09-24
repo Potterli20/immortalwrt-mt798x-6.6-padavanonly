@@ -212,9 +212,9 @@ INT sta_send_data_pkt(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pkt
  */
 VOID sta_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *pTxBlk)
 {
-#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 	MAC_TABLE_ENTRY *pMacEntry = pTxBlk->pMacEntry;
 	pTxBlk->CipherAlg = CIPHER_NONE;
+	pTxBlk->KeyIdx = 0;
 
 	if (TX_BLK_TEST_FLAG(pTxBlk, fTX_bClearEAPFrame)) {
 		pTxBlk->pKey =  NULL;
@@ -228,6 +228,7 @@ VOID sta_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK 
 			ASSERT(pTxBlk->pKey);
 		}
 	} else {
+#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 		if (CLIENT_STATUS_TEST_FLAG(pMacEntry, fCLIENT_STATUS_SOFTWARE_ENCRYPT)) {
 			TX_BLK_SET_FLAG(pTxBlk, fTX_bSwEncrypt);
 			pTxBlk->KeyIdx =  pMacEntry->SecConfig.PairwiseKeyId;
@@ -253,12 +254,20 @@ VOID sta_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK 
 				else if (pTxBlk->CipherAlg == CIPHER_TKIP)
 					inc_iv_byte(pTxBlk->pKey->TxTsc, LEN_WPA_TSC, 1);
 			}
+		} else
+#endif /* defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT) */
+		{
+			pTxBlk->pKey = NULL;
+			/* Non S/W encrypt cases */
+			if (!IS_CIPHER_NONE(pMacEntry->SecConfig.PairwiseCipher)) {
+				/* Change pTxBlk->CipherAlg non zero for TxD ref */
+				pTxBlk->CipherAlg = pMacEntry->SecConfig.PairwiseCipher;
+				pTxBlk->KeyIdx =  pMacEntry->SecConfig.PairwiseKeyId;
+				if (IS_CIPHER_WEP(pMacEntry->SecConfig.PairwiseCipher))
+					pTxBlk->pKey = (PCIPHER_KEY)&(pMacEntry->SecConfig.WepKey[pTxBlk->KeyIdx]);
+			}
 		}
 	}
-#else /* SOFT_ENCRYPT || SW_CONNECT_SUPPORT */
-	pTxBlk->CipherAlg = CIPHER_NONE;
-#endif /* !SOFT_ENCRYPT &&  !SW_CONNECT_SUPPORT */
-
 }
 
 #ifdef DOT11_N_SUPPORT
@@ -295,7 +304,8 @@ VOID sta_build_cache_802_11_header(RTMP_ADAPTER *pAd, TX_BLK *pTxBlk, UCHAR *buf
 				COPY_MAC_ADDR(wifi_hdr->Addr3, pTxBlk->pSrcBufHeader);
 #ifdef CLIENT_WDS
 
-				if (!MAC_ADDR_EQUAL((pTxBlk->pSrcBufHeader + MAC_ADDR_LEN), pAd->CurrentAddress)) {
+				if (!MAC_ADDR_EQUAL((pTxBlk->pSrcBufHeader + MAC_ADDR_LEN), pAd->CurrentAddress)
+					&& (!pAd->CommonCfg.bClientWdsDisabled)) {
 					wifi_hdr->FC.FrDs = 1;
 					COPY_MAC_ADDR(&wifi_hdr->Octet[0], pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);	/* ADDR4 = SA */
 					pTxBlk->wifi_hdr_len += MAC_ADDR_LEN;
@@ -381,7 +391,8 @@ VOID sta_build_802_11_header(RTMP_ADAPTER *pAd, TX_BLK *pTxBlk)
 				wifi_hdr->FC.ToDs = 1;
 #ifdef CLIENT_WDS
 
-				if (!MAC_ADDR_EQUAL((pTxBlk->pSrcBufHeader + MAC_ADDR_LEN), tr_entry->wdev->if_addr)) {
+				if (!MAC_ADDR_EQUAL((pTxBlk->pSrcBufHeader + MAC_ADDR_LEN), tr_entry->wdev->if_addr)
+					&& (!pAd->CommonCfg.bClientWdsDisabled)) {
 					wifi_hdr->FC.FrDs = 1;
 					COPY_MAC_ADDR(&wifi_hdr->Octet[0], pTxBlk->pSrcBufHeader + MAC_ADDR_LEN);/* ADDR4 = SA */
 					pTxBlk->wifi_hdr_len += MAC_ADDR_LEN;

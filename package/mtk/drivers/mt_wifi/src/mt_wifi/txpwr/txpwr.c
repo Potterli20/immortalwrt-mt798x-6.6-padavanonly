@@ -86,6 +86,10 @@ INT32 MtCmdPwrLimitTblUpdate(
 	INT32 ret = 0;
 	struct _CMD_ATTRIBUTE attr = {0};
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+	pAd->CommonCfg.SKUBandIdx = u1BandIdx;
+	pAd->CommonCfg.SKUChannelBand = u1ChannelBand;
+	pAd->CommonCfg.SKUControlChannel = u1ControlChannel;
+	pAd->CommonCfg.SKUCentralChannel = u1CentralChannel;
 	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
 			 "u1Type: %d, u1BandIdx: %d, u1ChannelBand: %d, u1ControlChannel: %d, u1CentralChannel: %d\n",
 			 u1Type, u1BandIdx, u1ChannelBand, u1ControlChannel, u1CentralChannel);

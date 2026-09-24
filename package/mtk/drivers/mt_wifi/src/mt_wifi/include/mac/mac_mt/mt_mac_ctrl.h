@@ -115,6 +115,8 @@ INT32 TxSTypeCtlPerPkt(struct _RTMP_ADAPTER *pAd, UINT32 Pid, UINT8 Format,
 					   BOOLEAN DumpTxSReport, ULONG DumpTxSReportTimes);
 INT32 ParseTxSPacket_v1(struct _RTMP_ADAPTER *pAd, UINT32 Pid, UINT8 Format, CHAR *Data);
 INT32 ParseTxSPacket_v2(struct _RTMP_ADAPTER *pAd, UINT32 Pid, UINT8 Format, CHAR *Data);
+INT32 mtfParseTxSPacket(struct _RTMP_ADAPTER *pAd, UINT32 Pid, UINT8 Format, CHAR *Data);
+
 INT32 BcnTxSHandler(struct _RTMP_ADAPTER *pAd, CHAR *Data, UINT32 Priv);
 
 INT32 AddTxSTypePerPktType(struct _RTMP_ADAPTER *pAd, UINT8 Type, UINT8 Subtype,

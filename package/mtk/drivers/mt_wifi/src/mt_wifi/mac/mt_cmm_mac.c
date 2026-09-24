@@ -216,11 +216,12 @@ INT mt_sf_mlme_hw_tx(RTMP_ADAPTER *pAd, UCHAR *tmac_info, MAC_TX_INFO *info, HTT
 	UINT16 free_cnt = 1;
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
 	UINT8 tx_hw_hdr_len = cap->tx_hw_hdr_len;
+	struct wifi_dev *wdev = tx_blk->wdev;
 #ifdef RT_BIG_ENDIAN
 	PHEADER_802_11 pHeader_802_11;
 	pHeader_802_11 = (HEADER_802_11 *)(tx_blk->pSrcBufHeader + cap->tx_hw_hdr_len);
 #endif
-	asic_write_tmac_info_fixed_rate(pAd, tmac_info, info, transmit);
+	asic_write_tmac_info_fixed_rate(pAd, wdev, tmac_info, info, transmit);
 #ifdef RT_BIG_ENDIAN
 	RTMPFrameEndianChange(pAd, (PUCHAR)pHeader_802_11, DIR_WRITE, FALSE);
 	MTMacInfoEndianChange(pAd, tmac_info, TYPE_TMACINFO, sizeof(TMAC_TXD_L));
@@ -265,6 +266,7 @@ VOID write_tmac_info_offload_pkt(
 	ULONG frmLen)
 {
 	MAC_TX_INFO mac_info;
+	UCHAR BandIdx = 0;
 
 	NdisZeroMemory((UCHAR *)&mac_info, sizeof(mac_info));
 
@@ -305,21 +307,29 @@ VOID write_tmac_info_offload_pkt(
 
 	mac_info.Preamble = LONG_PREAMBLE;
 	mac_info.IsAutoRate = FALSE;
+	BandIdx = HcGetBandByWdev(wdev);
 
-	if (pAd->CommonCfg.bSeOff != TRUE) {
-		if (HcGetBandByWdev(wdev) == BAND0) {
+	if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+		if (BandIdx == BAND0) {
 			if ((pAd->CommonCfg.CCKTxStream[BAND0] == 1) &&
 				(type == FC_TYPE_MGMT) && (sub_type == SUBTYPE_BEACON))
 				mac_info.AntPri = 0x0;
 			else
 				mac_info.AntPri = BAND0_SPE_IDX;
+		} else if (BandIdx == BAND1) {
+			if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 1) &&
+				(type == FC_TYPE_MGMT) && (sub_type == SUBTYPE_BEACON))
+				mac_info.AntPri = 0x0;
+			else if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 2) &&
+				(type == FC_TYPE_MGMT) && (sub_type == SUBTYPE_BEACON))
+				mac_info.AntPri = BAND1_SPE_IDX_2STS;
+			else
+				mac_info.AntPri = BAND1_SPE_IDX;
 		}
-		else if (HcGetBandByWdev(wdev) == BAND1)
-			mac_info.AntPri = BAND1_SPE_IDX;
 	}
 
 	NdisZeroMemory(tmac_buf, sizeof(TMAC_TXD_L));
-	asic_write_tmac_info_fixed_rate(pAd, tmac_buf, &mac_info, TransmitSet);
+	asic_write_tmac_info_fixed_rate(pAd, wdev, tmac_buf, &mac_info, TransmitSet);
 
 #ifdef RT_BIG_ENDIAN
 	if (IS_HIF_TYPE(pAd, HIF_MT))

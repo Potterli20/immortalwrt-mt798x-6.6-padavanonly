@@ -21,7 +21,7 @@
 #include "wed.h"
 #include "warp.h"
 #include "warp_hw.h"
-#include <linux/stdarg.h>
+#include <stdarg.h>
 #include "mcu/warp_woif.h"
 #include "mcu/warp_wo.h"
 #include "warp_meminfo_list.h"
@@ -579,8 +579,8 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 		if (ctrl->sw_conf[idx].txbm.max_group)
 			seq_printf(seq, "\tMaximum total size: %d\n", ctrl->sw_conf[idx].txbm.max_group);
 		seq_printf(seq, "\tRX WDMA ring depth: %d\n", ctrl->sw_conf[idx].rx_wdma_ring_depth);
-		seq_printf(seq, "\t\tDynamic TXBM enabled: %s\n", (ctrl->sw_conf[idx].txbm.enable == true) ? "true" : "false");
-		if (ctrl->sw_conf[idx].txbm.enable == true) {
+		seq_printf(seq, "\t\tDynamic TXBM enabled: %s\n", (ctrl->sw_conf[idx].txbm.enable) ? "True" : "False");
+		if (ctrl->sw_conf[idx].txbm.enable) {
 			seq_printf(seq, "\t\tMaximum group number: %d \n", ctrl->sw_conf[idx].txbm.max_group);
 			seq_printf(seq, "\t\tExtend/Shrink quota: %d \n", ctrl->sw_conf[idx].txbm.alt_quota);
 			seq_printf(seq, "\t\tBuffer low threshold: %d\n", ctrl->sw_conf[idx].txbm.buf_low);
@@ -588,14 +588,13 @@ warp_proc_conf_show(struct seq_file *seq, void *v)
 			seq_printf(seq, "\t\tBudge refill watermark: %d\n", ctrl->sw_conf[idx].txbm.budget_refill_watermark);
 			seq_printf(seq, "\t\tBudge limit: %d (Dynamically applied)\n", ctrl->sw_conf[idx].txbm.budget_limit);
 		}
-
 		seq_printf(seq, "\t[ RXBM ]\n");
 		if (ctrl->sw_conf[idx].rxbm.vld_group)
 			seq_printf(seq, "\tInitial total size: %d\n", ctrl->sw_conf[idx].rxbm.vld_group);
 		if (ctrl->sw_conf[idx].rxbm.max_group)
 			seq_printf(seq, "\tMaximum total size: %d\n", ctrl->sw_conf[idx].rxbm.max_group);
 		seq_printf(seq, "\tTX WDMA ring depth: %d\n", ctrl->sw_conf[idx].tx_wdma_ring_depth);
-		seq_printf(seq, "\t\tDynamic RXBM enabled: %s\n", (ctrl->sw_conf[idx].rxbm.enable == true) ? "true" : "false");
+		seq_printf(seq, "\t\tDynamic RXBM enabled: %s\n", (ctrl->sw_conf[idx].rxbm.enable) ? "True" : "False");
 		if (ctrl->sw_conf[idx].rxbm.enable) {
 			seq_printf(seq, "\t\tMaximum group number: %d \n", ctrl->sw_conf[idx].rxbm.max_group);
 			seq_printf(seq, "\t\tExtend/Shrink quota: %d \n", ctrl->sw_conf[idx].rxbm.alt_quota);
@@ -1168,105 +1167,118 @@ error:
 /*
  * global file operation
 */
-static const struct proc_ops proc_warp_trace_fops = {
-	.proc_open = warp_proc_trace_open,
-	.proc_write  = warp_proc_trace_write,
-	.proc_read	= seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_trace_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_trace_open,
+	.write  = warp_proc_trace_write,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_conf_fops = {
-	.proc_open = warp_proc_conf_open,
-	.proc_write  = warp_proc_conf_write,
-	.proc_read	= seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_conf_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_conf_open,
+	.write  = warp_proc_conf_write,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_cr_fops = {
-	.proc_open = warp_proc_cr_open,
-	.proc_write  = warp_proc_cr_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_cr_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_cr_open,
+	.write  = warp_proc_cr_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_stat_fops = {
-	.proc_open = warp_proc_state_open,
-	.proc_write  = warp_proc_state_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_stat_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_state_open,
+	.write  = warp_proc_state_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_cfg_fops = {
-	.proc_open = warp_proc_cfg_open,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_cfg_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_cfg_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_tx_fops = {
-	.proc_open = warp_proc_tx_open,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_tx_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_tx_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_warp_rx_fops = {
-	.proc_open = warp_proc_rx_open,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_warp_rx_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_rx_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_wed_fops = {
-	.proc_open = wed_proc_open,
-	.proc_write  = wed_proc_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_wed_fops = {
+	.owner = THIS_MODULE,
+	.open = wed_proc_open,
+	.write  = wed_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops  proc_wdma_fops = {
-	.proc_open = wdma_proc_open,
-	.proc_write  = wdma_proc_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_wdma_fops = {
+	.owner = THIS_MODULE,
+	.open = wdma_proc_open,
+	.write  = wdma_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_ctrl_fops = {
-	.proc_open = warp_proc_ctrl_open,
-	.proc_write  = warp_proc_ctrl_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_ctrl_fops = {
+	.owner = THIS_MODULE,
+	.open = warp_proc_ctrl_open,
+	.write  = warp_proc_ctrl_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 
-static const struct proc_ops proc_rxbm_fops = {
-	.proc_open = rxbm_proc_open,
-	.proc_write  = rxbm_proc_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_rxbm_fops = {
+	.owner = THIS_MODULE,
+	.open = rxbm_proc_open,
+	.write  = rxbm_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_wo_fops = {
-	.proc_open = wo_proc_open,
-	.proc_write  = wo_proc_write,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_wo_fops = {
+	.owner = THIS_MODULE,
+	.open = wo_proc_open,
+	.write  = wo_proc_write,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static const struct proc_ops proc_woee_fops = {
-	.proc_open = wo_ee_proc_open,
-	.proc_read  = seq_read,
-	.proc_lseek = seq_lseek,
-	.proc_release = single_release,
+static const struct file_operations proc_woee_fops = {
+	.owner = THIS_MODULE,
+	.open = wo_ee_proc_open,
+	.read  = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 

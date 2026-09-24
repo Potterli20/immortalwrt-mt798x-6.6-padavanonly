@@ -52,6 +52,13 @@ struct l1profile_info_t {
 	struct dev_type_name_map_t dev_name_map[MAX_INT_TYPES + 1];
 	RTMP_STRING single_sku_path[L2PROFILE_PATH_LEN];
 	RTMP_STRING bf_sku_path[L2PROFILE_PATH_LEN];
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+	RTMP_STRING groupPrek6G_bin_name[L2PROFILE_PATH_LEN];
+	RTMP_STRING groupPrek5G_bin_name[L2PROFILE_PATH_LEN];
+#endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	RTMP_STRING dpd_bin_name[L2PROFILE_PATH_LEN];
+#endif
 };
 
 struct l1profile_attribute_t {
@@ -167,7 +174,15 @@ static struct l1profile_info_t l1profile[MAX_NUM_OF_INF] = {
 			{INT_P2P, INF_P2P_DEV_NAME},
 			{INT_MONITOR, INF_MONITOR_DEV_NAME},
 			{INT_MSTA, INF_MSTA_DEV_NAME},
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+			{0},
+			{0},
+#endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+			{0},
+#endif
 			{0}
+
 		},
 		{SINGLE_SKU_TABLE_FILE_NAME},
 		{BF_SKU_TABLE_FILE_NAME}
@@ -182,6 +197,13 @@ static struct l1profile_info_t l1profile[MAX_NUM_OF_INF] = {
 			{INT_P2P, SECOND_INF_P2P_DEV_NAME},
 			{INT_MONITOR, SECOND_INF_MONITOR_DEV_NAME},
 			{INT_MSTA, SECOND_INF_MSTA_DEV_NAME},
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+			{0},
+			{0},
+#endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+			{0},
+#endif
 			{0}
 		},
 		{SINGLE_SKU_TABLE_FILE_NAME},
@@ -198,6 +220,13 @@ static struct l1profile_info_t l1profile[MAX_NUM_OF_INF] = {
 			{INT_P2P, THIRD_INF_P2P_DEV_NAME},
 			{INT_MONITOR, THIRD_INF_MONITOR_DEV_NAME},
 			{INT_MSTA, THIRD_INF_MSTA_DEV_NAME},
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+			{0},
+			{0},
+#endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+			{0},
+#endif
 			{0}
 		},
 		{SINGLE_SKU_TABLE_FILE_NAME},
@@ -249,6 +278,60 @@ static NDIS_STATUS l1set_profile_path(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STR
 	return retVal;
 }
 
+
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+static NDIS_STATUS l1set_DPDOnDemand_bin(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STRING *value)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+	RTMP_STRING *target = NULL;
+	UINT8 str_len;
+	INT ret;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+	target = l1profile[dev_idx].dpd_bin_name;
+
+	str_len = strlen(value);
+	if (strcmp(target, value) && (str_len < L2PROFILE_PATH_LEN)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"DPD Pre Cal binary update from %s to %s\n", target, value);
+
+		ret = snprintf(target, L2PROFILE_PATH_LEN, "%s", value);
+		if (os_snprintf_error(L2PROFILE_PATH_LEN, ret)) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"target snprintf error!!!\n");
+			retVal = NDIS_STATUS_FAILURE;
+		}
+		*(target+str_len) = '\0';
+	} else
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "eeprom binary remain %s\n", target);
+
+	return retVal;
+}
+
+NDIS_STATUS l1get_dpd_bin_file(RTMP_ADAPTER *pAd, RTMP_STRING *src)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+
+	strcpy(src, l1profile[dev_idx].dpd_bin_name);
+	return retVal;
+}
+#endif
 
 static NDIS_STATUS l1set_eeprom_bin(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STRING *value)
 {
@@ -314,6 +397,115 @@ static NDIS_STATUS l1set_eeprom_offset(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_ST
 
 	return retVal;
 }
+
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+static NDIS_STATUS l1set_GroupPrek6G_bin(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STRING *value)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+	RTMP_STRING *target = NULL;
+	UINT8 str_len;
+	INT ret;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+	target = l1profile[dev_idx].groupPrek6G_bin_name;
+
+	str_len = strlen(value);
+	if (strcmp(target, value) && (str_len < L2PROFILE_PATH_LEN)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Group Prek binary update from %s to %s\n", target, value);
+
+		ret = snprintf(target, L2PROFILE_PATH_LEN, "%s", value);
+		if (os_snprintf_error(L2PROFILE_PATH_LEN, ret)) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"target snprintf error!!!\n");
+			retVal = NDIS_STATUS_FAILURE;
+		}
+		*(target+str_len) = '\0';
+	} else
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Group Prek binary remain %s\n", target);
+
+	return retVal;
+}
+
+NDIS_STATUS l1get_GroupPrek6G_bin(RTMP_ADAPTER *pAd, RTMP_STRING *src)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+
+	strcpy(src, l1profile[dev_idx].groupPrek6G_bin_name);
+	return retVal;
+}
+
+static NDIS_STATUS l1set_GroupPrek5G_bin(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STRING *value)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+	RTMP_STRING *target = NULL;
+	UINT8 str_len;
+	INT ret;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+	target = l1profile[dev_idx].groupPrek5G_bin_name;
+
+	str_len = strlen(value);
+	if (strcmp(target, value) && (str_len < L2PROFILE_PATH_LEN)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Group Prek binary update from %s to %s\n", target, value);
+
+		ret = snprintf(target, L2PROFILE_PATH_LEN, "%s", value);
+		if (os_snprintf_error(L2PROFILE_PATH_LEN, ret)) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"target snprintf error!!!\n");
+			retVal = NDIS_STATUS_FAILURE;
+		}
+		*(target+str_len) = '\0';
+	} else
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Group Prek binary remain %s\n", target);
+
+	return retVal;
+}
+
+NDIS_STATUS l1get_GroupPrek5G_bin(RTMP_ADAPTER *pAd, RTMP_STRING *src)
+{
+	INT dev_idx;
+	INT retVal = NDIS_STATUS_SUCCESS;
+
+	dev_idx = get_dev_config_idx(pAd);
+	if ((dev_idx < 0) || (dev_idx >= MAX_NUM_OF_INF)) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"invalid dev_idx(%d)!\n", dev_idx);
+		retVal = NDIS_STATUS_FAILURE;
+		return retVal;
+	}
+
+	strcpy(src, l1profile[dev_idx].groupPrek5G_bin_name);
+	return retVal;
+}
+#endif
+
 
 
 static NDIS_STATUS l1set_eeprom_size(RTMP_ADAPTER *pAd, UINT_32 extra, RTMP_STRING *value)
@@ -711,6 +903,13 @@ static struct l1profile_attribute_t l1profile_attributes[] = {
 #endif	/* CONFIG_STA_SUPPORT */
 	{ {"single_sku_path"},		0,			l1set_single_sku_path},
 	{ {"bf_sku_path"},		0,			l1set_bf_sku_path},
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+	{ {"GroupPrek6GFile"},          0,                              l1set_GroupPrek6G_bin},
+	{ {"GroupPrek5GFile"},          0,                              l1set_GroupPrek5G_bin},
+#endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	{ {"DPDOnDemandFile"},		0,				l1set_DPDOnDemand_bin},
+#endif
 };
 
 #ifdef MULTI_PROFILE
@@ -1428,6 +1627,12 @@ void announce_802_3_packet(
 #if defined(WH_EZ_SETUP) && (defined(CONFIG_WIFI_PKT_FWD) || defined(CONFIG_WIFI_PKT_FWD_MODULE))
 	BOOLEAN bypass_rx_fwd = FALSE;
 #endif
+#ifdef APCLI_AS_WDS_STA_SUPPORT
+	UCHAR apcli_idx = 0;
+#ifdef DBDC_MODE
+	UINT16 pkt_wcid;
+#endif /*DBDC_MODE*/
+#endif /*APCLI_AS_WDS_STA_SUPPORT*/
 
 	pAd =  (RTMP_ADAPTER *)pAdSrc;
 	napi = pAd->tr_ctl.napi;
@@ -1443,7 +1648,19 @@ void announce_802_3_packet(
 #endif /* CONFIG_WIFI_PREFETCH_RXDATA */
 
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-		if (pAd->StaCfg[0].wdev.wds_enable == 0) {
+#ifdef DBDC_MODE
+		pkt_wcid = RTMP_GET_PACKET_WCID(pPacket);
+		if (IS_WCID_VALID(pAd, pkt_wcid)) {
+			MAC_TABLE_ENTRY *pMacEntry = &pAd->MacTab.Content[pkt_wcid];
+			if (pMacEntry && IS_ENTRY_PEER_AP(pMacEntry) && pMacEntry->wdev && pMacEntry->wdev->wdev_type == WDEV_TYPE_STA) {
+				if (pMacEntry->func_tb_idx < pAd->ApCfg.ApCliNum) {
+					apcli_idx = pMacEntry->func_tb_idx;
+				}
+			}
+		}
+#endif /*DBDC_MODE*/
+		if (pAd->StaCfg[apcli_idx].wdev.wds_enable == 0 ||
+			pAd->CommonCfg.bApcliASWDSSTADisabled) {
 #endif /*APCLI_AS_WDS_STA_SUPPORT*/
 
 #ifdef CONFIG_AP_SUPPORT
@@ -1567,7 +1784,7 @@ void announce_802_3_packet(
 #endif /* CONFIG_RA_CLASSIFIER */
 
 #ifdef DYNAMIC_VLAN_SUPPORT
-	{
+	if (!pAd->CommonCfg.bDynamicVlanDisabled) {
 		USHORT Wcid = RTMP_GET_PACKET_WCID(pPacket);
 		if (VALID_UCAST_ENTRY_WCID(pAd, Wcid)) {
 			MAC_TABLE_ENTRY *pMacEntry = &pAd->MacTab.Content[Wcid];

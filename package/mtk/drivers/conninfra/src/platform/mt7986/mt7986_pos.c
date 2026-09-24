@@ -497,11 +497,24 @@ int consys_emi_set_remapping_reg(void)
 	if (addr_info->emi_ap_phy_base != 0)
 		CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_REMAP_MCU_EMI,
 									addr_info->emi_ap_phy_base, 0, 16, 20);
-	/*
-	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_REMAP_WF_PERI,
-									0x300D0000, 0, 16, 20);
-	*/
 
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_EMI_REGION_1,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_EMI_REGION_2,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_REMAP_WF_PERI,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION1,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION2,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION3,
+									0x3C000000, 0, 16, 20);
 	return 0;
 }
 
@@ -1030,7 +1043,8 @@ static int _connsys_a_die_sw_cntl(enum sys_spi_subsystem subsystem, unsigned cha
 	if (conn_hw_env[adie_idx].valid && (conn_hw_env[adie_idx].adie_id == 0x7976)) {
 		if ((conn_hw_env[adie_idx].adie_hw_version == 0x8A00)
 			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8A10)
-			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8B00)){
+			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8B00)
+			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8C10)) {
 			consys_spi_write_nolock(subsystem, ATOP_RG_TOP_THADC_00, 0x4A563B00);
 			consys_spi_write_nolock(subsystem, ATOP_RG_XO_01, 0x1D59080F);
 			consys_spi_write_nolock(subsystem, ATOP_RG_XO_03, 0x34C00FE0);
@@ -1682,9 +1696,10 @@ bool _is_wmcpu_run_allow(void)
 				(band0_pa_type == iPAeLNA) ||
 				(band1_pa_type == iPAiLNA) ||
 				(band1_pa_type == iPAeLNA)) {
-				if ((conn_hw_env[0].valid &&
+				if (conn_hw_env[0].valid &&
 					(conn_hw_env[0].adie_id == 0x7976) &&
-					(conn_hw_env[0].adie_hw_version == 0x8A20))) {
+					((conn_hw_env[0].adie_hw_version == 0x8A20) ||
+					 (conn_hw_env[0].adie_hw_version == 0x8C00))) {
 					printk(RED("Wrong EEPROM PA type for this sku!"));
 					return false;
 				}
@@ -1739,8 +1754,11 @@ int consys_conn_wmcpu_sw_reset(bool bassert)
 	if (bassert) {
 		CONSYS_CLR_BIT(REG_CONN_INFRA_RGU_ADDR + WFSYS_CPU_SW_RST_B, 0x1);
 	} else {
-		if (_is_wmcpu_run_allow())
+		if (_is_wmcpu_run_allow()) {
+			/* clear to 0 for MCU read sku protection */
+			CONSYS_REG_WRITE(REG_CONN_INFRA_SYSRAM_ADDR + SYSRAM_BASE_ADDR, 0x0);
 			CONSYS_SET_BIT(REG_CONN_INFRA_RGU_ADDR + WFSYS_CPU_SW_RST_B, 0x1);
+		}
 	}
 
 	return 0;

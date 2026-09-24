@@ -365,6 +365,26 @@ VOID sae_cfg_deinit(
 		else
 			delete_sae_instance(&pSaeCfg->sae_ins[i]);
 }
+/***************************************/
+/*sae_instance delete when no data idle
+ *  * count is greater then assoc deadline timeout*/
+/***************************************/
+VOID delete_saeinstance_entry(
+	IN SAE_CFG * pSaeCfg,
+	IN MAC_TABLE_ENTRY * pEntry)
+{
+	UINT32 i;
+	SAE_INSTANCE *pSaeIns = NULL;
+	UINT16 wtbl_max_num = WTBL_MAX_NUM(pSaeCfg->pAd);
+
+	for (i = 0; i < wtbl_max_num; i++) {
+		pSaeIns = &pSaeCfg->sae_ins[i];
+		if (NdisEqualMemory(pSaeIns->peer_mac, pEntry->Addr, MAC_ADDR_LEN)) {
+			delete_sae_instance(pSaeIns);
+			break;
+		}
+	}
+}
 
 /*******************************/
 /* sae insntance operation related api*/
@@ -859,7 +879,8 @@ UCHAR sae_handle_auth(
 	IN USHORT auth_seq,
 	IN USHORT auth_status,
 	OUT UCHAR **pmk,
-	OUT UCHAR *sae_conn_type)
+	OUT UCHAR *sae_conn_type,
+	OUT UCHAR *Instance_created)
 {
 #define DATA_SIZE 80
 	USHORT res = MLME_SUCCESS;
@@ -867,10 +888,14 @@ UCHAR sae_handle_auth(
 	SAE_INSTANCE *pSaeIns = search_sae_instance(pSaeCfg, Fr->Hdr.Addr1, Fr->Hdr.Addr2);
 	UINT8 is_token_req = FALSE;
 	UCHAR *token = NULL;
+	struct wifi_dev *wdev = NULL;
 	UINT32 token_len = 0;
 	UCHAR data[DATA_SIZE];
 	UINT32 data_len = 0;
+	UINT32 allow_reuse = 0;
 	UCHAR *pos;
+	if (pSaeIns)
+		wdev = wdev_search_by_address(pAd, pSaeIns->own_mac);
 
 	if ((sae_pk->sae_pk_test_ctrl & SAE_PK_CFG_TAKE_H2E_AS_SAEPK)
 		&& auth_status == MLME_SAE_HASH_TO_ELEMENT)
@@ -1068,7 +1093,7 @@ UCHAR sae_handle_auth(
 			SAE_INSTANCE *pPreSaeIns = pSaeIns;
 			pSaeIns = create_sae_instance(pAd, pSaeCfg, Fr->Hdr.Addr1, Fr->Hdr.Addr2,
 						Fr->Hdr.Addr3, psk, pwd_id_list_head, sae_cap->pwd_id_only);
-
+			*Instance_created = 1;
 			if (!pSaeIns) {
 				res = MLME_UNSPECIFY_FAIL;
 				break;
@@ -1080,7 +1105,30 @@ UCHAR sae_handle_auth(
 			if (pPreSaeIns)
 				pPreSaeIns->same_mac_ins = pSaeIns;
 		}
-
+#ifdef CONFIG_AP_SUPPORT
+#ifndef RT_CFG80211_SUPPORT
+	if (pSaeIns
+	&& pSaeIns->state == SAE_COMMITTED && wdev) {
+		if (wdev->wdev_type == WDEV_TYPE_AP) {
+		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO,
+			"Instance already present, reuse pwe\n");
+		SET_NOTHING_STATE(pSaeIns);
+		allow_reuse = 1;
+		}
+	}
+#else
+	if (pSaeIns
+	&& pSaeIns->state == SAE_COMMITTED
+	&& pAd->CommonCfg.bcfg80211Disabled && wdev) {
+		if (wdev->wdev_type == WDEV_TYPE_AP) {
+		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO,
+			"Instance already present, reuse pwe\n");
+		SET_NOTHING_STATE(pSaeIns);
+		allow_reuse = 1;
+		}
+	}
+#endif
+#endif
 		if (IS_H2E_SAE_COMMIT_STATUS_SUCCESS(auth_status) && sae_cap->gen_pwe_method != PWE_LOOPING_ONLY)
 			pSaeIns->connect_type = (auth_status == MLME_SAE_HASH_TO_ELEMENT) ? SAE_CONNECTION_TYPE_H2E : SAE_CONNECTION_TYPE_SAEPK;
 
@@ -1131,7 +1179,7 @@ UCHAR sae_handle_auth(
 			pSaeIns = NULL;
 			break;
 		} else if (res == SAE_SILENTLY_DISCARDED) {
-			sae_set_retransmit_timer(pSaeIns);
+			delete_sae_instance(pSaeIns);
 			goto unfinished;
 		} else if (res != MLME_SUCCESS) {
 			if ((pSaeIns->state == SAE_NOTHING) || (pSaeIns->state == SAE_COMMITTED)) {
@@ -1194,7 +1242,7 @@ UCHAR sae_handle_auth(
 			break;
 		}
 
-		if (!token && sae_using_anti_clogging(pSaeCfg)) {
+		if (!token && sae_using_anti_clogging(pSaeCfg) && !allow_reuse) {
 			sae_build_token_req(pAd, pSaeIns, data, &data_len);
 			res = MLME_ANTI_CLOGGING_TOKEN_REQ;
 			break;
@@ -1203,7 +1251,7 @@ UCHAR sae_handle_auth(
 		if (pSaeIns->connect_type == SAE_CONNECTION_TYPE_SAEPK)
 			pSaeIns->sae_pk_ptr = sae_pk;
 
-		res = sae_sm_step(pAd, pSaeIns, auth_seq);
+		res = sae_sm_step(pAd, pSaeIns, auth_seq, allow_reuse);
 		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_DEBUG,
 				 " SAE_COMMIT_SEQ, res(sae_sm_step) = %d\n", res);
 		break;
@@ -1221,7 +1269,7 @@ UCHAR sae_handle_auth(
 			pSaeIns = NULL;
 			goto unfinished;
 		}
-		if (pSaeIns->state == SAE_CONFIRMED || pSaeIns->state == SAE_ACCEPTED)
+		if (pSaeIns->state == SAE_COMMITTED || pSaeIns->state == SAE_CONFIRMED || pSaeIns->state == SAE_ACCEPTED)
 			res = sae_parse_confirm(pSaeIns, msg, msg_len);
 
 		/* Comment: It is not clear in spec about how to handle if the confirm be verified fail. */
@@ -1248,7 +1296,7 @@ UCHAR sae_handle_auth(
 			pSaeIns->peer_rejected_group_len = 0;
 		}
 
-		res = sae_sm_step(pAd, pSaeIns, auth_seq);
+		res = sae_sm_step(pAd, pSaeIns, auth_seq, allow_reuse);
 		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO,
 			" SAE_CONFIRM_SEQ, res(sae_sm_step) = %d\n", res);
 		break;
@@ -1284,6 +1332,7 @@ UCHAR sae_handle_auth(
 	}
 unfinished:
 	*pmk = NULL;
+	*Instance_created = 0;
 	if (!pSaeIns)
 		return FALSE;
 	else
@@ -1294,7 +1343,8 @@ unfinished:
 USHORT sae_sm_step(
 	IN RTMP_ADAPTER *pAd,
 	IN SAE_INSTANCE *pSaeIns,
-	IN USHORT auth_seq)
+	IN USHORT auth_seq,
+	IN UINT32 allow_reuse)
 {
 #define F(a, b) (a << 2 | b)
 	USHORT res = MLME_SUCCESS;
@@ -1309,10 +1359,11 @@ USHORT sae_sm_step(
 		  * Sync counter shall be set to zero and the t0 (retransmission) timer shall be set. The protocol instance
 		  * transitions to Confirmed state.
 		  */
-		res = sae_prepare_commit(pSaeIns);
-
-		if (res != MLME_SUCCESS)
-			return res;
+		if (!allow_reuse) {
+			res = sae_prepare_commit(pSaeIns);
+			if (res != MLME_SUCCESS)
+				return res;
+		}
 
 		if (wpa3_test_ctrl == 2) {
 			res = sae_process_commit(pSaeIns);
@@ -1341,10 +1392,7 @@ USHORT sae_sm_step(
 			sae_set_retransmit_timer(pSaeIns);
 			break;
 		}
-
-		if (sae_send_auth_confirm(pAd, pSaeIns) == FALSE)
-			return SAE_SILENTLY_DISCARDED;
-		SET_CONFIRMED_STATE(pSaeIns);
+		SET_COMMITTED_STATE(pSaeIns);
 		pSaeIns->sync = 0;
 		sae_set_retransmit_timer(pSaeIns);
 		break;
@@ -1372,9 +1420,12 @@ USHORT sae_sm_step(
 		  * the peer, and set the t0 (retransmission) timer.
 		  * comments: In COMMITTED state, it's still awaiting for peer commit msg
 		  */
-		if (sae_send_auth_commit(pAd, pSaeIns) == FALSE)
+		if (sae_send_auth_confirm(pAd, pSaeIns) == FALSE) {
 			return SAE_SILENTLY_DISCARDED;
-		sae_set_retransmit_timer(pSaeIns);
+		} else {
+			SET_CONFIRMED_STATE(pSaeIns);
+			return sae_sm_step(pAd, pSaeIns, auth_seq, allow_reuse);
+		}
 		break;
 
 	case F(SAE_CONFIRMED, SAE_COMMIT_SEQ):
@@ -1511,6 +1562,20 @@ UCHAR sae_get_pmk_cache(
 	return TRUE;
 }
 
+static int comeback_token_hash(SAE_CFG *SaeCfg, SAE_INSTANCE *pSaeIns,
+	UINT32 *idx)
+{
+	UINT8 hash[SHA256_DIGEST_SIZE] = {0};
+
+	RT_HMAC_SHA256(SaeCfg->token_key, SAE_TOKEN_KEY_LEN, pSaeIns->peer_mac,
+		MAC_ADDR_LEN, hash, SHA256_DIGEST_SIZE);
+	if (hash[0] <= 0 || hash[0] >= sizeof(SaeCfg->comeback_pending_idx))
+		return -1;
+	*idx = hash[0];
+	return 0;
+}
+
+
 static VOID sae_renew_token_key(
 	IN SAE_CFG * pSaeCfg)
 {
@@ -1525,6 +1590,9 @@ static VOID sae_renew_token_key(
 		pSaeCfg->last_token_key_time = cur_time;
 		for (i = 0; i < SAE_TOKEN_KEY_LEN; i++)
 			pSaeCfg->token_key[i] = RandomByte(pSaeCfg->pAd);
+
+		pSaeCfg->comeback_idx = 0;
+		NdisZeroMemory(pSaeCfg->comeback_pending_idx, sizeof(pSaeCfg->comeback_pending_idx));
 	}
 }
 
@@ -1536,6 +1604,8 @@ UCHAR sae_build_token_req(
 {
 	SAE_CFG *sae_cfg = pSaeIns->pParentSaeCfg;
 	UINT32 len = 0;
+	UINT32 p_idx;
+	UINT32 token_idx;
 
 #ifdef RT_BIG_ENDIAN
 	USHORT sae_group = 0;
@@ -1553,6 +1623,15 @@ UCHAR sae_build_token_req(
 		len += 3;
 	}
 	sae_renew_token_key(sae_cfg);
+	if (comeback_token_hash(sae_cfg, pSaeIns, &p_idx) < 0)
+		return FALSE;
+
+	token_idx = sae_cfg->comeback_pending_idx[p_idx];
+	if (!token_idx) {
+		sae_cfg->comeback_idx++;
+		token_idx = sae_cfg->comeback_idx;
+		sae_cfg->comeback_pending_idx[p_idx] = token_idx;
+	}
 	RT_HMAC_SHA256(sae_cfg->token_key, SAE_TOKEN_KEY_LEN, pSaeIns->peer_mac,
 					MAC_ADDR_LEN, token_req + len, SHA256_DIGEST_SIZE);
 	*token_req_len = SHA256_DIGEST_SIZE + len;
@@ -1568,15 +1647,25 @@ UCHAR sae_check_token(
 {
 	SAE_CFG *sae_cfg = pSaeIns->pParentSaeCfg;
 	UCHAR token[SHA256_DIGEST_SIZE] = {0};
+	UINT32 token_idx;
+	UINT32 idx;
 
-	if (peer_token_len != SHA256_DIGEST_SIZE)
+	if (peer_token_len != SHA256_DIGEST_SIZE ||
+		comeback_token_hash(sae_cfg, pSaeIns, &idx) < 0)
 		return FALSE;
 
+	token_idx = sae_cfg->comeback_pending_idx[idx];
+	if (token_idx == 0) {
+		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR,
+			 "==>:  %s()\n", __func__);
+		return FALSE;
+	}
 	RT_HMAC_SHA256(sae_cfg->token_key, SAE_TOKEN_KEY_LEN, pSaeIns->peer_mac, MAC_ADDR_LEN, token, SHA256_DIGEST_SIZE);
 
-	if (RTMPEqualMemory(token, peer_token, SHA256_DIGEST_SIZE))
+	if (RTMPEqualMemory(token, peer_token, SHA256_DIGEST_SIZE)) {
+		sae_cfg->comeback_pending_idx[idx] = 0; /* invalidate used token */
 		return TRUE;
-
+	}
 	return FALSE;
 
 }
@@ -1699,6 +1788,9 @@ USHORT sae_parse_commit(
 	/* Conditional Rejected Groups element */
 	if (pSaeIns->connect_type)
 		res = sae_parse_rejected_groups(pSaeIns, &pos, end);
+
+	if (res != MLME_SUCCESS)
+		return res;
 
 	/* Optional Anti-Clogging Token Container element */
 	if (pSaeIns->connect_type)
@@ -1925,12 +2017,16 @@ USHORT sae_parse_rejected_groups(
 	IN UCHAR **pos,
 	IN UCHAR *end)
 {
-	UINT32 len;
+	UINT32 len = 0;
 
-	if (!is_sae_rejected_group_element(*pos, end, &len))
+	if (!is_sae_rejected_group_element(*pos, end, &len)) {
+		if (len < 1 && (*pos)[2] == EID_EXT_REJECTED_GROUP)
+			return MLME_UNSPECIFY_FAIL;
+		else
 			return MLME_SUCCESS;
+	}
 
-	if (len % 2) {
+	if (len < 1 || len % 2) {
 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR,
 			 "rejected groups len(no include EID_EXT_REJECTED_GROUP) should be 2n bytes\n");
 		return MLME_UNSPECIFY_FAIL;
@@ -2435,8 +2531,10 @@ USHORT sae_parse_confirm(
 			peer_send_confirm, pSaeIns->last_peer_sc);
 		pSaeIns->peer_send_confirm = peer_send_confirm;
 		/* return SAE_SILENTLY_DISCARDED; */
-	} else
+	} else {
 		pSaeIns->peer_send_confirm = peer_send_confirm;
+		pSaeIns->last_peer_sc = peer_send_confirm;
+	}
 
 	/* send-confirm */
 	if (end - pos < pSaeIns->kck_kek_len)
@@ -4918,6 +5016,7 @@ USHORT sae_reflection_check_ecc(
 		return MLME_SUCCESS;
 	else
 		return SAE_SILENTLY_DISCARDED;
+
 }
 
 USHORT sae_reflection_check_ffc(

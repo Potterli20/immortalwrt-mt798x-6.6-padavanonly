@@ -638,6 +638,8 @@ typedef struct __CMD_RTPRIV_IOCTL_80211_CONNECT {
 	BOOLEAN FlgIs8021x;
 	UINT8 AuthType;
 
+	UINT32 AkmSuite;
+	UINT32 Pairwise;
 	UINT8 PairwiseEncrypType;
 	UINT8 GroupwiseEncrypType;
 

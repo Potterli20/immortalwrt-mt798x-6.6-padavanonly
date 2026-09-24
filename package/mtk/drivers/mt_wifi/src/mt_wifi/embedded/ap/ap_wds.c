@@ -463,13 +463,13 @@ MAC_TABLE_ENTRY *MacTableInsertWDSEntry(
 
 #ifdef DOT11_HE_AX
 			if (WMODE_CAP_AX(phy_mode)) {
-				struct he_ies he_ie;
+				struct he_ies he_ie = {0};
 				int i;
 
 				NdisZeroMemory(&he_ie, sizeof(he_ie));
 				get_own_he_ie(wdev, &he_ie);
 				update_peer_he_params(pEntry, &he_ie);
-				he_mode_adjust(pEntry->wdev, pEntry, NULL);
+				he_mode_adjust(pEntry->wdev, pEntry, NULL, (has_ht_cap || has_vht_cap));
 				for (i = 0; i < DOT11AX_MAX_STREAM; i++) {
 					if(pEntry->cap.rate.he80_rx_nss_mcs[i] == 3)
 						break ;
@@ -1085,9 +1085,11 @@ VOID WdsPeerBeaconProc(
 #ifdef DOT11_HE_AX
 	if ((WMODE_CAP_AX(cmm_phy_mode) && WMODE_CAP_AX(pWdsEntry->phy_mode))
 		&& HAS_HE_CAPS_EXIST(cmm_ies->ie_exists)) {
+		BOOLEAN is_cap_ht = ht_cap ? TRUE : FALSE, is_cap_vht = vht_cap ? TRUE : FALSE;
+
 		update_peer_he_caps(pEntry, cmm_ies);
 		update_peer_he_operation(pEntry, cmm_ies);
-		he_mode_adjust(pEntry->wdev, pEntry, NULL);
+		he_mode_adjust(pEntry->wdev, pEntry, NULL, (is_cap_ht || is_cap_vht));
 		for (i = 0; i < DOT11AX_MAX_STREAM; i++) {
 			if(pEntry->cap.rate.he80_rx_nss_mcs[i] == 3)
 				break ;
@@ -1553,13 +1555,14 @@ VOID rtmp_read_wds_from_file(RTMP_ADAPTER *pAd, RTMP_STRING *tmpbuf, RTMP_STRING
 
 VOID wds_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *pTxBlk)
 {
-#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 	MAC_TABLE_ENTRY *pMacEntry = pTxBlk->pMacEntry;
 	pTxBlk->CipherAlg = CIPHER_NONE;
+	pTxBlk->KeyIdx = 0;
 
 	if (TX_BLK_TEST_FLAG(pTxBlk, fTX_bClearEAPFrame)) {
 		pTxBlk->pKey =  NULL;
 	} else if (pMacEntry) {
+#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 		if (CLIENT_STATUS_TEST_FLAG(pMacEntry, fCLIENT_STATUS_SOFTWARE_ENCRYPT)) {
 			struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
 			TX_BLK_SET_FLAG(pTxBlk, fTX_bSwEncrypt);
@@ -1583,12 +1586,21 @@ VOID wds_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK 
 				else if (pTxBlk->CipherAlg == CIPHER_TKIP)
 					inc_iv_byte(pTxBlk->pKey->TxTsc, LEN_WPA_TSC, 1);
 			}
+		} else
+#endif /* defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT) */
+		{
+			struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
+
+			pTxBlk->pKey = NULL;
+			/* Non S/W encrypt cases */
+			if (!IS_CIPHER_NONE(pSecConfig->PairwiseCipher)) {
+				pTxBlk->CipherAlg = pSecConfig->PairwiseCipher;
+				pTxBlk->KeyIdx =  pSecConfig->PairwiseKeyId;
+				if (IS_CIPHER_WEP(pSecConfig->PairwiseCipher))
+					pTxBlk->pKey = (PCIPHER_KEY)&(pMacEntry->SecConfig.WepKey[pTxBlk->KeyIdx]);
+			}
 		}
 	}
-#else /*  SOFT_ENCRYPT || SW_CONNECT_SUPPORT */
-	pTxBlk->CipherAlg = CIPHER_NONE;
-#endif /* !SOFT_ENCRYPT && !SW_CONNECT_SUPPORT */
-
 }
 
 static struct wifi_dev_ops wds_wdev_ops = {
@@ -1732,6 +1744,7 @@ VOID WDS_Init(RTMP_ADAPTER *pAd, UCHAR band_idx, RTMP_OS_NETDEV_OP_HOOK *pNetDev
 			RTMP_OS_NETDEV_SET_WDEV(pWdsNetDev, wdev);
 			pNetDevOps->priv_flags = INT_WDS;
 			pNetDevOps->needProtcted = TRUE;
+
 			pNetDevOps->wdev = wdev;
 			/* Register this device */
 			RtmpOSNetDevAttach(pAd->OpMode, pWdsNetDev, pNetDevOps);
@@ -1744,6 +1757,8 @@ VOID WDS_Init(RTMP_ADAPTER *pAd, UCHAR band_idx, RTMP_OS_NETDEV_OP_HOOK *pNetDev
 			rtmpeapupdaterateinfo(wdev->PhyMode, &wdev->rate, &wdev->eap);
 #endif /* CONFIG_RA_PHY_RATE_SUPPORT */
 		}
+
+
 	}
 
 	MTWF_DBG(pAd, DBG_CAT_AP, CATAP_WDS, DBG_LVL_INFO,

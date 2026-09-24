@@ -302,6 +302,9 @@ INT32 WfPhyInit(RTMP_ADAPTER *pAd)
 INT32 WfInit(RTMP_ADAPTER *pAd)
 {
 	INT32 ret = NDIS_STATUS_SUCCESS;
+#ifdef DISABLE_FW_LOG
+	RTMP_STRING disLogN9[] = "0:0";
+#endif
 
 	ret = WfTopInit(pAd);
 
@@ -321,6 +324,12 @@ INT32 WfInit(RTMP_ADAPTER *pAd)
 		goto err1;
 
 	MTWF_DBG(pAd, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_INFO, "MCU Init Done!\n");
+
+#ifdef DISABLE_FW_LOG
+	//Disable fw log to reduce EEPROm data process time
+	set_fw_log(pAd, disLogN9);
+#endif
+
 #ifdef RLM_CAL_CACHE_SUPPORT
 	rlmCalCacheApply(pAd, pAd->rlmCalCache);
 #endif /* RLM_CAL_CACHE_SUPPORT */
@@ -355,6 +364,18 @@ INT32 WfInit(RTMP_ADAPTER *pAd)
 		goto err3;
 
 	MTWF_DBG(pAd, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_INFO, "PHY Init Done!\n");
+
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	if (pAd->E2pAccessMode == E2P_BIN_MODE) {
+		if (rtmp_cal_write_to_buffer(pAd) != NDIS_STATUS_SUCCESS)
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+					"Bin DPD Pre-CAL data write to buffer failed\n");
+		else
+			MTWF_DBG(pAd, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+					"load DPD Pre-Cal data from Bin Done!\n");
+	}
+#endif
+
 	return ret;
 err3:
 	WfEPROMSysExit(pAd);

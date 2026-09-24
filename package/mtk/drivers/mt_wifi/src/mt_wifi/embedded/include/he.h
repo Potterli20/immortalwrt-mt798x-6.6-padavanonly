@@ -247,6 +247,9 @@ struct he_ch_layout {
 	(((mode) & HE_6G_SUPPORT) == HE_6G_SUPPORT)
 
 /*build*/
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+INT build_he_txpwr_envelope_eirp(struct wifi_dev *wdev, UINT8 *f_buf);
+#endif
 INT build_he_txpwr_envelope(struct wifi_dev *wdev, UINT8 *f_buf);
 UINT32 add_beacon_he_ies(struct wifi_dev *wdev, UINT8 *f_buf, UINT32 f_len);
 UINT32 add_probe_rsp_he_ies(struct wifi_dev *wdev, UINT8 *f_buf, UINT32 f_len);
@@ -268,7 +271,12 @@ UINT32 parse_he_assoc_req_ies(UINT8 *ie_head, VOID *ie_list);
 VOID parse_he_bss_color_info(struct wifi_dev *wdev, VOID *le_list);
 
 /*decision*/
-VOID he_mode_adjust(struct wifi_dev *wdev, struct _MAC_TABLE_ENTRY *peer, UCHAR *bw_from_opclass);
+VOID he_mode_adjust(
+	struct wifi_dev *wdev,
+	struct _MAC_TABLE_ENTRY *peer,
+	UCHAR *bw_from_opclass,
+	BOOLEAN ht_vht_cap);
+
 VOID update_peer_he_caps(struct _MAC_TABLE_ENTRY *peer, struct common_ies *cmm_ies);
 VOID update_peer_he_operation(struct _MAC_TABLE_ENTRY *peer, struct common_ies *cmm_ies);
 

@@ -34,7 +34,7 @@
 #define DEFAULT_FILE_PATH_SIZE      512
 #define VARIABLE_NAME_SIZE           64
 
-#define MAX_SKUTABLE_NUM             20
+#define MAX_SKUTABLE_NUM             21
 
 /*******************************************************************************
  *    TYPES

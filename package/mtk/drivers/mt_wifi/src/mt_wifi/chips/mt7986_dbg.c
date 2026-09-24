@@ -359,12 +359,19 @@ static INT32 chip_dump_mib_info(struct hdev_ctrl *ctrl, RTMP_STRING *arg)
 	UINT8 bss_nums = pChipCap->BssNums;
 	UINT32 mac_val0 = 0, mac_val = 0, mac_val1 = 0, idx, band_idx = 0, band_offset = 0;
 	UINT32 msdr6 = 0, msdr7 = 0, msdr8 = 0, msdr9 = 0, msdr10 = 0, msdr16 = 0, msdr17 = 0, msdr18 = 0, msdr19 = 0, msdr20 = 0, msdr21 = 0;
-	UINT32 mbxsdr[bss_nums][7];
+	UINT32 mbxsdr[4][7];
 	UINT32 mbtocr[16] = {0}, mbtbcr[16] = {0}, mbrocr[16] = {0}, mbrbcr[16] = {0};
-	UINT32 btocr[bss_nums], btbcr[bss_nums], brocr[bss_nums], brbcr[bss_nums], btdcr[bss_nums], brdcr[bss_nums];
+	UINT32 btocr[4], btbcr[4], brocr[4], brbcr[4], btdcr[4], brdcr[4];
 	UINT32 mu_cnt[5] = {0};
 	UINT32 ampdu_cnt[3] = {0};
 	ULONG per;
+
+	/* currently all bss_nums is 4, our variable will not overflow, in case of bss_num exceeds 4
+	 so add judge here */
+	if (bss_nums > 4) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "bss_nums(%d) exceeds 4!\n", bss_nums);
+		return FALSE;
+	}
 
 	os_zero_mem(mbxsdr, sizeof(mbxsdr));
 	os_zero_mem(btocr, sizeof(btocr));
@@ -3423,7 +3430,7 @@ static INT32 chip_check_txv(IN struct hdev_ctrl *ctrl, IN UCHAR *name, IN UINT32
 	return 0;
 }
 
-#ifdef CONFIG_ATE
+#ifdef CONFIG_WLAN_SERVICE
 static INT32 chip_ctrl_manual_hetb_tx(
 	struct _RTMP_ADAPTER *ad,
 	UINT8 band_idx,
@@ -3438,6 +3445,7 @@ static INT32 chip_ctrl_manual_hetb_tx(
 	union hetb_tx_usr usr;
 	UINT32 nss;
 	UINT32 phy1_cr_off = 0x100000;
+	boolean cancelled;
 
 	if (ctrl == HETB_TX_CFG) {
 		if (ru_sta == NULL) {
@@ -3445,6 +3453,8 @@ static INT32 chip_ctrl_manual_hetb_tx(
 
 			goto err_out;
 		}
+
+		RTMPSetTimer(&ad->chip_ctrl_manual_hetb_tx_timer, 50);
 		/* setup MAC start */
 		/* step 1, common info of TF */
 		os_zero_mem(&cmm, sizeof(cmm));
@@ -3520,6 +3530,7 @@ static INT32 chip_ctrl_manual_hetb_tx(
 		RTMP_IO_WRITE32(ad->hdev_ctrl, BN0_PHYDFE_CTRL_CR_BAND_TPC_CTL_00_CR_BAND_TPC_TOTAL_PWR_HETB_MAN_ADDR+(phy1_cr_off*band_idx), cr_value | BN0_PHYDFE_CTRL_CR_BAND_TPC_CTL_00_CR_BAND_TPC_TOTAL_PWR_HETB_MAN_MASK);
 		MTWF_PRINT("%s: Step6: [MAC2PHY TOTAL-POWER][%x][0x%04x]\n", __func__, BN0_PHYDFE_CTRL_CR_BAND_TPC_CTL_00_CR_BAND_TPC_TOTAL_PWR_HETB_MAN_ADDR+(phy1_cr_off*band_idx), cr_value | BN0_PHYDFE_CTRL_CR_BAND_TPC_CTL_00_CR_BAND_TPC_TOTAL_PWR_HETB_MAN_MASK);
 	} else {
+		RTMPCancelTimer(&ad->chip_ctrl_manual_hetb_tx_timer, &cancelled);
 		RTMP_IO_READ32(ad->hdev_ctrl, BN0_WF_TMAC_TOP_TTRCR3_TF_RESP_TEST_MODE_ADDR+(0x10000*band_idx), &cr_value);
 		RTMP_IO_WRITE32(ad->hdev_ctrl, BN0_WF_TMAC_TOP_TTRCR3_TF_RESP_TEST_MODE_ADDR+(0x10000*band_idx), cr_value & ~(BN0_WF_TMAC_TOP_TTRCR3_TF_RESP_TEST_MODE_MASK | BN0_WF_TMAC_TOP_TTRCR3_TF_USRINFO_B39B32_MASK));
 		MTWF_PRINT("%s: [Proactive HETB TX turned off][%x][0x%04x]\n", __func__, BN0_WF_TMAC_TOP_TTRCR3_TF_RESP_TEST_MODE_ADDR+(0x10000*band_idx), cr_value & ~(BN0_WF_TMAC_TOP_TTRCR3_TF_RESP_TEST_MODE_MASK | BN0_WF_TMAC_TOP_TTRCR3_TF_USRINFO_B39B32_MASK));
@@ -3703,6 +3714,38 @@ static INT32 chip_ctrl_manual_hetb_rx(
 	return 0;
 }
 
+BUILD_TIMER_FUNCTION(chip_ctrl_manual_hetb_tx_exec_timer);
+
+VOID chip_ctrl_manual_hetb_tx_exec_timer(
+	IN PVOID SystemSpecific1,
+	IN PVOID FunctionContext,
+	IN PVOID SystemSpecific2,
+	IN PVOID SystemSpecific3)
+{
+	UINT32 cr_value = 0;
+	UINT8  band_idx = 1;
+	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)FunctionContext;
+
+	RTMP_IO_READ32(pAd->hdev_ctrl, 0x820EC020 + (0x10000*band_idx), &cr_value);
+
+	if (cr_value & 0x40000000) {
+		MTWF_PRINT("[%d] %s() 0x820FC020: cr_value & 0x40000000 is true.\n", __LINE__, __func__);
+
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x820E4338 + (0x10000*band_idx), &cr_value);
+		MTWF_PRINT("[%d] %s() toggle bit 31 ?.\n", __LINE__, __func__);
+		if (cr_value == 0x800000EF) {
+			MTWF_PRINT("[%d] %s() toggle bit 31.\n", __LINE__, __func__);
+			RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x820E4338+(0x10000*band_idx), 0xef);
+			RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x820E4338+(0x10000*band_idx), cr_value | 0x80000000);
+		}
+
+		RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x820EC020 + (0x10000*band_idx), 0x40000000);
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x820EC020 + (0x10000*band_idx), &cr_value);
+		MTWF_PRINT("[%d] %s() 0x820FC020: 0x%04x.\n", __LINE__, __func__, cr_value);
+
+	}
+}
+
 static INT32 chip_ctrl_asic_spe(RTMP_ADAPTER *ad,
 											   UINT8 band_idx,
 											   UINT8 tx_mode,
@@ -3727,7 +3770,7 @@ static INT32 chip_ctrl_asic_spe(RTMP_ADAPTER *ad,
 
 	return 0;
 }
-#endif
+#endif /*CONFIG_WLAN_SERVICE*/
 
 static UINT32 chip_show_asic_rx_stat(RTMP_ADAPTER *ad, UINT type)
 {
@@ -4108,8 +4151,8 @@ static VOID ShowMsgWatch(RTMP_ADAPTER *pAd)
 	UINT32 msg_info_addr[MAX_MSG_INFO_RANGE_NUM] = {0};
 	UCHAR *msg = NULL;
 	cos_internal_msgid ptr = NULL;
-	UINT32 task_range_id[MAX_MSG_INFO_RANGE_NUM] = {1, 1, 2, 2};
-	UINT32 task_range_base[MAX_MSG_INFO_RANGE_NUM] = {1, 100, 100, 138};
+	UINT32 task_range_id[MAX_MSG_INFO_RANGE_NUM] = {1};
+	UINT32 task_range_base[MAX_MSG_INFO_RANGE_NUM] = {1};
 
 	HW_IO_READ32(pAd->hdev_ctrl, 0x022051B4, &km_total_time);
 	if (km_total_time == 0) {
@@ -4788,7 +4831,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 	RTMP_STRING *msg;
 	UCHAR fileName[64];
 	struct file *file_w;
-	//mm_segment_t orig_fs;
+	mm_segment_t orig_fs;
 	UINT32 addr = 0;
 	UINT32 end_addr = 0;
 	UINT32 macVal = 0;
@@ -4802,8 +4845,8 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 
 	NdisZeroMemory(msg, 4);
 
-	//orig_fs = get_fs();
-	//set_fs(KERNEL_DS);
+	orig_fs = get_fs();
+	set_fs(KERNEL_DS);
 
 	while (COREDUMP_QUEUE_INFO[i].Name != NULL) {
 		ret = snprintf(fileName, sizeof(fileName), "/etc/%s.bin", COREDUMP_QUEUE_INFO[i].Name);
@@ -4852,7 +4895,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 	}
 
 done:
-	//set_fs(orig_fs);
+	set_fs(orig_fs);
 	os_free_mem(msg);
 
 	return TRUE;

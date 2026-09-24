@@ -44,36 +44,6 @@ extern UCHAR BROADCOM_OUI[];
  *	MLME message sanity check
  *    Return:
  *	TRUE if all parameters are OK, FALSE otherwise
- *    ==========================================================================
- */
-BOOLEAN MlmeStartReqSanity(
-	IN PRTMP_ADAPTER pAd,
-	IN VOID * Msg,
-	IN ULONG MsgLen,
-	OUT CHAR Ssid[],
-	OUT UCHAR *pSsidLen)
-{
-	MLME_START_REQ_STRUCT *Info;
-
-	Info = (MLME_START_REQ_STRUCT *) (Msg);
-
-	if (Info->SsidLen > MAX_LEN_OF_SSID) {
-		MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s(): fail - wrong SSID length\n",
-				 __func__);
-		return FALSE;
-	}
-
-	*pSsidLen = Info->SsidLen;
-	NdisMoveMemory(Ssid, Info->Ssid, *pSsidLen);
-	return TRUE;
-}
-
-/*
- *    ==========================================================================
- *    Description:
- *	MLME message sanity check
- *    Return:
- *	TRUE if all parameters are OK, FALSE otherwise
  *
  *    IRQL = DISPATCH_LEVEL
  *
@@ -114,6 +84,20 @@ BOOLEAN PeerAssocRspSanity(
 #ifdef DOT11R_FT_SUPPORT
 	FT_MIC_CONTENT ft_mic_cont;
 #endif /* DOT11R_FT_SUPPORT */
+	INT remain_ie_len;
+
+	/* If pkt's length is smaller than basic (802.11 header + Fixed IE) then reject */
+	/* 2 is for Tag Number and length (Supported Rate and Bss Membership Selector) */
+	if (MsgLen < LENGTH_802_11
+				+ LENGTH_802_11_CAP_INFO
+				+ LENGTH_802_11_STATUS_CODE
+				+ LENGTH_802_11_AID
+				+ 2) {
+		MTWF_DBG(NULL, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"Fail -> wrong format of ASSOC RSP / REASSOC RSP pkt!\n");
+		return FALSE;
+	}
+
 
 	*pNewExtChannelOffset = 0xff;
 	COPY_MAC_ADDR(pAddr2, pFrame->Hdr.Addr2);
@@ -137,6 +121,20 @@ BOOLEAN PeerAssocRspSanity(
 	IeType = pFrame->Octet[6];
 	sup_rate_len = pFrame->Octet[7];
 
+	Length += 2;
+	if (sup_rate_len > MAX_LEN_OF_SUPPORTED_RATES) {
+		MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"Fail -> malformity SupportedRates IE! (sup_rate_len is too large)\n");
+		return FALSE;
+	}
+
+	if ((Length + sup_rate_len) > MsgLen) {
+		MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"Fail -> malformity SupportedRates IE! (parse IE larger than pkt size)\n");
+		return FALSE;
+	}
+	Length += sup_rate_len;
+
 	if ((IeType != IE_SUPP_RATES) ||
 		parse_support_rate_ie(rate, (EID_STRUCT *)&pFrame->Octet[6]) == FALSE) {
 		MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s(): fail - wrong SupportedRates IE\n", __func__);
@@ -146,15 +144,23 @@ BOOLEAN PeerAssocRspSanity(
 #ifdef DOT11R_FT_SUPPORT
 	NdisZeroMemory(&ft_mic_cont, sizeof(FT_MIC_CONTENT));
 #endif /* DOT11R_FT_SUPPORT */
-	Length = Length + 2 + sup_rate_len;
 	/*
 	 *   many AP implement proprietary IEs in non-standard order, we'd better
 	 *   tolerate mis-ordered IEs to get best compatibility
 	 */
 	pEid = (PEID_STRUCT) &pFrame->Octet[8 + sup_rate_len];
 
+
+	/* The length of total Tagged IEs */
+	remain_ie_len = MsgLen - (LENGTH_802_11
+							+ LENGTH_802_11_CAP_INFO
+							+ LENGTH_802_11_STATUS_CODE
+							+ LENGTH_802_11_AID
+							+ 2 + sup_rate_len); /* for EID and Length */
+
+
 	/* get variable fields from payload and advance the pointer */
-	while ((Length + 2 + pEid->Len) <= MsgLen) {
+	while ((remain_ie_len >= 2) && ((pEid->Len+2) <= remain_ie_len)) {
 		switch (pEid->Eid) {
 		case IE_EXT_SUPP_RATES:
 			if (parse_support_ext_rate_ie(rate, pEid) == FALSE) {
@@ -167,7 +173,6 @@ BOOLEAN PeerAssocRspSanity(
 #ifdef DOT11_N_SUPPORT
 
 		case IE_HT_CAP:
-		case IE_HT_CAP2:
 			if (parse_ht_cap_ie(pEid->Len)) {
 				NdisMoveMemory(&cmm_ies->ht_cap, pEid->Octet, sizeof(HT_CAPABILITY_IE));
 				SET_HT_CAPS_EXIST(cmm_ies->ie_exists);
@@ -182,7 +187,6 @@ BOOLEAN PeerAssocRspSanity(
 			break;
 
 		case IE_ADD_HT:
-		case IE_ADD_HT2:
 			if (parse_ht_info_ie(pEid)) {
 				/*
 				 *   This IE allows extension, but we can ignore extra bytes beyond our knowledge , so only
@@ -301,7 +305,7 @@ BOOLEAN PeerAssocRspSanity(
 #ifdef DOT11R_FT_SUPPORT
 
 		case IE_FT_MDIE:
-			if (pStaCfg->Dot11RCommInfo.bFtSupport) {
+			if (pStaCfg && pStaCfg->Dot11RCommInfo.bFtSupport) {
 				if (parse_md_ie(pEid) == FALSE) {
 					MTWF_LOG(DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_WARN,
 							 ("%s - wrong length of IE_FT_MDIE\n",
@@ -316,7 +320,8 @@ BOOLEAN PeerAssocRspSanity(
 				 */
 				if (pStaCfg->Dot11RCommInfo.
 					bInMobilityDomain == FALSE)
-					NdisMoveMemory(pStaCfg->MlmeAux.InitialMDIE,
+					if ((pEid->Len + 2) <= sizeof(pStaCfg->MlmeAux.InitialMDIE))
+						NdisMoveMemory(pStaCfg->MlmeAux.InitialMDIE,
 								   pEid, pEid->Len + 2);
 
 				ft_mic_cont.mdie_ptr = (PUINT8) pEid;
@@ -326,9 +331,10 @@ BOOLEAN PeerAssocRspSanity(
 			break;
 
 		case IE_FT_FTIE:
-			pStaCfg->MlmeAux.FtIeInfo.Len = 0;
+			if (pStaCfg && pStaCfg->Dot11RCommInfo.bFtSupport) {
 
-			if (pStaCfg->Dot11RCommInfo.bFtSupport) {
+				pStaCfg->MlmeAux.FtIeInfo.Len = 0;
+
 				if (parse_ft_ie(pEid)) {
 					/*
 					 *   Record the FTIE of (re)association response of
@@ -337,8 +343,13 @@ BOOLEAN PeerAssocRspSanity(
 					 */
 					if (pStaCfg->Dot11RCommInfo.bInMobilityDomain == FALSE) {
 						pStaCfg->MlmeAux.InitialFTIE_Len = pEid->Len + 2;
+					if ((pEid->Len + 2) <= sizeof(pStaCfg->MlmeAux.InitialFTIE))
 						NdisMoveMemory(pStaCfg->MlmeAux.InitialFTIE,
-									   pEid, pEid->Len + 2);
+								pEid, pEid->Len + 2);
+					else
+						MTWF_DBG(NULL,
+							DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+							"No enough buffer size for FTIE!\n");
 					}
 
 					FT_FillFtIeInfo(pEid, &pStaCfg->MlmeAux.FtIeInfo);
@@ -361,13 +372,16 @@ BOOLEAN PeerAssocRspSanity(
 #endif /* DOT11R_FT_SUPPORT */
 
 				/* Copy whole RSNIE context */
-				NdisMoveMemory(&ie_list->RSN_IE[0], pEid, pEid->Len + 2);
-				ie_list->RSNIE_Len = pEid->Len + 2;
+				if ((pEid->Len + 2) <= sizeof(ie_list->RSN_IE))
+					NdisMoveMemory(&ie_list->RSN_IE[0], pEid, pEid->Len + 2);
+
 			} else {
 				MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 						"%s() - wrong IE_RSN\n", __func__);
 				return FALSE;
 			}
+			ie_list->RSNIE_Len = pEid->Len + 2;
+
 			break;
 
 		case IE_RSNXE:
@@ -376,7 +390,12 @@ BOOLEAN PeerAssocRspSanity(
 			ft_mic_cont.rsnxe_len = pEid->Len + 2;
 #endif /* DOT11R_FT_SUPPORT */
 			/* Copy whole RSNXE context */
-			NdisMoveMemory(&ie_list->rsnxe_ie_len, pEid, pEid->Len + 2);
+			if ((pEid->Len + 2) <= sizeof(ie_list->rsnxe_ie))
+				NdisMoveMemory(&ie_list->rsnxe_ie_len, pEid, pEid->Len + 2);
+			else
+				MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"No enough buffer size for ie_list->rsnxe_ie!\n");
+
 			ie_list->rsnxe_ie_len = pEid->Len + 2;
 			break;
 
@@ -408,13 +427,30 @@ BOOLEAN PeerAssocRspSanity(
 #ifdef CONFIG_OWE_SUPPORT
 			{
 				UCHAR *ext_ie_length = (UCHAR *)pEid + 1;
+				if (*ext_ie_length <= 3) {
+					MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+					"Ivalid value(*ext_ie_length=%d), drop!\n", *ext_ie_length);
+					break;
+				}
 				os_zero_mem(ie_list->ecdh_ie.public_key, *ext_ie_length-3);
 				ie_list->ecdh_ie.ext_ie_id = IE_WLAN_EXTENSION;
 				ie_list->ecdh_ie.length = pEid->Len;
-				NdisMoveMemory(&ie_list->ecdh_ie.ext_id_ecdh, pEid->Octet, pEid->Len);
+				if (pEid->Len <= (1 + 2 + sizeof(ie_list->ecdh_ie.public_key)))
+					NdisMoveMemory(&ie_list->ecdh_ie.ext_id_ecdh, pEid->Octet, pEid->Len);
+				else
+					MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"No enough buffer size for ecdh_ie.ext_id_ecdh!\n");
+
 			}
 #endif /*CONFIG_OWE_SUPPORT*/
 				break;
+#ifdef VENDOR10_VLP_FEATURE
+			case IE_EXTENSION_ID_HE_OP:
+				MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+					"Assoc Response IE_WLAN_EXTENSION->IE_EXTENSION_ID_HE_OP->Regulatory Info: %x, Channel Width: %x, Duplicate Beacon: %x\n",
+					(ie_list->cmm_ies.he6g_opinfo.ctrl & 0x38), (ie_list->cmm_ies.he6g_opinfo.ctrl & 0x3), (ie_list->cmm_ies.he6g_opinfo.ctrl & 0x4));
+				break;
+#endif
 			default:
 				MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					"RESP IE_WLAN_EXTENSION: no handler for extension_id:%d\n", *extension_id);
@@ -426,15 +462,14 @@ BOOLEAN PeerAssocRspSanity(
 			MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s():ignore unrecognized EID = %d\n", __func__, pEid->Eid);
 			break;
 		}
-
-		Length = Length + 2 + pEid->Len;
+		remain_ie_len -= (2 + pEid->Len);
 		pEid = (PEID_STRUCT)((UCHAR *)pEid + 2 + pEid->Len);
 	}
 
 #ifdef DOT11R_FT_SUPPORT
 
 	/* Check the MIC during FT */
-	if (pStaCfg->Dot11RCommInfo.bFtSupport &&
+	if (pStaCfg && pStaCfg->Dot11RCommInfo.bFtSupport &&
 		pStaCfg->Dot11RCommInfo.bInMobilityDomain /*&&
 		pStaCfg->WepStatus != Ndis802_11WEPDisabled*/
 		) {
@@ -494,6 +529,12 @@ BOOLEAN GetTimBit(
 {
 	UCHAR BitCntl, N1, N2, MyByte, MyBit;
 	CHAR *IdxPtr;
+
+	if (*TimLen < 4) {
+		MTWF_DBG(NULL, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"invalid length %d of IE_TIM\n", *TimLen);
+		return FALSE;
+	}
 
 	IdxPtr = Ptr;
 	IdxPtr++;

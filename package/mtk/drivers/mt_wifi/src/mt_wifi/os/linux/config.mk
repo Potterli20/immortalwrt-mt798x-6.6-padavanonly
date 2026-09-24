@@ -2,6 +2,8 @@
 # Common Feature Selection
 ################################################################
 
+
+
 # Support ATE and QA function
 HAS_ATE=y
 HAS_QA_SUPPORT=y
@@ -168,8 +170,11 @@ HAS_BEACON_MISS_ON_PRIMARY_CHANNEL=n
 CC := $(CROSS_COMPILE)gcc
 LD := $(CROSS_COMPILE)ld
 
+ifeq ($(CONFIG_FUZZ_SUPPORT),n)
+WFLAGS += -Werror
+endif
 WFLAGS := -I$(RT28xx_DIR)/include -I$(RT28xx_EMBEDDED_DIR)/include
-WFLAGS += -Wall -Wstrict-prototypes -Wno-trigraphs -Werror -Wno-date-time
+WFLAGS += -Wall -Wstrict-prototypes -Wno-trigraphs -Wno-date-time
 WFLAGS += -DLINUX -DENHANCED_STAT_DISPLAY
 WFLAGS += -DCONFIG_ANDES_SUPPORT -DRTMP_EFUSE_SUPPORT
 WFLAGS += -DSYSTEM_LOG_SUPPORT -DRT28xx_MODE=$(RT28xx_MODE) -DCHIPSET=$(MODULE)

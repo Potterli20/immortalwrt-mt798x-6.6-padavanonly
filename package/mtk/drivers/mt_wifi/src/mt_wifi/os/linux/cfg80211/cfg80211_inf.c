@@ -491,7 +491,7 @@ VOID RTMP_CFG80211_VirtualIF_Init(
 				vlan_bmc_idx = wdev->hw_bmc_wcid;
 #endif /* SW_CONNECT_SUPPORT */
 			TRTableInsertMcastEntry(pAd, vlan_bmc_idx, wdev);
-			MgmtTableSetMcastEntry(pAd, vlan_bmc_idx);
+			MgmtTableSetMcastEntry(pAd, vlan_bmc_idx, wdev);
 
 			/* init sta_rec and tr_entry for vlan bmc wtbl */
 			wifi_vlan_starec_linkup(wdev, vlan_bmc_idx);
@@ -1160,6 +1160,7 @@ VOID RTMP_CFG80211_VirtualIF_Init(
 	new_dev_p->destructor =  free_netdev;
 	RTMP_OS_NETDEV_SET_PRIV(new_dev_p, pAd);
 	pNetDevOps->needProtcted = TRUE;
+
 	os_move_mem(&pNetDevOps->devAddr[0], &pAd->CurrentAddress[0], MAC_ADDR_LEN);
 #ifdef MT_MAC
 	/* TODO: shall we make choosing which byte to be selectable??? */
@@ -1465,6 +1466,9 @@ VOID RTMP_CFG80211_AllVirtualIF_Remove(
 	PCFG80211_VIF_DEV           pDevEntry = NULL;
 	RT_LIST_ENTRY *pListEntry = NULL;
 
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		return;
+
 	pListEntry = pCacheList->pHead;
 	pDevEntry = (PCFG80211_VIF_DEV)pListEntry;
 
@@ -1628,6 +1632,9 @@ VOID RTMP_CFG80211_DummyP2pIf_Remove(
 	struct wifi_dev *wdev = &cfg80211_ctrl->dummy_p2p_wdev;
 
 	MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "=====>\n");
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		return;
+
 	RtmpOSNetDevProtect(1);
 
 	if (dummy_p2p_net_dev) {
@@ -1698,6 +1705,9 @@ VOID RTMP_CFG80211_DummyP2pIf_Init(
 
 	MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "=====>\n");
 
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		return;
+
 	if (cfg80211_ctrl->flg_cfg_dummy_p2p_init != FALSE)
 		return;
 
@@ -1729,6 +1739,7 @@ VOID RTMP_CFG80211_DummyP2pIf_Init(
 	RTMP_OS_NETDEV_SET_PRIV(new_dev_p, pAd);
 	os_move_mem(&pNetDevOps->devAddr[0], &pAd->CurrentAddress[0], MAC_ADDR_LEN);
 	pNetDevOps->needProtcted = TRUE;
+
 	os_alloc_mem_suspend(NULL, (UCHAR **)&pWdev, sizeof(*pWdev));
 	os_zero_mem((PUCHAR)pWdev, sizeof(*pWdev));
 
@@ -1812,6 +1823,9 @@ VOID RTMP_CFG80211_MutliStaIf_Init(VOID *pAdSrc)
 	CMD_RTPRIV_IOCTL_80211_VIF_SET vifInfo;
 	PCFG80211_CTRL cfg80211_ctrl = &pAd->cfg80211_ctrl;
 
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		return;
+
 	vifInfo.vifType = RT_CMD_80211_IFTYPE_STATION;
 	vifInfo.vifNameLen = strlen(INF_CFG80211_MULTI_STA_NAME);
 	os_zero_mem(vifInfo.vifName, sizeof(vifInfo.vifName));
@@ -1831,6 +1845,9 @@ VOID RTMP_CFG80211_MutliStaIf_Remove(VOID *pAdSrc)
 	MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL, DBG_LVL_INFO, "\n");
 	PRTMP_ADAPTER pAd = (PRTMP_ADAPTER)pAdSrc;
 	PCFG80211_CTRL cfg80211_ctrl = &pAd->cfg80211_ctrl;
+
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		return;
 
 	if (cfg80211_ctrl->multi_sta_net_dev) {
 		RtmpOSNetDevProtect(1);

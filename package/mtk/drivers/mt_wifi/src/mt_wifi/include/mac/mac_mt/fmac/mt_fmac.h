@@ -334,8 +334,8 @@ VOID mtf_write_tmac_info_by_wa(struct _RTMP_ADAPTER *pAd, UCHAR *buf, struct _TX
 VOID mtf_dump_tmac_info(struct _RTMP_ADAPTER *pAd, UCHAR *tmac_info);
 VOID mtf_dump_rmac_info(struct _RTMP_ADAPTER *pAd, UCHAR *rmac_info);
 BOOLEAN in_altx_filter_list(HEADER_802_11 *pHeader);
-VOID mtf_write_tmac_info_fixed_rate(struct _RTMP_ADAPTER *pAd, UCHAR *tmac_info, struct _MAC_TX_INFO *info,
-					union _HTTRANSMIT_SETTING *pTransmit);
+VOID mtf_write_tmac_info_fixed_rate(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev,
+					UCHAR *tmac_info, struct _MAC_TX_INFO *info, union _HTTRANSMIT_SETTING *pTransmit);
 UINT32 mtf_get_packet_type(struct _RTMP_ADAPTER *pAd, VOID *rx_packet);
 
 VOID mtf_dump_rmac_info_normal(RTMP_ADAPTER *pAd, UCHAR *rmac_info);

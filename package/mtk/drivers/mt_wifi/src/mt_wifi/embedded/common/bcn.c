@@ -242,7 +242,7 @@ UINT16 MakeBeacon(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, BOOLEAN UpdateRoutin
 	BCN_BUF_STRUCT *pbcn_buf = &wdev->bcn_buf;
 
 #ifdef RT_CFG80211_SUPPORT
-	if (pAd->cfg80211_ctrl.beaconIsSetFromHostapd == TRUE)
+	if (pAd->cfg80211_ctrl.beaconIsSetFromHostapd == TRUE && !pAd->CommonCfg.bcfg80211Disabled)
 		return -1;
 #endif
 
@@ -301,7 +301,7 @@ UINT16 MakeBeacon(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, BOOLEAN UpdateRoutin
 	}
 
 #endif /* CONFIG_AP_SUPPORT */
-	ComposeBcnPktTail(pAd, wdev, &UpdatePos, pBeaconFrame);
+	ComposeBcnPktTail(pAd, wdev, &UpdatePos, pBeaconFrame, TRUE);
 	FrameLen = UpdatePos;/* update newest FrameLen. */
 
 #ifdef IGMP_TVM_SUPPORT
@@ -350,7 +350,12 @@ UINT16 MakeBeacon(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, BOOLEAN UpdateRoutin
 			BeaconTransmit.field.MODE = MODE_HE;
 			BeaconTransmit.field.MCS = MCS_0;
 		} else if (iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP) {
-			BeaconTransmit.field.BW = BW_80;
+#ifdef CONFIG_6G_AFC_SUPPORT
+			if (is_afc_in_run_state(pAd))
+				BeaconTransmit.field.BW = BW_20; /* for STD Power*/
+			else
+#endif /*CONFIG_6G_AFC_SUPPORT*/
+				BeaconTransmit.field.BW = BW_80; /* for LPI Power*/
 			BeaconTransmit.field.MODE = MODE_OFDM;
 			BeaconTransmit.field.MCS = MCS_RATE_6;
 		}
@@ -383,14 +388,17 @@ VOID ComposeRSNIE(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UC
 #ifdef CONFIG_HOTSPOT_R2
 	extern UCHAR			OSEN_IE[];
 	extern UCHAR			OSEN_IELEN;
+#endif
+if (!pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_HOTSPOT_R2
 	if ((pMbss->HotSpotCtrl.HotSpotEnable == 0) && (pMbss->HotSpotCtrl.bASANEnable == 1) && (IS_AKM_WPA2_Entry(wdev))) {
 		/* replace RSN IE with OSEN IE if it's OSEN wdev */
 		UCHAR RSNIe = IE_WPA;
 		MakeOutgoingFrame(pBeaconFrame+FrameLen,		&TempLen,
-							 1,							&RSNIe,
-							 1,							&OSEN_IELEN,
-							 OSEN_IELEN,					OSEN_IE,
-							 END_OF_ARGS);
+						 1,							&RSNIe,
+						 1,							&OSEN_IELEN,
+						 OSEN_IELEN,					OSEN_IE,
+						 END_OF_ARGS);
 		FrameLen += TempLen;
 	} else
 #endif /* CONFIG_HOTSPOT_R2 */
@@ -398,13 +406,45 @@ VOID ComposeRSNIE(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UC
 	for (rsne_idx = 0; rsne_idx < 2; rsne_idx++) {
 		if (pMbss->RSNIE_Len[rsne_idx] != 0) {
 			MakeOutgoingFrame(pBeaconFrame+FrameLen,
-				 &TempLen, 1,
+			 &TempLen, 1,
 			&pMbss->RSNIE_ID[rsne_idx], 1,
 			&pMbss->RSNIE_Len[rsne_idx],
 			pMbss->RSNIE_Len[rsne_idx], &pMbss->RSN_IE[rsne_idx][0],
 			END_OF_ARGS);
 			FrameLen += TempLen;
 		}
+	}
+} else {
+#ifdef CONFIG_HOTSPOT_R2
+	BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[wdev->func_idx];
+
+	if ((pMbss->HotSpotCtrl.HotSpotEnable == 0) && (pMbss->HotSpotCtrl.bASANEnable == 1) && (IS_AKM_WPA2_Entry(wdev))) {
+		/* replace RSN IE with OSEN IE if it's OSEN wdev */
+		UCHAR RSNIe = IE_WPA;
+
+		MakeOutgoingFrame(pBeaconFrame + FrameLen,		  &TempLen,
+						  1,							&RSNIe,
+						  1,							&OSEN_IELEN,
+						  OSEN_IELEN,					OSEN_IE,
+						  END_OF_ARGS);
+		FrameLen += TempLen;
+	} else
+#endif /* CONFIG_HOTSPOT_R2 */
+	{
+		struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
+
+		for (rsne_idx = 0; rsne_idx < SEC_RSNIE_NUM; rsne_idx++) {
+			if (pSecConfig->RSNE_Type[rsne_idx] == SEC_RSNIE_NONE)
+				continue;
+
+			MakeOutgoingFrame(pBeaconFrame + FrameLen, &TempLen,
+							  1, &pSecConfig->RSNE_EID[rsne_idx][0],
+							  1, &pSecConfig->BCN_RSNE_Len[rsne_idx],
+							  pSecConfig->BCN_RSNE_Len[rsne_idx], &pSecConfig->BCN_RSNE_Content[rsne_idx][0],
+							  END_OF_ARGS);
+			FrameLen += TempLen;
+		}
+	}
 	}
 #else
 	struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
@@ -464,12 +504,15 @@ VOID ComposeWPSIE(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UC
 
 	/* add Simple Config Information Element */
 #ifdef DISABLE_HOSTAPD_BEACON
-    if (wdev->WscIEBeacon.ValueLen)
+	if (!pAd->CommonCfg.bHostapdDisabled) {
+		if (wdev->WscIEBeacon.ValueLen)
+			bHasWpsIE = TRUE;
+		} else if (((wdev->WscControl.WscConfMode >= 1) && (wdev->WscIEBeacon.ValueLen)))
+			bHasWpsIE = TRUE;
 #else
     if (((wdev->WscControl.WscConfMode >= 1) && (wdev->WscIEBeacon.ValueLen)))
-#endif
 		bHasWpsIE = TRUE;
-
+#endif
 	if (bHasWpsIE) {
 		ULONG WscTmpLen = 0;
 		MakeOutgoingFrame(pBeaconFrame + FrameLen, &WscTmpLen,
@@ -525,7 +568,7 @@ VOID MakeErpIE(
 	*pFrameLen = FrameLen;
 }
 
-#if defined(A_BAND_SUPPORT) && defined(CONFIG_AP_SUPPORT)
+#if defined(CONFIG_AP_SUPPORT)
 VOID MakeChSwitchAnnounceIEandExtend(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UCHAR *pBeaconFrame, BOOLEAN bcn)
 {
 	UCHAR *ptr = NULL;
@@ -625,7 +668,7 @@ VOID MakeChSwitchAnnounceIEandExtend(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, U
 		}
 	}
 
-	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_DEBUG,
+	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_NOTICE,
 			"Channel=%d, bw=%d\n", channel, bw);
 
 	pDot11h = wdev->pDot11_H;
@@ -938,7 +981,83 @@ VOID MakeCountryIe(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, U
 			NdisZeroMemory(TmpFrame, 256);
 			/* prepare channel information */
 #ifdef EXT_BUILD_CHANNEL_LIST
+		if (!pAd->CommonCfg.bExtChListDisabled)
 			BuildBeaconChList(pAd, wdev, TmpFrame, &TmpLen2);
+		else {
+			if (WMODE_CAP_6G(wdev->PhyMode)) {
+				UINT i = 0;
+				UCHAR OpExtIdentifier = 0xFE;
+				UCHAR CoverageClass = 0;
+				UCHAR reg_class_value[5] = {0};
+
+				get_reg_class_list_for_6g(pAd, wdev->PhyMode, reg_class_value);
+
+				if (reg_class_value[0] == 0) {
+					MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							"reg_class is NULL !!!\n");
+					os_free_mem(TmpFrame);
+					return;
+				}
+
+				for (i = 0; reg_class_value[i] != 0; i++) {
+					MakeOutgoingFrame(TmpFrame + TmpLen2,
+							&TmpLen,
+							1,
+							&OpExtIdentifier,
+							1,
+							&reg_class_value[i],
+							1,
+							&CoverageClass,
+							END_OF_ARGS);
+					TmpLen2 += TmpLen;
+					if (i == 4)
+						break;
+				}
+				} else {
+					UINT i = 0;
+					PCH_DESC pChDesc = NULL;
+					UCHAR op_ht_bw = wlan_operate_get_ht_bw(wdev);
+					UCHAR MaxTxPower = GetCuntryMaxTxPwr(pAd, wdev->PhyMode, wdev, op_ht_bw);
+
+					MaxTxPower = MAX_TRANSMIT_POWER;
+					/* do not change sequence due to
+					 * 6GHz might include AC/GN then confused */
+				if (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode)) {
+					if (pAd->CommonCfg.pChDesc5G != NULL)
+						pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc5G;
+					else
+						MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_ERROR,
+								 "pChDesc5G is NULL !!!\n");
+				} else if (WMODE_CAP_2G(wdev->PhyMode)) {
+					if (pAd->CommonCfg.pChDesc2G != NULL)
+						pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc2G;
+					else
+						MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+								 "pChDesc2G is NULL !!!\n");
+				}
+
+					if (pChDesc == NULL) {
+						MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_ERROR,
+								 "pChDesc is NULL !!!\n");
+						os_free_mem(TmpFrame);
+						return;
+					}
+
+					for (i = 0; pChDesc[i].FirstChannel != 0; i++) {
+						MakeOutgoingFrame(TmpFrame + TmpLen2,
+									  &TmpLen,
+									  1,
+									  &pChDesc[i].FirstChannel,
+									  1,
+									  &pChDesc[i].NumOfCh,
+									  1,
+									  &MaxTxPower,
+									  END_OF_ARGS);
+						TmpLen2 += TmpLen;
+					}
+				}
+
+			}
 #else
 			if (WMODE_CAP_6G(wdev->PhyMode)) {
 				UINT i = 0;
@@ -1166,6 +1285,24 @@ VOID MakePwrConstraintIe(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrame
 						END_OF_ARGS);
 				FrameLen += TmpLen;
 			}
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT)
+			if (is_afc_in_run_state(pAd) && WMODE_CAP_AX_6G(wdev->PhyMode)) {
+				UINT8 he_txpwr_env_ie = IE_VHT_TXPWR_ENV;
+				UINT8 ie_len;
+				HE_TXPWR_ENV_IE txpwr_env;
+
+				TmpLen = 0;
+				ie_len = build_he_txpwr_envelope_eirp(wdev, (UCHAR *)&txpwr_env);
+				if (ie_len) {
+					MakeOutgoingFrame(pBeaconFrame + FrameLen, &TmpLen,
+							1,                   &he_txpwr_env_ie,
+							1,                   &ie_len,
+							ie_len,              &txpwr_env,
+							END_OF_ARGS);
+					FrameLen += TmpLen;
+				}
+			}
+#endif
 		}	/* prepare VHT Transmit Power Envelope IE */
 		else if (WMODE_CAP_AC(PhyMode)) {
 			UINT8 vht_txpwr_env_ie = IE_VHT_TXPWR_ENV;
@@ -1382,6 +1519,12 @@ VOID make_multiple_bssid_ie(
 		}
 
 		if ((Bitmap & (1 << pMbss->mbss_grp_idx)) && IS_BSSID_11V_NON_TRANS(pAd, pMbss, DbdcIdx)) {
+			if (pMbss->wdev.open_state == FALSE) {
+				MTWF_DBG(NULL, DBG_CAT_AP, CATAP_BCN, DBG_LVL_DEBUG,
+					"Skip make wdev(%d) (%s)'s mbss info when it's off\n", IdBss, pMbss->wdev.if_dev->name);
+				continue;
+			}
+
 			MTWF_DBG(NULL, DBG_CAT_AP, CATAP_BCN, DBG_LVL_DEBUG,
 				"Add IdBss %d IE: (mbss_grp_idx=%d)\n", IdBss, pMbss->mbss_grp_idx);
 
@@ -1413,7 +1556,8 @@ VOID make_multiple_bssid_ie(
 #endif
 #endif /* CONFIG_AP_SUPPORT */
 
-VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UCHAR *pBeaconFrame)
+VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen,
+	UCHAR *pBeaconFrame, BOOLEAN bcn)
 {
 	ULONG FrameLen = *pFrameLen;
 	struct _build_ie_info vht_ie_info;
@@ -1465,21 +1609,24 @@ VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLe
 		return;
 	/* fill up Channel Switch Announcement Element */
 	if (wpa3_test_ctrl == 6 || wpa3_test_ctrl == 7)
-		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, TRUE);
-	else if (WMODE_CAP_5G(wdev->PhyMode)
+		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, bcn);
+	else if ((wlan_config_get_ch_band(wdev) != CMD_CH_BAND_24G)
 		&& (pComCfg->bIEEE80211H == 1)
 		&& (pDot11h->RDMode == RD_SWITCHING_MODE)
 	   )
-		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, TRUE);
-	else if ((wdev->channel <= 14) && (pComCfg->ChannelSwitchFor2G.CHSWMode == CHANNEL_SWITCHING_MODE))
-		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, TRUE);
-	else
+		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, bcn);
+	else if ((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G)
+		&& (pComCfg->ChannelSwitchFor2G.CHSWMode == CHANNEL_SWITCHING_MODE))
+		MakeChSwitchAnnounceIEandExtend(pAd, wdev, &FrameLen, pBeaconFrame, bcn);
+	else if (bcn)
 		wdev->bcn_buf.CsaIELocationInBeacon = 0;
 
 #endif /* A_BAND_SUPPORT */
 
 #ifdef CONFIG_6G_SUPPORT
-	FrameLen += add_he_6g_rnr_ie(wdev, pBeaconFrame, FrameLen, 0);
+	if (!pAd->CommonCfg.wifi_cert) {
+		FrameLen += add_he_6g_rnr_ie(wdev, pBeaconFrame, FrameLen, 0);
+	}
 #endif
 #ifdef DOT11V_MBSSID_SUPPORT
 	make_multiple_bssid_ie(pAd, wdev, &FrameLen, pBeaconFrame,
@@ -1515,7 +1662,7 @@ VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLe
 
 	/* Update ERP */
 	if ((wdev->rate.legacy_rate.ext_rate_len) && (PhyMode != WMODE_B)) {
-		if (WMODE_CAP_2G(wdev->PhyMode))
+		if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G)
 			MakeErpIE(pAd, wdev, &FrameLen, pBeaconFrame);
 	}
 
@@ -1524,7 +1671,7 @@ VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLe
 	ComposeWPSIE(pAd, wdev, &FrameLen, pBeaconFrame);
 
 #ifdef HOSTAPD_OWE_SUPPORT
-	if (pMbss->TRANSIE_Len) {
+	if (pMbss->TRANSIE_Len && !pAd->CommonCfg.bHostapdDisabled) {
 		ULONG TmpLen;
 
 		MakeOutgoingFrame(pBeaconFrame+FrameLen, &TmpLen,
@@ -1742,6 +1889,12 @@ VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLe
 		FrameLen += oce_build_ies(pAd, &vht_ie_info, TRUE);
 #endif
 
+#ifdef CONFIG_6G_SUPPORT
+	if (pAd->CommonCfg.wifi_cert) {
+		FrameLen += add_he_6g_rnr_ie(wdev, pBeaconFrame, FrameLen, 0);
+	}
+#endif
+
 #ifndef HOSTAPD_WPA3_SUPPORT
 #ifdef MAP_R3
 	if ((IS_MAP_ENABLE(pAd) && !IS_MAP_CERT_ENABLE(pAd))
@@ -1749,10 +1902,20 @@ VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLe
 #endif
 		FrameLen +=  build_rsnxe_ie(&wdev->SecConfig,
 				    (UCHAR *)pBeaconFrame + FrameLen);
+#else
+		if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef MAP_R3
+			if ((IS_MAP_ENABLE(pAd) && !IS_MAP_CERT_ENABLE(pAd))
+				|| !IS_MAP_ENABLE(pAd))
+#endif
+				FrameLen +=  build_rsnxe_ie(wdev, &wdev->SecConfig,
+						(UCHAR *)pBeaconFrame + FrameLen);
+		}
 #endif /* HOSTAPD_WPA3_SUPPORT*/
 #ifdef HOSTAPD_WPA3R3_SUPPORT
 	/* Add Rsnxe ie in beacon*/
-	FrameLen +=  build_rsnxe_ie(wdev, &wdev->SecConfig,
+	if (!pAd->CommonCfg.bHostapdDisabled)
+		FrameLen +=  build_rsnxe_ie(wdev, &wdev->SecConfig,
 			(UCHAR *)pBeaconFrame + FrameLen);
 #endif
 
@@ -1867,11 +2030,30 @@ VOID UpdateBeaconHandler(
 {
 	struct DOT11_H *pDot11h = NULL;
 
+
+
+
 	if (!wdev) {
 		MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_ERROR, "wdev = NULL, (caller:%pS)\n",
 				 OS_TRACE);
 		return;
 	}
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if ((WMODE_CAP_6G(wdev->PhyMode)) && (reason == BCN_UPDATE_INIT))
+		if (!afc_beacon_init_handler(pAd, wdev))
+			return;
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
+#ifdef DFS_SLAVE_SUPPORT
+	if (SLAVE_BEACON_STOPPED(pAd, HcGetBandByWdev(wdev))
+		&& reason != BCN_UPDATE_DISABLE_TX) {
+		MTWF_DBG(NULL, DBG_CAT_AP, CATAP_BCN, DBG_LVL_INFO,
+			"[DFS-SLAVE] %s(): beaconing off Update reason: %d\n", __func__, reason);
+		return NDIS_STATUS_SUCCESS;
+	}
+#endif /* DFS_SLAVE_SUPPORT */
 
 
 	MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_INFO,

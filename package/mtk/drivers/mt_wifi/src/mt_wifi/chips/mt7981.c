@@ -5492,6 +5492,7 @@ static VOID mt7981_isr(struct pci_hif_chip *hif_chip)
 	if (IntSource & MT_INT_MCU2HOST_SW_INT_STS) {
 		sched_ops->schedule_sw_int(task_group);
 		hif_chip->IntPending |= MT_INT_MCU2HOST_SW_INT_STS;
+		pAd->ErrRecoveryCtl.hostSerStep = 1;
 	}
 
 	HIF_IO_WRITE32(pAd->hdev_ctrl, MT_INT_SOURCE_CSR, IntSource);
@@ -6454,6 +6455,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	struct pci_task_group *task_group = &hif_chip->task_group;
 	struct pci_schedule_task_ops *sched_ops = hif_chip->schedule_task_ops;
 
+	ad->ErrRecoveryCtl.hostSerStep = 3;
 	/* traverse each pci_hif_chip */
 	for (i = 0; i < pci_hif->pci_hif_chip_num; i++) {
 		hif_chip = pci_hif->pci_hif_chip[i];
@@ -6468,9 +6470,11 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	if (!bFound)
 		return;
 
+	ad->ErrRecoveryCtl.hostSerStep = 4;
+
 #ifdef RTMP_MAC_PCI
 	RTMP_IO_READ32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, &int_source);
-
+	ad->ErrRecoveryCtl.mcuToHostState = int_source;
 #ifdef CONFIG_FWOWN_SUPPORT
 	if (int_source & MT_SW_INT_DRV_OWN) {
 		RTMP_IO_WRITE32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, MT_SW_INT_DRV_OWN);
@@ -6485,6 +6489,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 
 #ifdef ERR_RECOVERY
 	if (int_source & MT7663_ERROR_DETECT_MASK) {
+		ad->ErrRecoveryCtl.hostSerStep = 5;
 		/* updated ErrRecovery Status. */
 		ad->ErrRecoveryCtl.status = int_source;
 
@@ -6633,6 +6638,8 @@ static VOID mt7981_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 		UINT32 reg;
 	} cr_list[] = {
 		{"SER_STATUS       ", WF_SW_DEF_CR_SER_STATUS_ADDR},
+		{"SER_WA_STEP      ", WF_MCU_WA_SW_DEF_CR_SER_ADDR},
+		{"SER_WM_STEP      ", WF_SW_DEF_CR_SER_STEPS_ADDR},
 		{"SER_PLE_ERR      ", WF_SW_DEF_CR_PLE_STATUS_ADDR},
 		{"SER_PLE_ERR_1    ", WF_SW_DEF_CR_PLE1_STATUS_ADDR},
 		{"SER_PLE_ERR_AMSDU", WF_SW_DEF_CR_PLE_AMSDU_STATUS_ADDR},
@@ -6670,6 +6677,12 @@ static VOID mt7981_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 			}
 		}
 	}
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STEP     = 0x%08X\n", pAd->ErrRecoveryCtl.hostSerStep);
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STAGE    = 0x%08X\n", ErrRecoveryCurStage(&pAd->ErrRecoveryCtl));
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_MCU_TO_HOST   = 0x%08X\n", pAd->ErrRecoveryCtl.mcuToHostState);
 
 	if (dump_lvl >= DBG_LVL_INFO) {
 		/* dump HWITS workaround info */
@@ -12487,7 +12500,8 @@ static VOID mt7981_archOp_init(RTMP_ADAPTER *ad, RTMP_ARCH_OP *arch_ops)
 #endif /* CONFIG_AP_SUPPORT */
 	arch_ops->archDelWcidTab = MtAsicDelWcidTabByFw;
 #if defined(MBSS_AS_WDS_AP_SUPPORT) || defined(APCLI_AS_WDS_STA_SUPPORT)
-	arch_ops->archSetWcid4Addr_HdrTrans = MtAsicSetWcid4Addr_HdrTransByFw;
+	if (!ad->CommonCfg.bMBSSASWDSAPDisabled || !ad->CommonCfg.bApcliASWDSSTADisabled)
+		arch_ops->archSetWcid4Addr_HdrTrans = MtAsicSetWcid4Addr_HdrTransByFw;
 #endif
 	arch_ops->archAddRemoveKeyTab = MtAsicAddRemoveKeyTabByFw;
 #ifdef BCN_OFFLOAD_SUPPORT

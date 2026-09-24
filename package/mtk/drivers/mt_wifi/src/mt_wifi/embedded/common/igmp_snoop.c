@@ -1804,6 +1804,7 @@ VOID IGMPSnooping(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pSrcMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	IN MAC_TABLE_ENTRY *pEntry,
 	UINT16 Wcid
 )
@@ -1828,6 +1829,11 @@ VOID IGMPSnooping(
 	if (isIgmpPkt(pDstMacAddr, pIpHeader)) {
 		IpHeaderLen = (*(pIpHeader + 2) & 0x0f) * 4;
 		pIgmpHeader = pIpHeader + 2 + IpHeaderLen;
+
+		if (pIgmpHeader >= pDataEnd)
+			return;
+
+
 		IgmpVerType = (UCHAR)(*(pIgmpHeader));
 		RTMPZeroMemory(GroupIpv6Addr, IPV6_ADDR_LEN);
 #ifdef A4_CONN
@@ -1851,6 +1857,11 @@ VOID IGMPSnooping(
 		case IGMP_V1_MEMBERSHIP_REPORT: /* IGMP version 1 membership report. */
 		case IGMP_V2_MEMBERSHIP_REPORT: /* IGMP version 2 membership report. */
 			pGroupIpAddr = (PUCHAR)(pIgmpHeader + 4);
+
+
+			if ((pGroupIpAddr + 3) >= pDataEnd)
+				return;
+
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_IGMP, DBG_LVL_INFO,
 					"EntryInsert IGMP Group=%pI4\n", pGroupIpAddr);
 #ifdef IGMP_TVM_SUPPORT
@@ -1871,6 +1882,10 @@ VOID IGMPSnooping(
 
 		case IGMP_LEAVE_GROUP: /* IGMP version 1 and version 2 leave group. */
 			pGroupIpAddr = (PUCHAR)(pIgmpHeader + 4);
+
+			if ((pGroupIpAddr + 3) >= pDataEnd)
+				return;
+
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_IGMP, DBG_LVL_INFO,
 					"EntryDelete IGMP Group=%pI4\n", pGroupIpAddr);
 			CVT_IPV4_IPV6(GroupIpv6Addr, pGroupIpAddr);
@@ -1881,6 +1896,10 @@ VOID IGMPSnooping(
 			break;
 
 		case IGMP_V3_MEMBERSHIP_REPORT: /* IGMP version 3 membership report. */
+
+			if ((pIgmpHeader + 7) >= pDataEnd)
+				return;
+
 			numOfGroup = ntohs(*((UINT16 *)(pIgmpHeader + 6)));
 			pGroup = (PUCHAR)(pIgmpHeader + 8);
 
@@ -1891,6 +1910,10 @@ VOID IGMPSnooping(
 			}
 
 			for (i = 0; i < numOfGroup; i++) {
+
+				if ((pGroup + 7) >= pDataEnd)
+					return;
+
 				GroupType = (UCHAR)(*pGroup);
 				AuxDataLen = (UCHAR)(*(pGroup + 1));
 				numOfSources = ntohs(*((UINT16 *)(pGroup + 2)));
@@ -3235,6 +3258,10 @@ NDIS_STATUS IgmpPktClone(
 				RTMP_SET_PACKET_WCID(pSkbClone, pMacEntry->wcid);
 				RTMP_SET_PACKET_MCAST_CLONE(pSkbClone, 1);
 				RTMP_SET_PACKET_UP(pSkbClone, UserPriority);
+#if defined(ZERO_LOSS_CSA_SUPPORT) && defined(IGMP_SNOOP_SUPPORT)
+				pMacEntry->M2U_TxPackets++;
+				pMacEntry->M2U_TxBytes += RTMP_GET_PKT_LEN(pPacket);
+#endif
 
 				qm_ops->enq_dataq_pkt(pAd, wdev, pSkbClone, QueIdx);
 
@@ -3302,6 +3329,7 @@ static inline BOOLEAN IsSupportedMldMsg(
 BOOLEAN isMldPkt(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	OUT UINT8 *pProtoType,
 	OUT PUCHAR *pMldHeader)
 {
@@ -3323,12 +3351,19 @@ BOOLEAN isMldPkt(
 		UINT32 offset = IPV6_HDR_LEN;
 
 		while (nextProtocol != IPV6_NEXT_HEADER_ICMPV6) {
+
+			if ((pIpHeader + offset + 1) >= pDataEnd)
+				return FALSE;
+
 			if (IPv6ExtHdrHandle((RT_IPV6_EXT_HDR *)(pIpHeader + offset), &nextProtocol, &offset) == FALSE)
 				break;
 		}
 
 		if (nextProtocol == IPV6_NEXT_HEADER_ICMPV6) {
 			PRT_ICMPV6_HDR pICMPv6Hdr = (PRT_ICMPV6_HDR)(pIpHeader + offset);
+
+			if ((pIpHeader + offset + sizeof(PRT_ICMPV6_HDR) - 1) >= pDataEnd)
+				return FALSE;
 
 			if (IsSupportedMldMsg(pICMPv6Hdr->type) == TRUE) {
 				if (pProtoType != NULL)
@@ -3487,6 +3522,7 @@ VOID MLDSnooping(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pSrcMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	IN MAC_TABLE_ENTRY *pEntry,
 	UINT16 Wcid)
 {
@@ -3505,7 +3541,7 @@ VOID MLDSnooping(
 	UCHAR TVModeType = 0;
 #endif /* IGMP_TVM_SUPPORT */
 
-	if (isMldPkt(pDstMacAddr, pIpHeader, &MldType, &pMldHeader) == TRUE) {
+	if (isMldPkt(pDstMacAddr, pIpHeader, pDataEnd, &MldType, &pMldHeader) == TRUE) {
 		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_IGMP, DBG_LVL_INFO, "MLD type=%0x\n", MldType);
 #ifdef A4_CONN
 	if (pEntry && ((wdev->wdev_type == WDEV_TYPE_AP) && IS_ENTRY_A4(pEntry)))
@@ -3646,13 +3682,14 @@ VOID MLDSnooping(
 BOOLEAN isMLDquery(
 	IN PRTMP_ADAPTER pAd,
 	IN PUCHAR pDstMacAddr,
-	IN PUCHAR pIpHeader)
+	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd)
 {
 	UINT8 MldType = 0;
 	PUCHAR pMldHeader;
 	BOOLEAN isMLDquery = FALSE;
 
-	if (isMldPkt(pDstMacAddr, pIpHeader, &MldType, &pMldHeader) == TRUE) {
+	if (isMldPkt(pDstMacAddr, pIpHeader, pDataEnd, &MldType, &pMldHeader) == TRUE) {
 		switch (MldType) {
 		case MLD_LISTENER_QUERY:
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_IGMP, DBG_LVL_INFO, "isMLDquery-> MLD type=0x%x MLD_LISTENER_QUERY\n", MldType);

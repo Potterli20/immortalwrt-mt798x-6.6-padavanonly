@@ -40,6 +40,7 @@ UCHAR ESPI_AC_VO_DEFAULT[3] = {0xFA, 0xFF, 0x00};
 UCHAR ESPI_AC_VI_DEFAULT[3] = {0xFB, 0xFF, 0x00};
 
 #define CLI_REQ_MIN_INTERVAL	5 /* sec */
+#define MAX_NULL_FRAME_SEND_COUNT 255
 
 #ifdef CONFIG_MAP_SUPPORT
 VOID wapp_send_cac_stop(
@@ -56,6 +57,17 @@ VOID wapp_send_cac_stop(
 	cac_info = &event.data.cac_info;
 	cac_info->channel = channel;
 	cac_info->ret = ret;
+	wext_send_wapp_qry_rsp(pAd->net_dev, &event);
+}
+
+VOID wapp_send_Radio_off(
+	IN PRTMP_ADAPTER pAd,
+	IN UINT32 ifindex)
+{
+	struct wapp_event event;
+
+	event.event_id = WAPP_RADIO_OFF;
+	event.ifindex = ifindex;
 	wext_send_wapp_qry_rsp(pAd->net_dev, &event);
 }
 
@@ -99,24 +111,23 @@ UINT8 get_channel_utilization(PRTMP_ADAPTER pAd, u32 ifindex)
 	if (MyTxAirTime[i] != 0 || MyRxAirTime[i] != 0)
 		MyAirOccupyPercentage[i] = ((MyTxAirTime[i] + MyRxAirTime[i]) * 100)/ONE_SEC_2_US;
 
+	if (MyAirOccupyPercentage[i] >= 100) {
+		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_DEBUG,
+			"MyAirOccupyPercentage exceeds and return 255!!\n");
+		return 255;
+	}
 	res = (MyAirOccupyPercentage[i] + ObssAirOccupyPercentage[i]);
+
+	if (res >= 100) {
+		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_DEBUG,
+			"TotalOccupyPercentage exceeds and return 255!!\n");
+		return 255;
+	}
 	/* convert to a scale of 255 */
 	res *= 255;
 	res = (res / 100);
 	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_DEBUG, "final ch util res %d\n", res);
 	return res;
-}
-VOID wext_send_wapp_qry_rsp2(
-	PNET_DEV pNetDev,
-	struct wapp_event2 *event)
-{
-
-	UINT buflen = sizeof(struct wapp_event2);
-
-	event->len = buflen - sizeof(event->len) - sizeof(event->event_id);
-
-	RtmpOSWrielessEventSend(pNetDev, RT_WLAN_EVENT_CUSTOM,
-			OID_WAPP_EVENT2, NULL, (PUCHAR)event, sizeof(struct wapp_event2));
 }
 
 VOID wext_send_wapp_qry_rsp(
@@ -420,10 +431,10 @@ INT wapp_fill_client_info_new(
 	STA_TR_ENTRY *tr_entry;
 	ULONG DataRate = 0, DataRate_r = 0;
 	HTTRANSMIT_SETTING HTPhyMode;
-	HETRANSMIT_SETTING HEPhyMode;
+	HE_TRANSMIT_SETTING HEPhyMode = {0};
 	struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
 #ifdef DOT11_HE_AX
-	UINT8 he_dcm = 0, he_mcs = 0, he_nss = 0;
+	UINT8 he_dcm = 0, he_mcs = 0, he_nss = 0, sgi = 0, stbc = 0;
 #endif
 	USHORT PhyMode;
 #ifdef MAP_R3
@@ -458,51 +469,87 @@ INT wapp_fill_client_info_new(
 
 	cli_info->assoc_time = mac_entry->StaConnectTime;
 	cli_info->assoc_req_len = mac_entry->assoc_req_len;
-	HEPhyMode.word = (USHORT)mac_entry->map_LastTxRate;
+	HEPhyMode.Dword = (UINT32)mac_entry->map_LastTxRate;
 	HTPhyMode.word = (USHORT)mac_entry->map_LastTxRate;
+
+	if ((mac_entry->map_LastTxRate == 0) &&
+		(mac_entry->TxPackets.u.LowPart == 0))
+		HTPhyMode.word = mac_entry->MaxHTPhyMode.word;
+
 #ifdef MAP_R2
 	cli_info->IsReassoc = mac_entry->IsReassocSta;
 #endif
 
 #ifdef DOT11_HE_AX
-		if (HEPhyMode.field.MODE == MODE_HE_SU_REMAPPING) {
-			he_mcs = HEPhyMode.field.MCS & 0xf;
-			he_dcm = HEPhyMode.field.MCS  & 0x10 ? 1 : 0;
-			he_nss = ((HEPhyMode.field.MCS & (0x3 << 5)) >> 5) + 1;
-			get_rate_he(he_mcs, HEPhyMode.field.BW, he_nss, he_dcm, &DataRate);
-			cli_info->downlink = (u16) DataRate;
-		} else
+	if (HEPhyMode.field.MODE >= MODE_HE) {
+		he_mcs = HEPhyMode.field.MCS & 0xf;
+		he_dcm = HEPhyMode.field.MCS  & 0x10 ? 1 : 0;
+		he_nss = HEPhyMode.field.Nss;
+		sgi = HEPhyMode.field.ShortGI;
+		get_rate_he(he_mcs, HEPhyMode.field.BW, he_nss, he_dcm, &DataRate);
+		if (sgi == 1)
+			DataRate = (DataRate * 967) >> 10;
+		else if (sgi == 2)
+			DataRate = (DataRate * 870) >> 10;
+		cli_info->downlink = (u16) DataRate;
+	} else
 #endif
-		{
-			getRate(HTPhyMode, &DataRate);
-			cli_info->downlink = (u16) DataRate;
+	{
+		getRate(HTPhyMode, &DataRate);
+		cli_info->downlink = (u16) DataRate;
+		/* Though NSS1VHT20MCS9 and NSS2VHT20MCS9 rates are not specified in
+		* IEEE802.11, we do use them */
+		if ((HTPhyMode.field.MODE == MODE_VHT) && (HTPhyMode.field.BW == BW_20) &&
+			((HTPhyMode.field.MCS & 0xf) == 9)) {
+			u8 vht_nss = ((HTPhyMode.field.MCS & (0x3 << 4)) >> 4) + 1;
+
+			if (vht_nss == 1)
+				cli_info->downlink = HTPhyMode.field.ShortGI ? 96 : 86;
+			else if (vht_nss == 2)
+				cli_info->downlink = HTPhyMode.field.ShortGI ? 192 : 173;
 		}
-	/* Though NSS1VHT20MCS9 and NSS2VHT20MCS9 rates are not specified in
-	* IEEE802.11, we do use them */
-	if ((HTPhyMode.field.MODE == MODE_VHT) && (HTPhyMode.field.BW == BW_20) &&
-		((HTPhyMode.field.MCS & 0xf) == 9)) {
-		u8 vht_nss = ((HTPhyMode.field.MCS & (0x3 << 4)) >> 4) + 1;
-		if (vht_nss == 1)
-			cli_info->downlink = HTPhyMode.field.ShortGI ? 96 : 86;
-		else if (vht_nss == 2)
-			cli_info->downlink = HTPhyMode.field.ShortGI ? 192 : 173;
 	}
 
+	HEPhyMode.Dword = (UINT32) mac_entry->map_LastRxRate;
 	HTPhyMode.word = (USHORT) mac_entry->map_LastRxRate;
-	getRate(HTPhyMode, &DataRate_r);
-	cli_info->uplink = (u16) DataRate_r;
 
-	/* Though NSS1VHT20MCS9 and NSS2VHT20MCS9 rates are not specified in
-	* IEEE802.11, we do use them */
-	if ((HTPhyMode.field.MODE == MODE_VHT) && (HTPhyMode.field.BW == BW_20) &&
-		((HTPhyMode.field.MCS & 0xf) == 9)) {
-		u8 vht_nss = ((HTPhyMode.field.MCS & (0x3 << 4)) >> 4) + 1;
-		if (vht_nss == 1)
-			cli_info->uplink = HTPhyMode.field.ShortGI ? 96 : 86;
-		else if (vht_nss == 2)
-			cli_info->uplink = HTPhyMode.field.ShortGI ? 192 : 173;
+	if ((mac_entry->map_LastRxRate == 0) &&
+		(mac_entry->RxPackets.u.LowPart == 0))
+		HTPhyMode.word = mac_entry->MaxHTPhyMode.word;
+
+#ifdef DOT11_HE_AX
+	if (HEPhyMode.field.MODE >= MODE_HE) {
+		he_mcs = HEPhyMode.field.MCS & 0xf;
+		he_dcm = HEPhyMode.field.MCS & 0x10 ? 1 : 0;
+		he_nss = HEPhyMode.field.Nss;
+		sgi = HEPhyMode.field.ShortGI;
+		stbc = HEPhyMode.field.STBC;
+		he_nss = (he_nss + 1)/(stbc + 1);
+		get_rate_he(he_mcs, HEPhyMode.field.BW, he_nss, he_dcm, &DataRate_r);
+		if (sgi == 1)
+			DataRate_r = (DataRate_r * 967) >> 10;
+		else if (sgi == 2)
+			DataRate_r = (DataRate_r * 870) >> 10;
+		cli_info->uplink = (u16) DataRate_r;
+	} else
+#endif
+	{
+
+		getRate(HTPhyMode, &DataRate_r);
+		cli_info->uplink = (u16) DataRate_r;
+
+		/* Though NSS1VHT20MCS9 and NSS2VHT20MCS9 rates are not specified in
+		* IEEE802.11, we do use them */
+		if ((HTPhyMode.field.MODE == MODE_VHT) && (HTPhyMode.field.BW == BW_20) &&
+			((HTPhyMode.field.MCS & 0xf) == 9)) {
+			u8 vht_nss = ((HTPhyMode.field.MCS & (0x3 << 4)) >> 4) + 1;
+
+			if (vht_nss == 1)
+				cli_info->uplink = HTPhyMode.field.ShortGI ? 96 : 86;
+			else if (vht_nss == 2)
+				cli_info->uplink = HTPhyMode.field.ShortGI ? 192 : 173;
+		}
 	}
-
 	cli_info->uplink_rssi = RTMPAvgRssi(pAd, &mac_entry->RssiSample);
 #ifdef CONFIG_DOT11V_WNM
 	cli_info->cli_caps.btm_capable = mac_entry->bBSSMantSTASupport == TRUE ? 1 : 0;
@@ -545,9 +592,12 @@ INT wapp_fill_client_info_new(
 	cli_info->bytes_received = mac_entry->RxBytesMAP;
 	cli_info->packets_sent = mac_entry->TxPackets.u.LowPart;
 	cli_info->packets_received = mac_entry->RxPackets.u.LowPart;
-	cli_info->tx_packets_errors = 0; /* to do */
+	cli_info->tx_packets_errors = (mac_entry->MapHWDropCnt + mac_entry->MapMCUDropCnt);
 	cli_info->rx_packets_errors = 0; /* to do */
-	cli_info->retransmission_count = 0; /* to do */
+		if (mac_entry->mpdu_retries.QuadPart > mac_entry->MapHWDropCnt)
+		cli_info->retransmission_count = (mac_entry->mpdu_retries.QuadPart - mac_entry->MapHWDropCnt);
+	else
+		cli_info->retransmission_count = mac_entry->mpdu_retries.QuadPart;
 	cli_info->link_availability = 50; /* to do */
 	cli_info->tx_tp = (u32)(mac_entry->AvgTxBytes);
 	cli_info->rx_tp = (u32)(mac_entry->AvgRxBytes);
@@ -702,7 +752,7 @@ INT wapp_fill_client_info(
 	/*11 AX Support*/
 #ifdef DOT11_HE_AX
 	if (cli_info->cli_caps.phy_mode == MODE_HE) {
-		if (mac_entry->wdev && WMODE_CAP_2G(PhyMode))
+		if (mac_entry->wdev && (wlan_config_get_ch_band(mac_entry->wdev) == CMD_CH_BAND_24G))
 			cli_info->cli_caps.bw = peer_max_bw_cap(mac_entry->cap.ch_bw.he_ch_width & 0x01);
 		else
 			cli_info->cli_caps.bw = peer_max_bw_cap(mac_entry->cap.ch_bw.he_ch_width & 0x0E);
@@ -777,7 +827,7 @@ INT wapp_send_cli_query_rsp(
 	for (i = 0; i < wtbl_max_num; i++) {
 		mac_entry = &pAd->MacTab.Content[i];
 		if (IS_ENTRY_CLIENT(mac_entry)
-			&& NdisCmpMemory(mac_entry->Addr, &req->data.mac_addr, MAC_ADDR_LEN) == 0
+			&& NdisCmpMemory(mac_entry->Addr, req->data.mac_addr, MAC_ADDR_LEN) == 0
 			&& mac_entry->wdev->if_dev
 			&& req->data.ifindex == RtmpOsGetNetIfIndex(mac_entry->wdev->if_dev)) {
 			wapp_fill_client_info_new(pAd, cli_info, mac_entry);
@@ -923,7 +973,7 @@ INT wapp_send_cli_leave_event(
 	UCHAR *mac_addr,
 	MAC_TABLE_ENTRY *mac_entry)
 {
-	struct wapp_event2 event;
+	struct wapp_event event;
 	wapp_client_info *cli_info;
 
 	event.event_id = WAPP_CLI_LEAVE_EVENT;
@@ -938,7 +988,7 @@ INT wapp_send_cli_leave_event(
 		cli_info->is_APCLI = 0;
 	COPY_MAC_ADDR(cli_info->mac_addr, mac_addr);
 	cli_info->disassoc_reason = mac_entry->DisconnectReason;
-	wext_send_wapp_qry_rsp2(pAd->net_dev, &event);
+	wext_send_wapp_qry_rsp(pAd->net_dev, &event);
 
 	return 0;
 }
@@ -1349,7 +1399,7 @@ VOID setChannelList(
 	PDFS_PARAM pDfsParam = &pAd->CommonCfg.DfsParameter;
 	band_idx = HcGetBandByWdev(wdev);
 #endif
-	for (i = 0; i < pAd->ChannelListNum && i < (sizeof(chn_list->ch_list)/(sizeof(struct chnList)));
+	for (i = 0; (i < pAd->ChannelListNum) && (i < MAX_NUM_OF_CHANNELS) && (i < (sizeof(chn_list->ch_list)/(sizeof(struct chnList))));
 		i++) {
 		chn_list->ch_list[i].channel =  pAd->ChannelList[i].Channel;
 
@@ -1373,7 +1423,7 @@ VOID setChannelList(
 
 }
 
-
+#ifdef DFS_VENDOR10_CUSTOM_FEATURE
 INT wapp_send_chn_list_query_rsp(
 	PRTMP_ADAPTER pAd,
 	struct wapp_req *req)
@@ -1404,6 +1454,7 @@ INT wapp_send_chn_list_query_rsp(
 								chn_list->non_op_ch_list,
 								chn_list->op_class,
 								chn_list->non_op_chn_num);
+				setAutoChannelSkipList(pAd, wdev, chn_list);
 #endif /* CONFIG_MAP_SUPPORT */
 				wext_send_wapp_qry_rsp(pAd->net_dev, &event);
 			}
@@ -1411,7 +1462,7 @@ INT wapp_send_chn_list_query_rsp(
 	}
 	return 0;
 }
-
+#endif
 INT wapp_send_op_class_query_rsp(
 	PRTMP_ADAPTER pAd,
 	struct wapp_req *req)
@@ -1483,6 +1534,11 @@ void cache_dpp_frame_rx_event(struct wifi_dev *wdev, const char *peer_mac_addr, 
 		return;
 	buflen = sizeof(*event) + frm_len;
 	os_alloc_mem(NULL, (UCHAR **)&buf, buflen);
+	if (buf == NULL) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"memory allocation fail\n");
+		return;
+	}
 	NdisZeroMemory(buf, buflen);
 
 	event = (struct wapp_event *)buf;
@@ -1492,16 +1548,29 @@ void cache_dpp_frame_rx_event(struct wifi_dev *wdev, const char *peer_mac_addr, 
 	req_data = (struct wapp_dpp_action_frame *)&(event->data.frame);
 	NdisCopyMemory(req_data->src, peer_mac_addr, 6);
 	req_data->frm_len = frm_len;
+	if (!req_data->frm_len) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"invalid frame_length for this dpp action frame\n");
+		os_free_mem(buf);
+		return;
+	}
 	req_data->chan = channel;
 	req_data->is_gas = is_gas;
 	req_data->wapp_dpp_frame_id_no = frm_count;
 	NdisCopyMemory(req_data->frm, frm, frm_len);
-	MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-		"%s, storing event with frame id %d\n", __func__, req_data->wapp_dpp_frame_id_no);
+	MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+		"wdev->wdev_idx %d event->ifindex %d,store fid %d\n", wdev->wdev_idx,
+		event->ifindex, req_data->wapp_dpp_frame_id_no);
 	MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			"%s, source mac address for dpp frame :%02x:%02x:%02x:%02x:%02x:%02x\n",
 			 __func__,  PRINT_MAC(req_data->src));
 	os_alloc_mem(NULL, (UCHAR **)&dpp_frame, sizeof(struct dpp_frame_list));
+	if (dpp_frame == NULL) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"memory allocation fail\n");
+		os_free_mem(buf);
+		return;
+	}
 	NdisZeroMemory(dpp_frame, sizeof(struct dpp_frame_list));
 
 	dpp_frame->dpp_frame_event = event;
@@ -1545,46 +1614,6 @@ void wext_send_dpp_action_frame(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, const 
 #endif /* DPP_SUPPORT */
 
 #ifdef MAP_R3
-void wext_send_sta_info(PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
-				MAC_TABLE_ENTRY *pEntry)
-{
-	struct wapp_event event;
-	struct wapp_sta_info *req_data;
-
-	if (!wdev || !wdev->if_dev) {
-		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-						"wdev is null\n");
-		return;
-	}
-	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-						"sending sta info to wapp\n");
-	event.ifindex = RtmpOsGetNetIfIndex(wdev->if_dev);
-	req_data = (struct wapp_sta_info *)&event.data;
-	if (wdev->wdev_type == WDEV_TYPE_AP) {
-		NdisCopyMemory(req_data->src, pEntry->Addr, MAC_ADDR_LEN);
-		req_data->SsidLen = pAd->ApCfg.MBSSID[pEntry->func_tb_idx].SsidLen;
-		NdisCopyMemory(req_data->ssid,
-			pAd->ApCfg.MBSSID[pEntry->func_tb_idx].Ssid, (MAX_LEN_OF_SSID+1));
-	} else {
-		NdisCopyMemory(req_data->src, pEntry->wdev->if_addr, MAC_ADDR_LEN);
-		if (pEntry->func_tb_idx < MAX_MULTI_STA) {
-			req_data->SsidLen = pAd->StaCfg[pEntry->func_tb_idx].SsidLen;
-			NdisCopyMemory(req_data->ssid,
-				pAd->StaCfg[pEntry->func_tb_idx].Ssid, MAX_LEN_OF_SSID);
-		}
-	}
-	/* if (!IS_AKM_DPP(pEntry->SecConfig.AKMMap)) */
-	NdisCopyMemory(req_data->passphrase, pEntry->wdev->SecConfig.PSK, LEN_PSK);
-	req_data->pmk_len = pEntry->SecConfig.pmk_len;
-	NdisCopyMemory(req_data->pmk, pEntry->SecConfig.PMK, pEntry->SecConfig.pmk_len);
-	req_data->ptk_len = pEntry->SecConfig.ptk_len;
-	NdisCopyMemory(req_data->ptk, pEntry->SecConfig.PTK, pEntry->SecConfig.ptk_len);
-	event.event_id = WAPP_STA_INFO;
-
-	RtmpOSWrielessEventSend(wdev->if_dev, RT_WLAN_EVENT_CUSTOM,
-					OID_WAPP_EVENT, NULL, (PUCHAR)&event, sizeof(struct wapp_event));
-}
-
 void wext_send_dpp_uri_info(PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
 				PWSC_CTRL pWscControl)
 {
@@ -3250,7 +3279,7 @@ VOID RTMPIoctlSendNullDataFrame(
 		return;
 	}
 
-	pkt_count = req->data.value;
+	pkt_count = (req->data.value > MAX_NULL_FRAME_SEND_COUNT) ? MAX_NULL_FRAME_SEND_COUNT : req->data.value;
 
 	if (pEntry->PsMode == PWR_SAVE) {
 		/* use TIM bit to detect the PS station */
@@ -3312,9 +3341,6 @@ INT	wapp_event_handle(
 		break;
 	case WAPP_CLI_LIST_QUERY_REQ:
 		wapp_handle_cli_list_query(pAd, req);
-		break;
-	case WAPP_CHN_LIST_QUERY_REQ:
-		wapp_send_chn_list_query_rsp(pAd, req);
 		break;
 	case WAPP_OP_CLASS_QUERY_REQ:
 		wapp_send_op_class_query_rsp(pAd, req);

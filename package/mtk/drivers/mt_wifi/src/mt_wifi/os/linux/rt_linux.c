@@ -44,6 +44,7 @@
 #include <net/sch_generic.h>
 #include "rt_os_net.h"
 #include "rt_config.h"
+
 #ifdef MEM_ALLOC_INFO_SUPPORT
 #include "meminfo_list.h"
 #endif /* MEM_ALLOC_INFO_SUPPORT */
@@ -57,6 +58,13 @@
 #include <linux/if_vlan.h>
 #endif /*VLAN_SUPPORT*/
 #include "wnm.h"
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+#include <linux/scatterlist.h>
+#include <crypto/aead.h>
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 
 /* TODO */
 #undef RT_CONFIG_IF_OPMODE_ON_AP
@@ -1080,10 +1088,10 @@ static inline void __RtmpOSFSInfoChange(OS_FS_INFO *pOSFSInfo, BOOLEAN bSet)
 		/* pOSFSInfo->fsgid = (int)(current_fsgid()); */
 #endif
 #endif
-		// pOSFSInfo->fs = get_fs();
-		// set_fs(KERNEL_DS);
+		pOSFSInfo->fs = get_fs();
+		set_fs(KERNEL_DS);
 	} else {
-		// set_fs(pOSFSInfo->fs);
+		set_fs(pOSFSInfo->fs);
 #if (KERNEL_VERSION(2, 6, 29) > LINUX_VERSION_CODE)
 		current->fsuid = pOSFSInfo->fsuid;
 		current->fsgid = pOSFSInfo->fsgid;
@@ -1687,7 +1695,7 @@ int RtmpOSNetDevAddrSet(
 		}
 	}
 #endif /* CONFIG_STA_SUPPORT */
-	dev_addr_set(net_dev, pMacAddr);
+	os_move_mem(net_dev->dev_addr, pMacAddr, 6);
 	return 0;
 }
 
@@ -2021,7 +2029,8 @@ int RtmpOSNetDevAttach(
 
 #endif /* CONFIG_WIRELESS_EXT */
 		/* copy the net device mac address to the net_device structure. */
-		dev_addr_set(pNetDev, &pDevOpHook->devAddr[0]);
+		os_move_mem(pNetDev->dev_addr, &pDevOpHook->devAddr[0],
+					MAC_ADDR_LEN);
 		rtnl_locked = pDevOpHook->needProtcted;
 	}
 
@@ -2221,7 +2230,7 @@ VOID RtmpDrvAllMacPrint(
 {
 	struct file *file_w;
 	RTMP_STRING *fileName = "MacDump.txt";
-	// mm_segment_t orig_fs;
+	mm_segment_t orig_fs;
 	RTMP_STRING *msg;
 	UINT32 macAddr = 0, macValue = 0;
 	INT ret;
@@ -2231,8 +2240,8 @@ VOID RtmpDrvAllMacPrint(
 	if (!msg)
 		return;
 
-	// orig_fs = get_fs();
-	// set_fs(KERNEL_DS);
+	orig_fs = get_fs();
+	set_fs(KERNEL_DS);
 	/* open file */
 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
 
@@ -2281,7 +2290,7 @@ VOID RtmpDrvAllMacPrint(
 		filp_close(file_w, NULL);
 	}
 
-	// set_fs(orig_fs);
+	set_fs(orig_fs);
 	os_free_mem(msg);
 }
 
@@ -2294,7 +2303,7 @@ VOID RtmpDrvAllE2PPrint(
 {
 	struct file *file_w;
 	RTMP_STRING *fileName = "EEPROMDump.txt";
-	// mm_segment_t orig_fs;
+	mm_segment_t orig_fs;
 	RTMP_STRING *msg;
 	USHORT eepAddr = 0;
 	USHORT eepValue;
@@ -2305,8 +2314,8 @@ VOID RtmpDrvAllE2PPrint(
 	if (!msg)
 		return;
 
-	// orig_fs = get_fs();
-	// set_fs(KERNEL_DS);
+	orig_fs = get_fs();
+	set_fs(KERNEL_DS);
 	/* open file */
 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
 
@@ -2356,7 +2365,7 @@ VOID RtmpDrvAllE2PPrint(
 		filp_close(file_w, NULL);
 	}
 
-	// set_fs(orig_fs);
+	set_fs(orig_fs);
 	os_free_mem(msg);
 }
 
@@ -2368,10 +2377,10 @@ VOID RtmpDrvAllRFPrint(
 {
 	struct file *file_w;
 	RTMP_STRING *fileName = "RFDump.txt";
-	// mm_segment_t orig_fs;
+	mm_segment_t orig_fs;
 
-	// orig_fs = get_fs();
-	// set_fs(KERNEL_DS);
+	orig_fs = get_fs();
+	set_fs(KERNEL_DS);
 	/* open file */
 	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
 
@@ -2402,7 +2411,7 @@ VOID RtmpDrvAllRFPrint(
 		filp_close(file_w, NULL);
 	}
 
-	// set_fs(orig_fs);
+	set_fs(orig_fs);
 }
 
 
@@ -5578,42 +5587,106 @@ VOID starv_log_exit(struct starv_log *ctrl)
 
 #endif /*DBG_STARVATION*/
 
-#if defined(CONFIG_DBG_OOM) && !defined(CONFIG_CPE_SUPPORT)
-#define OOM_NOTIFIER_DUMP_CNT	3
-static INT oom_handler(struct notifier_block *this, unsigned long ev, void *ptr)
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+struct crypto_aead *aead_key_setup_encrypt(const char *alg, const u8 key[], size_t key_len, size_t mic_len)
 {
-	UCHAR i;
+	struct crypto_aead *tfm;
+	int err;
 
-	for (i = 0; i < OOM_NOTIFIER_DUMP_CNT; i++) {
-		MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Round ##### %d #####\n", i);
-		wifi_dump_info();
-	}
+	tfm = crypto_alloc_aead(alg, 0, CRYPTO_ALG_ASYNC);
+	if (IS_ERR(tfm))
+		return tfm;
 
-	return NOTIFY_DONE;
+	err = crypto_aead_setkey(tfm, key, key_len);
+	if (err)
+		goto free_aead;
+	err = crypto_aead_setauthsize(tfm, mic_len);
+	if (err)
+		goto free_aead;
+
+	/* MTWF_PRINT("@@ [%s] tfm=%p\n", __func__, tfm); */
+
+	return tfm;
+
+free_aead:
+	crypto_free_aead(tfm);
+	return ERR_PTR(err);
 }
 
-static struct notifier_block oom_nb = {
-	.notifier_call = oom_handler,
-};
-
-static INT add_oom_notifier(VOID)
+void aead_key_free(struct crypto_aead *tfm)
 {
-	MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "\n");
-
-	register_oom_notifier(&oom_nb);
-
-	return 0;
+	/* MTWF_PRINT("@@ [%s] tfm=%p\n", __func__, tfm); */
+	crypto_free_aead(tfm);
 }
 
-static INT del_oom_notifier(VOID)
+int aead_encrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len, u8 *data, size_t data_len, u8 *mic)
 {
-	MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "\n");
+	size_t mic_len = crypto_aead_authsize(tfm);
+	struct scatterlist sg[3];
+	struct aead_request *aead_req;
+	int reqsize = sizeof(*aead_req) + crypto_aead_reqsize(tfm);
+	u8 *__aad;
+	int ret;
 
-	unregister_oom_notifier(&oom_nb);
+	aead_req = kzalloc(reqsize + aad_len, GFP_ATOMIC);
+	if (!aead_req)
+		return -ENOMEM;
 
-	return 0;
+	__aad = (u8 *)aead_req + reqsize;
+	memcpy(__aad, aad, aad_len);
+
+	sg_init_table(sg, 3);
+	sg_set_buf(&sg[0], __aad, aad_len);
+	sg_set_buf(&sg[1], data, data_len);
+	sg_set_buf(&sg[2], mic, mic_len);
+
+	aead_request_set_tfm(aead_req, tfm);
+	aead_request_set_crypt(aead_req, sg, sg, data_len, b_0);
+	aead_request_set_ad(aead_req, sg[0].length);
+
+	ret = crypto_aead_encrypt(aead_req);
+	kfree(aead_req);
+
+	return ret;
 }
-#endif /*CONFIG_DBG_OOM*/
+
+int aead_decrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len, u8 *data, size_t data_len, u8 *mic)
+{
+	size_t mic_len = crypto_aead_authsize(tfm);
+	struct scatterlist sg[3];
+	struct aead_request *aead_req;
+	int reqsize = sizeof(*aead_req) + crypto_aead_reqsize(tfm);
+	u8 *__aad;
+	int err;
+
+	if (data_len == 0)
+	    return -EINVAL;
+
+	aead_req = kzalloc(reqsize + aad_len, GFP_ATOMIC);
+	if (!aead_req)
+	    return -ENOMEM;
+
+	__aad = (u8 *)aead_req + reqsize;
+	memcpy(__aad, aad, aad_len);
+
+	sg_init_table(sg, 3);
+	sg_set_buf(&sg[0], __aad, aad_len);
+	sg_set_buf(&sg[1], data, data_len);
+	sg_set_buf(&sg[2], mic, mic_len);
+
+	aead_request_set_tfm(aead_req, tfm);
+	aead_request_set_crypt(aead_req, sg, sg, data_len + mic_len, b_0);
+	aead_request_set_ad(aead_req, sg[0].length);
+
+	err = crypto_aead_decrypt(aead_req);
+	kfree(aead_req);
+
+	return err;
+}
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 
 #ifdef CONFIG_DBG_QDISC
 /*
@@ -5642,7 +5715,8 @@ void os_system_tx_queue_dump(PNET_DEV dev)
 			if (skb->head) {
 				p = virt_to_head_page(skb->head);
 				page_size = PAGE_SIZE << compound_order(p);
-				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u\n", __func__, k++, p,OS_PAGE_REF(p), page_size, (unsigned int) compound_order(p));
+				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u, dtor:%u\n", __func__, k++, p,
+					OS_PAGE_REF(p), page_size, (unsigned int) compound_order(p), (unsigned int) p->compound_dtor);
 			}
 			skb = skb->next;
 		}
@@ -5670,15 +5744,11 @@ VOID os_module_init(VOID)
 	if (retval == NDIS_STATUS_SUCCESS) {
 		if (strlen(dbg_level) != 0)
 			Set_Debug_Proc(NULL, dbg_level);
-
 		if (strlen(dbg_option) != 0)
 			Set_DebugOption_Proc(NULL, dbg_option);
 	}
 
 /* Add out-of-memory notifier */
-#if defined(CONFIG_DBG_OOM) && !defined(CONFIG_CPE_SUPPORT)
-	add_oom_notifier();
-#endif /*CONFIG_DBG_OOM*/
 	multi_hif_init();
 #ifdef CONFIG_6G_SUPPORT
 	bssmnger_init();
@@ -5693,9 +5763,6 @@ VOID os_module_exit(VOID)
 #endif
 	multi_hif_exit();
 /* Del out-of-memory notifier */
-#if defined(CONFIG_DBG_OOM) && !defined(CONFIG_CPE_SUPPORT)
-	del_oom_notifier();
-#endif /*CONFIG_DBG_OOM*/
 #ifdef MEM_ALLOC_INFO_SUPPORT
 	MemInfoListExit();
 #endif /*MEM_ALLOC_INFO_SUPPORT*/

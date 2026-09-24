@@ -788,7 +788,7 @@ static NDIS_STATUS load_emi_fw(struct _RTMP_ADAPTER *pAd, enum target_cpu cpu, s
 			"emi_phy_addr = 0x%08x, emi_phy_addr_size = 0x%08x\n",
 			pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
 
-	vir_addr = ioremap(pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
+	vir_addr = ioremap_nocache(pChipCap->emi_phy_addr, pChipCap->emi_phy_addr_size);
 	if (vir_addr != 0) {
 		/* parsing and find download emi payload */
 		for (i = 0; i < target->num_of_region; i++) {

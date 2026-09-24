@@ -134,6 +134,11 @@ enum {
 
 #endif
 
+enum _CAC_OP {
+	CAC_DONE_CHECK = 1,
+	CAC_DONE_UPDATE,
+};
+
 #define RESTRICTION_BAND_LOW	116
 #define RESTRICTION_BAND_HIGH	128
 #define CHAN_SWITCH_PERIOD 10
@@ -544,6 +549,9 @@ typedef struct _DFS_PARAM {
 	BOOLEAN DisableDfsCal;
 	BOOLEAN bNoSwitchCh;
 	BOOLEAN bDfsEnable;
+#ifdef MT_BAND4_DFS_SUPPORT /*302502*/
+	BOOLEAN band4DfsEnable;
+#endif
 	UCHAR RadarHitIdxRecord;
 	UCHAR targetCh;
 	UCHAR targetBw;
@@ -619,7 +627,11 @@ typedef struct _DFS_PARAM {
 	BOOLEAN BW160DedicatedZWSupport;
 	BOOLEAN BW160DedicatedZWState;
 #endif
+	UCHAR ZwAdjBw;
+	BOOLEAN ZwAdjBwFlag;
 	UINT32	TriggerEventIntvl;
+	UCHAR	cac_channel;
+	BOOLEAN	CERegCacEn; /* CE regulatory CAC enhancement */
 } DFS_PARAM, *PDFS_PARAM;
 
 /*******************************************************************************
@@ -961,6 +973,12 @@ BOOLEAN DfsRddReportHandle(/*handle the event of EXT_EVENT_ID_RDD_REPORT*/
 VOID WrapDfsSetNonOccupancy(/*Set Channel non-occupancy time, finish */
 	IN PRTMP_ADAPTER pAd, IN UCHAR rddidx, IN UCHAR bandIdx);
 
+BOOLEAN dfs_cac_op(
+	PRTMP_ADAPTER pAd,
+	struct wifi_dev *wdev,
+	enum _CAC_OP op
+);
+
 VOID DfsSetNonOccupancy(/*Set Channel non-occupancy time, finish*/
 	IN PRTMP_ADAPTER pAd,
 	IN UCHAR band_idx,
@@ -1147,6 +1165,8 @@ VOID dfs_dump_radar_sw_pls_info(IN PRTMP_ADAPTER pAd, IN P_EXT_EVENT_RDD_REPORT_
 VOID dfs_dump_radar_hw_pls_info(IN PRTMP_ADAPTER pAd, IN P_EXT_EVENT_RDD_REPORT_T prRadarReport);
 VOID dfs_dump_radar_sw_pls_info(IN PRTMP_ADAPTER pAd, IN P_EXT_EVENT_RDD_REPORT_T prRadarReport);
 VOID dfs_update_radar_info(IN P_EXT_EVENT_RDD_REPORT_T prRadarReport);
-
+#ifdef DFS_VENDOR10_CUSTOM_FEATURE
+VOID DfsV10ConfigSetVHTbw(IN PRTMP_ADAPTER pAd, IN struct wifi_dev *wdev, IN UCHAR vht_bw);
+#endif
 #endif /*MT_DFS_SUPPORT*/
 #endif /*_MT_RDM_H_ */

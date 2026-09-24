@@ -128,6 +128,7 @@ static int wbsys_probe(struct platform_device *pdev)
 		goto err_out_free_netdev;
 	}
 
+
 	wl_proc_init();
 	MTWF_DBG(pAd, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_INFO, "%s: at CSR addr 0x%lx, IRQ %ld.\n",
 			 net_dev->name, (ULONG)base_addr, (long int)net_dev->irq);

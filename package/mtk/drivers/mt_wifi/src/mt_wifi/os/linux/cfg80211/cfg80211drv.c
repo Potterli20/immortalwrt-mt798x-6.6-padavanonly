@@ -52,6 +52,7 @@ INT CFG80211DRV_IoctlHandle(
 	PRTMP_ADAPTER pAd = (PRTMP_ADAPTER)pAdSrc;
 	POS_COOKIE pObj = (POS_COOKIE)pAd->OS_Cookie;
 	struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+	unsigned char BandIdx = HcGetBandByWdev(wdev);
 #ifdef CONFIG_MULTI_CHANNEL
 	PSTA_ADMIN_CONFIG pApCliEntry = NULL;
 #endif /* CONFIG_MULTI_CHANNEL */
@@ -204,8 +205,9 @@ INT CFG80211DRV_IoctlHandle(
 	case CMD_RTPRIV_IOCTL_80211_UNREGISTER:
 
 		/* Only main net_dev needs to do CFG80211_UnRegister. */
-		if (pAd->net_dev == pData)
-			CFG80211_UnRegister(pAd, pData);
+		if (!pAd->CommonCfg.bcfg80211Disabled)
+			if (pAd->net_dev == pData)
+				CFG80211_UnRegister(pAd, pData);
 
 		break;
 
@@ -580,13 +582,13 @@ INT CFG80211DRV_IoctlHandle(
 					__func__, i, pAd->TxStream[i], pAd->RxStream[i]));
 			}
 
-			wlan_config_set_tx_stream(wdev, min(Txstream, nss_cap->max_nss));
-			wlan_config_set_rx_stream(wdev, min(Rxstream, nss_cap->max_nss));
-			wlan_operate_set_tx_stream(wdev, min(Txstream, nss_cap->max_nss));
-			wlan_operate_set_rx_stream(wdev, min(Rxstream, nss_cap->max_nss));
+			wlan_config_set_tx_stream(wdev, min(Txstream, nss_cap->max_nss[BandIdx]));
+			wlan_config_set_rx_stream(wdev, min(Rxstream, nss_cap->max_nss[BandIdx]));
+			wlan_operate_set_tx_stream(wdev, min(Txstream, nss_cap->max_nss[BandIdx]));
+			wlan_operate_set_rx_stream(wdev, min(Rxstream, nss_cap->max_nss[BandIdx]));
 #ifdef DOT11_HE_AX
-			wlan_config_set_he_tx_nss(wdev, min(Txstream, nss_cap->max_nss));
-			wlan_config_set_he_rx_nss(wdev, min(Rxstream, nss_cap->max_nss));
+			wlan_config_set_he_tx_nss(wdev, min(Txstream, nss_cap->max_nss[BandIdx]));
+			wlan_config_set_he_rx_nss(wdev, min(Rxstream, nss_cap->max_nss[BandIdx]));
 #endif /* DOT11_HE_AX */
 			SetCommonHtVht(pAd, wdev);
 #ifdef CONFIG_AP_SUPPORT
@@ -2052,7 +2054,8 @@ BOOLEAN CFG80211DRV_FILL_STAInfo(
 			pApStaInfo->rx_bytes = (UINT32)pstacfg->StaStatistic.ReceivedByteCount;
 			/*tx_retries*/
 			#ifdef EAP_STATS_SUPPORT
-			pApStaInfo->tx_retries = (UINT32)pEntry->mpdu_retries.QuadPart;
+			if (!pAd->CommonCfg.bEapStatsDisabled)
+				pApStaInfo->tx_retries = (UINT32)pEntry->mpdu_retries.QuadPart;
 			#endif
 			#ifdef WIFI_IAP_BCN_STAT_FEATURE
 			/*add beacon infos here*/
@@ -2101,7 +2104,8 @@ BOOLEAN CFG80211DRV_FILL_STAInfo(
 		#endif
 		#ifdef EAP_STATS_SUPPORT
 			/*tx_retries*/
-			pApStaInfo->tx_retries = (UINT32)pEntry->mpdu_retries.QuadPart;
+			if (!pAd->CommonCfg.bEapStatsDisabled)
+				pApStaInfo->tx_retries = (UINT32)pEntry->mpdu_retries.QuadPart;
 		#endif
 }
 
@@ -2815,17 +2819,41 @@ BOOLEAN CFG80211DRV_Connect(
 				Set_ApCli_AuthMode(pAd, staidx, "OWE");
 			else
 #endif
-			Set_ApCli_AuthMode(pAd, staidx, "WPA2PSK");
+#ifdef HOSTAPD_SUITEB_SUPPORT
+				if (pConnInfo->AkmSuite == WLAN_AKM_SUITE_8021X_SUITE_B_192) {
+					Set_ApCli_AuthMode(pAd, staidx, "WPA3-192");
+					MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+						"\n\nsetting apcli auth mode== WPA3-192 == > %d\n", pConnInfo->AkmSuite);
+				} else
+#endif
+					Set_ApCli_AuthMode(pAd, staidx, "WPA2PSK");
+		} else {
+			if (pConnInfo->FlgIs8021x == TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "WPA2\n");
+				Set_ApCli_AuthMode(pAd, staidx, "WPA2");
+			}
 		}
 	} else if (pConnInfo->WpaVer == 1) {
 		if (!pConnInfo->FlgIs8021x) {
 			MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "APCLI WPAPSK\n");
 			Set_ApCli_AuthMode(pAd, staidx, "WPAPSK");
+		} else {
+			if (pConnInfo->FlgIs8021x == TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "WPA\n");
+				Set_ApCli_AuthMode(pAd, staidx, "WPA");
+			}
 		}
 	} else if (pConnInfo->AuthType == Ndis802_11AuthModeShared)
 		Set_ApCli_AuthMode(pAd, staidx, "SHARED");
 	else if (pConnInfo->AuthType == Ndis802_11AuthModeOpen)
 		Set_ApCli_AuthMode(pAd, staidx, "OPEN");
+#ifdef HOSTAPD_SUITEB_SUPPORT
+	else if (pConnInfo->AkmSuite == WLAN_AKM_SUITE_8021X_SUITE_B_192) {
+		Set_ApCli_AuthMode(pAd, staidx, "WPA3-192");
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"\nsetting apcli auth mode== WPA3-192\n");
+	}
+#endif
 	else
 		Set_ApCli_AuthMode(pAd, staidx, "WEPAUTO");
 	/* Set PTK Encryption Mode */
@@ -2835,6 +2863,12 @@ BOOLEAN CFG80211DRV_Connect(
 	} else if (pConnInfo->PairwiseEncrypType & RT_CMD_80211_CONN_ENCRYPT_TKIP) {
 		MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "TKIP\n");
 		Set_ApCli_EncrypType(pAd, staidx, "TKIP");
+#ifdef HOSTAPD_SUITEB_SUPPORT
+	} else if (pConnInfo->Pairwise == WLAN_CIPHER_SUITE_GCMP_256) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"\nsetting apcli pairwise== WLAN_CIPHER_SUITE_GCMP_256\n");
+		Set_ApCli_EncrypType(pAd, staidx, "GCMP256");
+#endif
 	} else if (pConnInfo->PairwiseEncrypType & RT_CMD_80211_CONN_ENCRYPT_WEP) {
 		MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "WEP\n");
 		Set_ApCli_EncrypType(pAd, staidx, "WEP");
@@ -2858,6 +2892,7 @@ BOOLEAN CFG80211DRV_Connect(
 	pAd->cfg80211_ctrl.FlgCfg80211Connecting = TRUE;
 	Set_ApCli_Ssid(pAd, staidx, (RTMP_STRING *)SSID);
 	Set_ApCli_Enable(pAd, staidx, "1");
+
 	CFG80211DBG(DBG_LVL_INFO, ("80211> APCLI CONNECTING SSID = %s\n", SSID));
 
 #else

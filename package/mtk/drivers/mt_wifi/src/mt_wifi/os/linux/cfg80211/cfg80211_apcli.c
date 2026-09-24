@@ -227,20 +227,36 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pAdOrg, VOID *pData)
 		}
 #endif /* MT7615 || MT7622 || MT7626*/
 	} else if (pKeyInfo->KeyType == RT_CMD_80211_KEY_WPA) {
-		if (pKeyInfo->cipher == Ndis802_11AESEnable) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
-		if (pKeyInfo->bPairwise == FALSE)
-#else
-		if (pKeyInfo->KeyId > 0)
-#endif /* LINUX_VERSION_CODE (2, 6, 37) */
-		{
+		if (pKeyInfo->bPairwise == FALSE)	{
 			if (IS_MT7615(pAd) || IS_MT7622(pAd) || IS_MT7626(pAd) ||
 				IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) ||
 				IS_MT7981(pAd)) {
 				struct _ASIC_SEC_INFO *info = NULL;
 
 				NdisCopyMemory(&pMacEntry->SecConfig.GTK, pKeyInfo->KeyBuf, MAX_LEN_GTK);
-				SET_CIPHER_CCMP128(pMacEntry->SecConfig.GroupCipher);
+
+				switch (pKeyInfo->cipher) {
+				case Ndis802_11GCMP256Enable:
+						SET_CIPHER_GCMP256(pMacEntry->SecConfig.GroupCipher);
+						break;
+
+				case Ndis802_11AESEnable:
+						SET_CIPHER_CCMP128(pMacEntry->SecConfig.GroupCipher);
+						break;
+
+				case Ndis802_11TKIPEnable:
+						SET_CIPHER_TKIP(pMacEntry->SecConfig.GroupCipher);
+						break;
+
+				case Ndis802_11GCMP128Enable:
+						SET_CIPHER_GCMP128(pMacEntry->SecConfig.GroupCipher);
+						break;
+
+				case Ndis802_11CCMP256Enable:
+						SET_CIPHER_CCMP256(pMacEntry->SecConfig.GroupCipher);
+						break;
+				}
+
 				/* Set key material to Asic */
 				os_alloc_mem(NULL, (UCHAR **)&info, sizeof(ASIC_SEC_INFO));
 				if (info) {
@@ -275,8 +291,31 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pAdOrg, VOID *pData)
 					IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) ||
 					IS_MT7981(pAd)) {
 					struct _ASIC_SEC_INFO *info = NULL;
+					NdisCopyMemory(&pMacEntry->SecConfig.PTK[OFFSET_OF_PTK_TK], pKeyInfo->KeyBuf, OFFSET_OF_PTK_TK);
 					/* NdisCopyMemory(&pMacEntry->SecConfig.PTK, pKeyInfo->KeyBuf, LEN_TK + LEN_TK2); */
-					SET_CIPHER_CCMP128(pMacEntry->SecConfig.PairwiseCipher);
+
+					switch (pKeyInfo->cipher) {
+
+					case Ndis802_11GCMP256Enable:
+						SET_CIPHER_GCMP256(pMacEntry->SecConfig.PairwiseCipher);
+						break;
+
+					case Ndis802_11AESEnable:
+						SET_CIPHER_CCMP128(pMacEntry->SecConfig.PairwiseCipher);
+						break;
+
+					case Ndis802_11TKIPEnable:
+						SET_CIPHER_TKIP(pMacEntry->SecConfig.PairwiseCipher);
+						break;
+
+					case Ndis802_11GCMP128Enable:
+						SET_CIPHER_GCMP128(pMacEntry->SecConfig.PairwiseCipher);
+						break;
+
+					case Ndis802_11CCMP256Enable:
+						SET_CIPHER_CCMP256(pMacEntry->SecConfig.PairwiseCipher);
+						break;
+					}
 					/* Set key material to Asic */
 					os_alloc_mem(NULL, (UCHAR **)&info, sizeof(ASIC_SEC_INFO));
 					if (info) {
@@ -319,116 +358,6 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pAdOrg, VOID *pData)
 					printk("APCLI: Set AES Security Set. (PAIRWISE) But pMacEntry NULL\n");
 				}
 			}
-		} else if (pKeyInfo->cipher == Ndis802_11TKIPEnable) {
-				/* TKIP */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
-		if (pKeyInfo->bPairwise == FALSE)
-#else
-		if (pKeyInfo->KeyId > 0)
-#endif	/* LINUX_VERSION_CODE 2.6.37 */
-			{
-#if defined(MT7615) || defined(MT7622) || defined(MT7626) || defined(MT7915) || \
-	defined(MT7986) || defined(MT7916) || defined(MT7981)
-					if (IS_MT7615(pAd) || IS_MT7622(pAd) || IS_MT7626(pAd) ||
-						IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) ||
-						IS_MT7981(pAd)) {
-						struct _ASIC_SEC_INFO *info = NULL;
-						NdisCopyMemory(&pMacEntry->SecConfig.GTK, pKeyInfo->KeyBuf, MAX_LEN_GTK);
-						SET_CIPHER_TKIP(pMacEntry->SecConfig.GroupCipher);
-						/* Set key material to Asic */
-						os_alloc_mem(NULL, (UCHAR **)&info, sizeof(ASIC_SEC_INFO));
-						if (info) {
-							os_zero_mem(info, sizeof(ASIC_SEC_INFO));
-							info->Operation = SEC_ASIC_ADD_GROUP_KEY;
-							info->Direction = SEC_ASIC_KEY_RX;
-							info->Wcid = wdev->bss_info_argument.bmc_wlan_idx;
-							info->BssIndex = pMacEntry->func_tb_idx;
-							info->Cipher = pMacEntry->SecConfig.GroupCipher;
-							info->KeyIdx = (UINT8)(pKeyInfo->KeyId & 0x0fff);
-							os_move_mem(&info->PeerAddr[0], pMacEntry->Addr, MAC_ADDR_LEN);
-							/* Install Shared key */
-							os_move_mem(info->Key.Key, &pMacEntry->SecConfig.GTK, LEN_MAX_GTK);
-							if (IS_AKM_WPA_CAPABILITY(pMacEntry->SecConfig.AKMMap)) {
-								/* set 802.1x port control */
-								tr_entry->PortSecured = WPA_802_1X_PORT_SECURED;
-								wdev->PortSecured = WPA_802_1X_PORT_SECURED;
-								pMacEntry->PrivacyFilter = Ndis802_11PrivFilterAcceptAll;
-								WifiSysUpdatePortSecur(pAd, pMacEntry, NULL);
-							}
-							WPAInstallKey(pAd, info, TRUE, TRUE);
-							wdev->SecConfig.Handshake.GTKState = REKEY_ESTABLISHED;
-							os_free_mem(info);
-						} else {
-							MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "struct alloc fail\n");
-						}
-				}
-#else
-				os_move_mem(pAd->SharedKey[apidx][pKeyInfo->KeyId].Key, pKeyInfo->KeyBuf, pKeyInfo->KeyLen);
-				AsicAddSharedKeyEntry(pAd, apidx, pKeyInfo->KeyId,
-					&pAd->SharedKey[apidx][pKeyInfo->KeyId]);
-				GET_GroupKey_WCID(pWdev, Wcid);
-				RTMPSetWcidSecurityInfo(pAd, apidx, (UINT8)(pKeyInfo->KeyId),
-				pAd->SharedKey[apidx][pKeyInfo->KeyId].CipherAlg, Wcid, SHAREDKEYTABLE);
-
-#ifdef MT_MAC
-			if (pAd->chipCap.hif_type == HIF_MT)
-				RTMP_ADDREMOVE_KEY(pAd, 0, apidx, pKeyInfo->KeyId, Wcid, SHAREDKEYTABLE,
-					&pAd->SharedKey[apidx][pKeyInfo->KeyId], BROADCAST_ADDR);
-#endif /* MT_MAC */
-#endif /* MT7615 */
-				}
-			 else {
-				if (pMacEntry != NULL) {
-					MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_INFO, "CFG: Set TKIP Security Set. (PAIRWISE) %d\n", pKeyInfo->KeyLen);
-					NdisCopyMemory(&pMacEntry->SecConfig.PTK[OFFSET_OF_PTK_TK], pKeyInfo->KeyBuf, OFFSET_OF_PTK_TK);
-#if defined(MT7615) || defined(MT7622) || defined(MT7626) || defined(MT7915) || \
-	defined(MT7986) || defined(MT7916) || defined(MT7981)
-						if (IS_MT7615(pAd) || IS_MT7622(pAd) || IS_MT7626(pAd) ||
-							IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) ||
-							IS_MT7981(pAd)) {
-							struct _ASIC_SEC_INFO *info = NULL;
-
-							/*NdisCopyMemory(&pMacEntry->SecConfig.PTK[OFFSET_OF_PTK_TK], pKeyInfo->KeyBuf, OFFSET_OF_PTK_TK);*/
-							SET_CIPHER_TKIP(pMacEntry->SecConfig.PairwiseCipher);
-							/* Set key material to Asic */
-							os_alloc_mem(NULL, (UCHAR **)&info, sizeof(ASIC_SEC_INFO));
-							if (info) {
-								os_zero_mem(info, sizeof(ASIC_SEC_INFO));
-								/*NdisCopyMemory(&pMacEntry->SecConfig.PTK[LEN_PTK_KCK + LEN_PTK_KEK], pKeyInfo->KeyBuf, LEN_MAX_PTK);*/
-								info->Operation = SEC_ASIC_ADD_PAIRWISE_KEY;
-								info->Direction = SEC_ASIC_KEY_BOTH;
-								info->Wcid = pMacEntry->wcid;
-								info->BssIndex = pMacEntry->func_tb_idx;
-								info->Cipher = pMacEntry->SecConfig.PairwiseCipher;
-								info->KeyIdx = (UINT8)(pKeyInfo->KeyId & 0x0fff);/*pEntry->SecConfig.PairwiseKeyId;*/
-								os_move_mem(&info->PeerAddr[0], pMacEntry->Addr, MAC_ADDR_LEN);
-								/*os_move_mem(info->Key.Key,&pMacEntry->SecConfig.PTK[LEN_PTK_KCK + LEN_PTK_KEK], (LEN_TK + LEN_TK2));*/
-								os_move_mem(info->Key.Key, pKeyInfo->KeyBuf, (LEN_TK + LEN_TK2));
-								WPAInstallKey(pAd, info, TRUE, TRUE);
-								os_free_mem(info);
-							} else {
-								MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "struct alloc fail\n");
-							}
-						}
-#else
-					pEntry->PairwiseKey.KeyLen = LEN_TK;
-					NdisCopyMemory(&pEntry->PTK[OFFSET_OF_PTK_TK], pKeyInfo->KeyBuf, OFFSET_OF_PTK_TK);
-					os_move_mem(pEntry->PairwiseKey.Key, &pEntry->PTK[OFFSET_OF_PTK_TK], pKeyInfo->KeyLen);
-
-					AsicAddPairwiseKeyEntry(pAd, (UCHAR)pEntry->Aid, &pEntry->PairwiseKey);
-					RTMPSetWcidSecurityInfo(pAd, pEntry->apidx, (UINT8)(pKeyInfo->KeyId & 0x0fff), pEntry->PairwiseKey.CipherAlg, pEntry->Aid, PAIRWISEKEYTABLE);
-
-#ifdef MT_MAC
-				if (pAd->chipCap.hif_type == HIF_MT)
-					RTMP_ADDREMOVE_KEY(pAd, 0, apidx, pKeyInfo->KeyId, pEntry->wcid, PAIRWISEKEYTABLE,
-						&pEntry->PairwiseKey, pEntry->Addr);
-#endif /* MT_MAC */
-#endif /* MT7615 */
-			} else {
-					MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "CFG: Set TKIP Security Set. (PAIRWISE) But pEntry NULL\n");
-				}
-			}
-		}
 	}
 }
 #endif /* APCLI_CFG80211_SUPPORT */

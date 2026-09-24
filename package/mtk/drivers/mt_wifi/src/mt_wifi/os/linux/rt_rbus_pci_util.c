@@ -45,6 +45,7 @@ void RtmpAllocDescBuf(
 	struct device *pdev = (struct device *)pDev;
 #if (KERNEL_VERSION(3, 18, 0) <= LINUX_VERSION_CODE)
 	*VirtualAddress = (PVOID)dma_zalloc_coherent(pdev, sizeof(char) * Length, &DmaAddr, GFP_KERNEL);
+
 #else
 	*VirtualAddress = (PVOID)dma_alloc_coherent(pdev, sizeof(char) * Length, &DmaAddr, GFP_KERNEL);
 #endif
@@ -159,7 +160,7 @@ PNDIS_PACKET RTMP_AllocateRxPacketBuffer(
 	}
 
 	if (pkt) {
-		*pa = dma_map_single(pdev, *va, size, DMA_FROM_DEVICE);
+		*pa = dma_map_single(pdev, *va, size, PCI_DMA_FROMDEVICE);
 		 if (dma_mapping_error(pdev, *pa)) {
 			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR, "!!!!dma_mapping_error(pdev, *pa)!!!!\n");
 			switch (rx_ring->buf_type) {
@@ -231,10 +232,10 @@ ra_dma_addr_t linux_pci_map_single(void *pDev, void *ptr, size_t size, int sd_id
 	struct device *pdev = (struct device *)pDev;
 
 	if (direction == RTMP_PCI_DMA_TODEVICE)
-		direction = DMA_TO_DEVICE;
+		direction = PCI_DMA_TODEVICE;
 
 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
-		direction = DMA_FROM_DEVICE;
+		direction = PCI_DMA_FROMDEVICE;
 
 	/*
 	 *	------ Porting Information ------
@@ -264,10 +265,10 @@ void linux_pci_unmap_single(void *pDev, ra_dma_addr_t radma_addr, size_t size, i
 	struct device *pdev = (struct device *)pDev;
 
 	if (direction == RTMP_PCI_DMA_TODEVICE)
-		direction = DMA_TO_DEVICE;
+		direction = PCI_DMA_TODEVICE;
 
 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
-		direction = DMA_FROM_DEVICE;
+		direction = PCI_DMA_FROMDEVICE;
 
 	if (size > 0)
 		dma_unmap_single(pdev, DmaAddr, size, direction);

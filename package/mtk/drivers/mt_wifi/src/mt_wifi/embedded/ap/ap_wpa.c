@@ -64,9 +64,9 @@ VOID ap_handle_mic_error_event(RTMP_ADAPTER *ad, MAC_TABLE_ENTRY *entry, RX_BLK 
 VOID HandleCounterMeasure(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry)
 {
 
-#ifndef RT_CFG80211_SUPPORT
+//#ifndef RT_CFG80211_SUPPORT
 	INT i;
-#endif
+//#endif
 	BOOLEAN Cancelled;
 
 	if (!pEntry)
@@ -87,7 +87,7 @@ VOID HandleCounterMeasure(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry)
 	/* send wireless event - for MIC error */
 	RTMPSendWirelessEvent(pAd, IW_MIC_ERROR_EVENT_FLAG, pEntry->Addr, 0, 0);
 #ifdef RT_CFG80211_SUPPORT
-	{
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 		const UCHAR tsc[6] = {0, 0, 0, 0, 0, 0};
 		PNET_DEV pNetDev = pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.if_dev;
 		/* NL80211_KEYTYPE_PAIRWISE = 1, tsc = tsc of frame causing mic failure */
@@ -105,6 +105,11 @@ VOID HandleCounterMeasure(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry)
 #ifndef RT_CFG80211_SUPPORT
 		/* renew GTK */
 		GenRandom(pAd, pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.bssid, pAd->ApCfg.MBSSID[pEntry->func_tb_idx].GNonce);
+#else
+		if (pAd->CommonCfg.bcfg80211Disabled) {
+			/* renew GTK */
+			GenRandom(pAd, pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.bssid, pAd->ApCfg.MBSSID[pEntry->func_tb_idx].GNonce);
+		}
 #endif
 		/* Cancel CounterMeasure Timer */
 		RTMPCancelTimer(&pAd->ApCfg.CounterMeasureTimer, &Cancelled);
@@ -122,6 +127,21 @@ VOID HandleCounterMeasure(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry)
 				MlmeDeAuthAction(pAd, &pAd->MacTab.Content[i], REASON_MIC_FAILURE, FALSE);
 			}
 		}
+#else
+		if (pAd->CommonCfg.bcfg80211Disabled) {
+			for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
+			/* happened twice within 60 sec,  AP SENDS disaccociate
+			 * all associated STAs.  All STA's transition to State 2 */
+				if (IS_ENTRY_CLIENT(&pAd->MacTab.Content[i])) {
+#ifdef MAP_R2
+					if (IS_MAP_ENABLE(pAd) && IS_MAP_R2_ENABLE(pAd))
+						wapp_handle_sta_disassoc(pAd, i, REASON_MIC_FAILURE);
+#endif
+					MlmeDeAuthAction(pAd, &pAd->MacTab.Content[i], REASON_MIC_FAILURE, FALSE);
+				}
+			}
+		}
+
 #endif
 
 		/*

@@ -74,8 +74,16 @@
 #ifdef IGMP_SNOOPING_NON_OFFLOAD
 #define UNKNOWN_DROP			0U
 #define UNKNOWN_FLOODING		1U
+#ifdef ZERO_LOSS_CSA_SUPPORT
+/* Time to disconnect the station in units of 300 ms
+/Default 7U will disconnect sta at (7-1)*300 ms = 1800ms after power off */
+#define CONTD_PER_ERR_CNT_MC	7U
+/* Minimum Free Token Countr to be considered before station KickOff after power off*/
+#define MIN_FREE_TKN_CNT		500U
+#else
 #define CONTD_PER_ERR_CNT_MC	5U
 #define MIN_FREE_TKN_CNT		300U
+#endif
 #define MAX_TKN_CNT_PER_STA		500U
 #endif
 
@@ -191,6 +199,7 @@ VOID IGMPSnooping(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pSrcMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	IN MAC_TABLE_ENTRY *pEntry,
 	UINT16 Wcid);
 #ifdef A4_CONN
@@ -204,6 +213,7 @@ BOOLEAN isIGMPquery(
 BOOLEAN isMldPkt(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	OUT UINT8 *pProtoType,
 	OUT PUCHAR * pMldHeader);
 
@@ -216,6 +226,7 @@ VOID MLDSnooping(
 	IN PUCHAR pDstMacAddr,
 	IN PUCHAR pSrcMacAddr,
 	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd,
 	IN MAC_TABLE_ENTRY *pEntry,
 	UINT16 Wcid);
 
@@ -224,7 +235,8 @@ VOID MLDSnooping(
 BOOLEAN isMLDquery(
 	IN PRTMP_ADAPTER pAd,
 	IN PUCHAR pDstMacAddr,
-	IN PUCHAR pIpHeader);
+	IN PUCHAR pIpHeader,
+	IN PUCHAR pDataEnd);
 #endif
 
 

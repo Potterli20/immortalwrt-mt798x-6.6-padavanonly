@@ -1246,6 +1246,7 @@ UINT32 mtf_get_hwq_from_ac(UINT8 wmm_idx, UINT8 wmm_ac)
 
 VOID mtf_write_tmac_info_fixed_rate(
 	RTMP_ADAPTER *pAd,
+	struct wifi_dev *wdev,
 	UCHAR *tmac_info,
 	MAC_TX_INFO *info,
 	HTTRANSMIT_SETTING *transmit)
@@ -1257,6 +1258,9 @@ VOID mtf_write_tmac_info_fixed_rate(
 	STA_TR_ENTRY *tr_entry = NULL;
 	struct txd_l *txd = (struct txd_l *)tmac_info;
 	RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+#if defined(CONFIG_6G_SUPPORT)
+	UCHAR iob_mode;
+#endif
 
 	NdisZeroMemory(txd, sizeof(*txd));
 
@@ -1302,7 +1306,8 @@ VOID mtf_write_tmac_info_fixed_rate(
 
 	/*VTA [10]*/
 #ifdef EAP_STATS_SUPPORT
-	txd->txd_1 |= TXD_VTA;
+	if (!pAd->CommonCfg.bEapStatsDisabled)
+		txd->txd_1 |= TXD_VTA;
 #endif
 
 	/* HEADER_LENGTH [15:11] (HF=2'b10) */
@@ -1442,9 +1447,15 @@ VOID mtf_write_tmac_info_fixed_rate(
 	if (info->txs2m)
 		txd->txd_5 |= TXD_TXS2M;
 #ifndef AUTOMATION
-	if (info->txs2h)
-		txd->txd_5 |= TXD_TXS2H;
-	txd->txd_5 |= (info->PID << TXD_PID_SHIFT);
+	if (info->txs2h) {
+		UINT8 txs_pid;
+
+		txs_pid = (AddTxSStatus(pAd, TXS_TYPE0, info->PID, 0, 0, 0, info->WCID));
+		if (txs_pid != 0xff) {
+			txd->txd_5 |= TXD_TXS2H;
+			txd->txd_5 |= (txs_pid << TXD_PID_SHIFT);
+		}
+	}
 
 	if (info->addba)
 		txd->txd_5 |= TXD_ADD_BA;
@@ -1482,7 +1493,23 @@ VOID mtf_write_tmac_info_fixed_rate(
 
 		bw = (phy_mode <= MODE_CCK) ? (BW_20) : (transmit->field.BW);
 
-		txd->txd_6 |= (((1 << 2) | bw) << TXD_BW_SHIFT);
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT)
+		if (WMODE_CAP_6G(wdev->PhyMode) && is_afc_in_run_state(pAd))
+			bw = pAd->CommonCfg.AFCbeaconBW;
+#endif
+
+#if defined(CONFIG_6G_SUPPORT)
+		if (wdev && WMODE_CAP_6G(wdev->PhyMode))
+			iob_mode = wlan_config_get_unsolicit_tx_mode(wdev);
+		if (iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP
+#ifdef CONFIG_6G_AFC_SUPPORT
+				&& (!is_afc_in_run_state(pAd) || pAd->CommonCfg.AfcSpBwDup)
+#endif /*CONFIG_6G_AFC_SUPPORT*/
+			)
+			txd->txd_6 |= (bw << TXD_BW_SHIFT);
+		else
+#endif
+			txd->txd_6 |= (((1 << 2) | bw) << TXD_BW_SHIFT);
 
 		mcs = transmit->field.MCS;
 		stbc = transmit->field.STBC;
@@ -1626,14 +1653,7 @@ VOID mtf_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_blk)
 	txd->txd_1 |= (tx_blk->Wcid << TXD_WLAN_IDX_SHIFT);
 
     /* VTA [10] */
-#ifdef IGMP_SNOOPING_NON_OFFLOAD
-		if (wdev->IgmpSnoopEnable && TX_BLK_TEST_FLAG(tx_blk, fTX_MCAST_CLONE)) {
-				txd->txd_1 |= TXD_VTA;
-		}
-#endif
-#ifdef EAP_STATS_SUPPORT
 	txd->txd_1 |= TXD_VTA;
-#endif
 
 
 	/* HEADER_LENGTH [15:11] (HF=2'b10) */
@@ -1652,7 +1672,10 @@ VOID mtf_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_blk)
 		if (TX_BLK_TEST_FLAG(tx_blk, fTX_bWMM_UAPSD_EOSP))
 			txd->txd_1 |= TXD_EOSP;
 
-		txd->txd_1 |= TXD_RMVL;
+		if (!RTMP_GET_PACKET_ARP(tx_blk->pPacket) &&
+				!RTMP_GET_PACKET_DHCP(tx_blk->pPacket)) {
+			txd->txd_1 |= TXD_RMVL;
+		}
 
 		if (RTMP_GET_PACKET_VLAN(tx_blk->pPacket))
 			txd->txd_1 |= TXD_VLAN;
@@ -1741,7 +1764,7 @@ VOID mtf_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_blk)
 	}
 
 	/* PF [1] */
-	if (!IS_CIPHER_NONE(tx_blk->CipherAlg))
+	if (tx_blk->CipherAlg)
 		txd->txd_3 |= TXD_PF;
 
 	/* DAS [4] */
@@ -2046,7 +2069,8 @@ VOID mtf_write_tmac_info_by_wa(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_blk)
 #endif
 	/*VTA [10]*/
 #ifdef EAP_STATS_SUPPORT
-	txd->txd_1 |= TXD_VTA;
+	if (!pAd->CommonCfg.bEapStatsDisabled)
+		txd->txd_1 |= TXD_VTA;
 #endif
 
 #if defined(VOW_SUPPORT) && defined(VOW_DVT)
@@ -2195,7 +2219,7 @@ INT32 mtf_write_txp_info_by_wa(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *pTxBlk)
 		cr4_txp_msdu_info->type_and_flags |= CT_INFO_NONE_CIPHER_FRAME;
 
 #ifdef RT_CFG80211_SUPPORT
-	if (RTMP_GET_PACKET_EAPOL(pTxBlk->pPacket)) {
+	if (RTMP_GET_PACKET_EAPOL(pTxBlk->pPacket) && (!pAd->CommonCfg.bcfg80211Disabled)) {
 		if (!(pTxBlk->pMacEntry->bLastRTSFailed))
 			cr4_txp_msdu_info->type_and_flags |= CT_INFO_RTS_ENABLE;
 	}
@@ -2264,7 +2288,8 @@ INT32 mtf_write_txp_info_by_wa(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *pTxBlk)
 #endif /* MWDS */
 #ifdef MBSS_AS_WDS_AP_SUPPORT
 #ifdef CLIENT_WDS
-	if (pTxBlk->pMacEntry && IS_ENTRY_CLIWDS(pTxBlk->pMacEntry)) {
+	if (pTxBlk->pMacEntry && IS_ENTRY_CLIWDS(pTxBlk->pMacEntry) &&
+		!pAd->CommonCfg.bMBSSASWDSAPDisabled && (!pAd->CommonCfg.bClientWdsDisabled)) {
 		WCID_SET_H_L(cr4_txp_msdu_info->reserved, cr4_txp_msdu_info->rept_wds_wcid, pTxBlk->pMacEntry->wcid);
 	} else
 #endif
@@ -3313,7 +3338,7 @@ static VOID tx_free_v2_notify_handler(RTMP_ADAPTER *pAd, PKT_TOKEN_CB *cb,
 					USHORT wcid = RTMP_GET_PACKET_WCID(pkt);
 					/*Get Mac table entry */
 					PMAC_TABLE_ENTRY pEntry = NULL;
-					if (VALID_UCAST_ENTRY_WCID(pAd, wcid)) {
+					if (VALID_UCAST_ENTRY_WCID(pAd, wcid) && !pAd->CommonCfg.bEapStatsDisabled) {
 						UINT32 pkt_time = (((*token_ptr) & TXDONE_TX_LATENCY_CNT_MASK) >> TXDONE_TX_LATENCY_CNT_SHIFT);
 						UINT8 pkt_status = (((*token_ptr) & TXDONE_STAT_MASK) >> TXDONE_STAT_SHIFT);
 						pEntry = &pAd->MacTab.Content[wcid];
@@ -3396,6 +3421,12 @@ static VOID tx_free_v3_notify_handler(RTMP_ADAPTER *pAd, PKT_TOKEN_CB *cb,
 	UINT8 pkt_stat = 0xff; /* 0, 1, 2 has its own meaning*/
 	ULONG now_time;
 	MAC_TABLE_ENTRY *pEntry = NULL;
+#ifdef ZERO_LOSS_CSA_SUPPORT
+	struct token_tx_pkt_queue *queue = NULL;
+	STA_TR_ENTRY *tr_entry = NULL;
+	struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
+	INT band_id;
+#endif
 
 	while (loop < token_cnt) {
 		token_ptr = (UINT32 *)data;
@@ -3413,7 +3444,7 @@ static VOID tx_free_v3_notify_handler(RTMP_ADAPTER *pAd, PKT_TOKEN_CB *cb,
 					pEntry = NULL;
 					/*whether pkt_time and pkt_airtime are believable*/
 					BOOLEAN time_believable = TRUE;
-					if (VALID_UCAST_ENTRY_WCID(pAd, wlan_id)) {
+					if (VALID_UCAST_ENTRY_WCID(pAd, wlan_id) && !pAd->CommonCfg.bEapStatsDisabled) {
 						UINT32 pkt_time = (((*token_ptr) & TXDONE_MT7986_TX_DELAY_MASK) >> TXDONE_MT7986_TX_DELAY_SHIFT);
 						UINT8 pkt_status = (((*token_ptr) & TXDONE_MT7986_STAT_MASK) >> TXDONE_MT7986_STAT_SHIFT);
 #ifdef EAP_ENHANCE_STATS_SUPPORT
@@ -3489,6 +3520,9 @@ static VOID tx_free_v3_notify_handler(RTMP_ADAPTER *pAd, PKT_TOKEN_CB *cb,
 					}
 #endif
 			if (VALID_UCAST_ENTRY_WCID(pAd, wlan_id)) {
+#ifdef TXRX_STAT_SUPPORT
+				UINT8 pkt_tx_cnt = (((*token_ptr) & TXDONE_MT7986_TX_CNT_MASK) >> TXDONE_MT7986_TX_CNT_SHIFT);
+#endif
 				pkt_stat = (((*token_ptr) & TXDONE_MT7986_STAT_MASK) >> TXDONE_MT7986_STAT_SHIFT);
 				if (pkt_stat == 0xFF)
 					MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -3500,17 +3534,103 @@ static VOID tx_free_v3_notify_handler(RTMP_ADAPTER *pAd, PKT_TOKEN_CB *cb,
 					pEntry->tx_fail_cnt++;
 				pEntry->tx_total_cnt++;
 
+				if (pkt_stat == FLG_HW_DROP)
+					pEntry->TxFreeHWDropCnt++;
+				else if (pkt_stat == FLG_MCU_DROP)
+					pEntry->TxFreeMCUDropCnt++;
+
+#ifdef TXRX_STAT_SUPPORT
+				if (pkt_stat != FLG_SUCCESS)
+					INC_COUNTER64(pEntry->TxErrorsSent);
+				else
+					INC_COUNTER64(pEntry->TxRetryCount);
+
+				if (pkt_tx_cnt > 1) {
+					INC_COUNTER64(pEntry->pMbss->stat_bss.TxRetransCount);
+					INC_COUNTER64(pEntry->TxRetransmissions);
+					if (pkt_stat == FLG_SUCCESS)
+						INC_COUNTER64(pEntry->TxMultipleRetryCount);
+					else
+						INC_COUNTER64(pEntry->TxFailedRetransCount);
+					pEntry->TxRetransCount.QuadPart += pkt_tx_cnt;
+				}
+#endif
+
 				NdisGetSystemUpTime(&now_time);
 				/* check PER every 300ms whether it is equal to 100%*/
 				if (RTMP_TIME_AFTER(now_time, pEntry->last_calc_timestamp + 300 / (1000 / OS_HZ))) {
 					if (pEntry->tx_fail_cnt == pEntry->tx_total_cnt) {
 						pEntry->per_err_times += 1;
 						pEntry->tx_contd_fail_cnt += pEntry->tx_fail_cnt;
+#ifdef ZERO_LOSS_CSA_SUPPORT
+					if (pEntry && pEntry->wdev) {
+						tr_entry = &tr_ctl->tr_entry[pEntry->wcid];
+						band_id = HcGetBandByWdev(pEntry->wdev);
+						queue = token_tx_get_queue_by_band(cb, band_id);
+					}
+
+					pEntry->ContTxFailCnt300ms =  pEntry->tx_fail_cnt;
+					pEntry->ContTxFailCntTotal += pEntry->ContTxFailCnt300ms;
+					MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"ContTxFailCntTotal = %d, ContTxFailCnt300ms = %d\n",
+						pEntry->ContTxFailCntTotal, pEntry->ContTxFailCnt300ms);
+					MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"token used by current wcid = %d, free_token_cnt = %d\n",
+						tr_entry->token_cnt, queue ? atomic_read(&queue->free_token_cnt) : 0);
+#endif
 					} else {
 						pEntry->per_err_times = 0;
 						pEntry->tx_contd_fail_cnt = 0;
+#ifdef ZERO_LOSS_CSA_SUPPORT
+						pEntry->ContTxFailCntTotal = 0;
+						pEntry->ContTxFailCnt300ms = 0;
+#endif
 					}
+#ifdef ZERO_LOSS_CSA_SUPPORT
+					if (pEntry->ContTxFailCnt300ms >= pAd->ApCfg.ContTxFailCnt300msLimit) {/* Default ContTxFailCnt300msLimit = 3000 */
+						pEntry->ContTxFailOccurance++;
+						MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							"Occurrence (%d) ContTxFailCnt300ms (%d), ContTxFailCntTotal (%d)\n",
+							pEntry->ContTxFailOccurance, pEntry->ContTxFailCnt300ms, pEntry->ContTxFailCntTotal);
+					} else if (pEntry->ContTxFailCnt300ms < pAd->ApCfg.ContTxFailCnt300msLimit) {
+						pEntry->ContTxFailOccurance = 0;
+					}
+					pEntry->ContTxFailCnt300ms = 0;
+					if ((pEntry->ContTxFailCntTotal >= pAd->ApCfg.ContTxFailLimit)	/* Default ContTxFailLimit = 2000 */
+						|| (pEntry->ContTxFailOccurance >= pAd->ApCfg.ContTxFailOccurLimit) /* Default ContTxFailOccurLimit = 5 */
+#if defined(IGMP_SNOOPING_NON_OFFLOAD) && defined(WHNAT_SUPPORT)
+						|| ((queue && (pEntry->per_err_times >= (pAd->ApCfg.ContFailTimeLimit - 1)))
+							&& (atomic_read(&queue->free_token_cnt) <= MIN_FREE_TKN_CNT
+								|| tr_entry->token_cnt >= MAX_TKN_CNT_PER_STA)
+							&& (pAd->CommonCfg.whnat_en))
+#endif
+					) {
+						USHORT Reason;
 
+						MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							"Occurrence (%d), ContTxFailCntTotal (%d)\n",
+							pEntry->ContTxFailOccurance, pEntry->ContTxFailCntTotal);
+						MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							"STA-"MACSTR" had left\n", MAC2STR(pEntry->Addr));
+						MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+								"per_err_times = %d, token used by current wcid = %d, rest of token = %d\n",
+								pEntry->per_err_times, tr_entry->token_cnt,
+								queue ? atomic_read(&queue->free_token_cnt) : 0);
+
+						pEntry->ContTxFailOccurance = 0;
+						pEntry->ContTxFailCntTotal = 0;
+						pEntry->per_err_times = 0;
+
+						/* send wireless event - for ageout */
+						RTMPSendWirelessEvent(pAd, IW_AGEOUT_EVENT_FLAG, pEntry->Addr, 0, 0);
+						Reason = REASON_DEAUTH_STA_LEAVING;
+#ifdef MAP_R2
+					if (IS_ENTRY_CLIENT(pEntry) && IS_MAP_ENABLE(pAd) && IS_MAP_R2_ENABLE(pAd))
+						wapp_handle_sta_disassoc(pAd, pEntry->wcid, Reason);
+#endif
+						mac_entry_delete(pAd, pEntry);
+					}
+#endif
 					pEntry->tx_fail_cnt = 0;
 					pEntry->tx_total_cnt = 0;
 					pEntry->last_calc_timestamp = now_time;
@@ -3936,6 +4056,8 @@ INT32 mtf_txs_handler(RTMP_ADAPTER *pAd, VOID *rx_packet)
 	UINT32 rx_byte_cnt = (txs_h->txs_h_0 & TXS_RX_BYTE_CNT_MASK);
 	UINT32 txs_cnt = ((txs_h->txs_h_0 & TXS_CNT_MASK) >> TXS_CNT_SHIFT);
 	UINT32 dbg_prn = DBG_LVL_INFO;
+	MAC_TABLE_ENTRY *pEntry = NULL;
+	struct _SECURITY_CONFIG *pSecConfig  = NULL;
 
 #ifdef PKTLOSS_CHK
 	if (pAd->pktloss_chk.txs_log_enable)
@@ -3960,16 +4082,25 @@ INT32 mtf_txs_handler(RTMP_ADAPTER *pAd, VOID *rx_packet)
 			RTMPEndianChange((UCHAR *)txs_f, sizeof(struct txs_frame));
 #endif /* RT_BIG_ENDIAN */
 
+			pEntry = &pAd->MacTab.Content[((txs_f->txs_f_2 & TXS_WLAN_IDX_MASK) >> TXS_WLAN_IDX_SHIFT)];
+			pSecConfig = &pEntry->SecConfig;
+
+			if (pSecConfig->Handshake.WpaState >= AS_PTKSTART)
+				dbg_prn = DBG_LVL_ERROR;
+
 			format = ((txs_f->txs_f_0 & TXS_TXSFM_MASK) >> TXS_TXSFM_SHIFT);
-			tid = (txs_f->txs_f_0 & TXS_TID_MASK) >> TXS_TID_SHIFT;
-			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
-					"\t\tTXSFM = %d, TXS2M/H = %d/%d, FixRate = %d, TxRate/BW = 0x%x/%d\n",
-					format,
-					(txs_f->txs_f_0 & TXS_TXS2M) ? 1 : 0,
-					(txs_f->txs_f_0 & TXS_TXS2H) ? 1 : 0,
-					(txs_f->txs_f_0 & TXS_FR) ? 1 : 0,
-					(txs_f->txs_f_0 & TXS_TX_RATE_MASK) >> TXS_TX_RATE_SHIFT,
-					(txs_f->txs_f_0 & TXS_TBW_MASK) >> TXS_TBW_SHIFT);
+
+			if (((0x1 << DBG_CAT_ALL) & DebugCategory)
+				&& (DBG_SUBCAT_ALL & DebugSubCategory[dbg_prn][DBG_CAT_ALL])) {
+				tid = (txs_f->txs_f_0 & TXS_TID_MASK) >> TXS_TID_SHIFT;
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
+						"\t\tTXSFM = %d, TXS2M/H = %d/%d, FixRate = %d, TxRate/BW = 0x%x/%d\n",
+						format,
+						(txs_f->txs_f_0 & TXS_TXS2M) ? 1 : 0,
+						(txs_f->txs_f_0 & TXS_TXS2H) ? 1 : 0,
+						(txs_f->txs_f_0 & TXS_FR) ? 1 : 0,
+						(txs_f->txs_f_0 & TXS_TX_RATE_MASK) >> TXS_TX_RATE_SHIFT,
+						(txs_f->txs_f_0 & TXS_TBW_MASK) >> TXS_TBW_SHIFT);
 
 #ifdef AUTOMATION
 
@@ -4056,6 +4187,7 @@ INT32 mtf_txs_handler(RTMP_ADAPTER *pAd, VOID *rx_packet)
 
 			if ((format == TXS_FORMAT0) || (format == TXS_FORMAT1)) {
 				UINT32 Pid;
+
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
 					"\t\tFrontTime(32us) = 0x%x, MPDU TxCnt =%d, Oos = %d, FinalMPDU = %d\n",
 					(txs_f->txs_f_5 & TXS_FRONT_TIME_MASK) >> TXS_FRONT_TIME_SHIFT,
@@ -4070,28 +4202,29 @@ INT32 mtf_txs_handler(RTMP_ADAPTER *pAd, VOID *rx_packet)
 					wlanIdx = (txs_f->txs_f_2 & TXS_WLAN_IDX_MASK) >> TXS_WLAN_IDX_SHIFT;
 					pEntry = &pAd->MacTab.Content[wlanIdx];
 					if (pEntry && re) {
-						MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "EAPOL RTS Failed for WCID = %d \n", wlanIdx);
+						MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "EAPOL RTS Failed for WCID = %d\n", wlanIdx);
 						pEntry->bLastRTSFailed = TRUE;
 					}
-
 				}
 			} else if (format == TXS_FORMAT2) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
-						 "\t\tPPDU MPDU TX Bytes = %d, PPDU MPDU TX Cnt = %d\n",
-						 (txs_f->txs_f_5 & TXS_PPDU_MPDU_TX_BYTE_MASK) >> TXS_PPDU_MPDU_TX_BYTE_SHIFT,
-						 (txs_f->txs_f_5 & TXS_PPDU_MPDU_TX_CNT_MASK) >> TXS_PPDU_MPDU_TX_CNT_SHIFT);
+					 "\t\tPPDU MPDU TX Bytes = %d, PPDU MPDU TX Cnt = %d\n",
+					 (txs_f->txs_f_5 & TXS_PPDU_MPDU_TX_BYTE_MASK) >> TXS_PPDU_MPDU_TX_BYTE_SHIFT,
+					 (txs_f->txs_f_5 & TXS_PPDU_MPDU_TX_CNT_MASK) >> TXS_PPDU_MPDU_TX_CNT_SHIFT);
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
-						 "\t\tPPDU MPDU Fail Bytes = %d, PPDU MPDU Fail Cnt = %d\n",
-						 (txs_f->txs_f_6 & TXS_PPDU_MPDU_FAIL_BYTE_MASK) >> TXS_PPDU_MPDU_FAIL_BYTE_SHIFT,
-						 (txs_f->txs_f_6 & TXS_PPDU_MPDU_FAIL_CNT_MASK) >> TXS_PPDU_MPDU_FAIL_CNT_SHIFT);
+					 "\t\tPPDU MPDU Fail Bytes = %d, PPDU MPDU Fail Cnt = %d\n",
+					 (txs_f->txs_f_6 & TXS_PPDU_MPDU_FAIL_BYTE_MASK) >> TXS_PPDU_MPDU_FAIL_BYTE_SHIFT,
+					 (txs_f->txs_f_6 & TXS_PPDU_MPDU_FAIL_CNT_MASK) >> TXS_PPDU_MPDU_FAIL_CNT_SHIFT);
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, dbg_prn,
-						 "\t\tPPDU MPDU Retry Bytes = %d, PPDU MPDU Retry Cnt = %d\n",
-						 (txs_f->txs_f_7 & TXS_PPDU_MPDU_RTY_BYTE_MASK) >> TXS_PPDU_MPDU_RTY_BYTE_SHIFT,
-						 (txs_f->txs_f_7 & TXS_PPDU_MPDU_RTY_CNT_MASK) >> TXS_PPDU_MPDU_RTY_CNT_SHIFT);
+					 "\t\tPPDU MPDU Retry Bytes = %d, PPDU MPDU Retry Cnt = %d\n",
+					 (txs_f->txs_f_7 & TXS_PPDU_MPDU_RTY_BYTE_MASK) >> TXS_PPDU_MPDU_RTY_BYTE_SHIFT,
+					 (txs_f->txs_f_7 & TXS_PPDU_MPDU_RTY_CNT_MASK) >> TXS_PPDU_MPDU_RTY_CNT_SHIFT);
 			} else {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-						 " Unknown TxSFormat(%d)\n", format);
+				 " Unknown TxSFormat(%d)\n", format);
 			}
+			}
+			mtfParseTxSPacket(pAd, (UINT32)((txs_f->txs_f_3 & TXS_PID_MASK) >> TXS_PID_SHIFT), format, ptr);
 
 			ptr += txs_entry_len;
 		}
@@ -4132,7 +4265,7 @@ VOID mtf_rx_event_handler(RTMP_ADAPTER *pAd, UCHAR *data)
 	AndesFreeCmdMsg(msg);
 }
 
-static VOID mtf_fill_txd_header(struct cmd_msg *msg, PNDIS_PACKET net_pkt)
+static VOID mtf_fill_txd_header(struct _RTMP_ADAPTER *pAd, struct cmd_msg *msg, PNDIS_PACKET net_pkt)
 {
 	struct txd_l *txd;
 	UCHAR *tmac_info;
@@ -4154,7 +4287,8 @@ static VOID mtf_fill_txd_header(struct cmd_msg *msg, PNDIS_PACKET net_pkt)
 
 	/*VTA [10]*/
 #ifdef EAP_STATS_SUPPORT
-	txd->txd_1 |= TXD_VTA;
+	if (!pAd->CommonCfg.bEapStatsDisabled)
+		txd->txd_1 |= TXD_VTA;
 #endif
 
 #ifdef RT_BIG_ENDIAN
@@ -4174,7 +4308,7 @@ VOID mtf_fill_uni_cmd_header(struct _RTMP_ADAPTER *pAd, struct cmd_msg *msg, VOI
 		return;
 
 	cmd_header = (UNI_CMD_HEADER *)OS_PKT_HEAD_BUF_EXTEND(net_pkt, sizeof(UNI_CMD_HEADER));
-	mtf_fill_txd_header(msg, net_pkt);
+	mtf_fill_txd_header(pAd, msg, net_pkt);
 	NdisZeroMemory(cmd_header, sizeof(UNI_CMD_HEADER));
 
 	cmd_header->header_0.field.length = GET_OS_PKT_LEN(net_pkt) - sizeof(TMAC_TXD_L);
@@ -4223,7 +4357,7 @@ VOID mtf_fill_cmd_header(struct _RTMP_ADAPTER *pAd, struct cmd_msg *msg, VOID *p
 		return;
 
 	fw_txd = (FW_TXD *)OS_PKT_HEAD_BUF_EXTEND(net_pkt, sizeof(FW_TXD));
-	mtf_fill_txd_header(msg, net_pkt);
+	mtf_fill_txd_header(pAd, msg, net_pkt);
 	NdisZeroMemory(fw_txd, sizeof(FW_TXD));
 
 	fw_txd->fw_txd_0.field.length =	GET_OS_PKT_LEN(net_pkt) - sizeof(TMAC_TXD_L);
@@ -4308,6 +4442,7 @@ INT wtbl_update_pwr_offset(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	CMD_WTBL_SPE_T WtblSpeInfo = {0};
 	UINT16 ucWlanIdx = wdev->tr_tb_idx;
 	UINT16 ucRate = 0;
+	UINT8 BandIdx = 0;
 
 	/* update power offset to wtbl*/
 	WtblPwrOffset.u2Tag = WTBL_PWR_OFFSET;
@@ -4333,10 +4468,12 @@ INT wtbl_update_pwr_offset(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 
 	WtblSpeInfo.u2Tag = WTBL_SPE;
 	WtblSpeInfo.u2Length = sizeof(CMD_WTBL_SPE_T);
-	if (pAd->CommonCfg.bSeOff != TRUE) {
-		if (HcGetBandByWdev(wdev) == BAND0)
+
+	BandIdx = HcGetBandByWdev(wdev);
+	if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+		if (BandIdx == BAND0)
 			WtblSpeInfo.ucSpeIdx = BAND0_SPE_IDX;
-		else if (HcGetBandByWdev(wdev) == BAND1)
+		else if (BandIdx == BAND1)
 			WtblSpeInfo.ucSpeIdx = BAND1_SPE_IDX;
 	}
 	CmdExtWtblUpdate(pAd, ucWlanIdx, SET_WTBL, &WtblSpeInfo, sizeof(CMD_WTBL_SPE_T));
@@ -5124,6 +5261,8 @@ VOID mtf_txpower_show_info(struct _RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 	MTWF_PRINT("-----------------------------------------------------------------------------\n");
 	MTWF_PRINT("  Sku: %s\n",
 			 (prEventTxPowerInfo->fgSkuEnable) ? ("Enable") : ("Disable"));
+	MTWF_PRINT("  SKU Duplicate mode patch: %s\n",
+			 (pAd->CommonCfg.SKU_DUP_Patch_enable) ? ("Enable") : ("Disable"));
 	MTWF_PRINT("  Percentage: %s\n",
 			 (prEventTxPowerInfo->fgPercentageEnable) ? ("Enable") : ("Disable"));
 	MTWF_PRINT("  Power Drop: %d [dbm]\n",

@@ -496,6 +496,8 @@ static int DEVINIT rt_pci_probe(struct pci_dev *pdev, const struct pci_device_id
 	if (rv)
 		goto err_out_free_netdev;
 
+
+
 #ifdef CONFIG_STA_SUPPORT
 	/*	pAd->StaCfg[0].OriDevType = net_dev->type; */
 	/* RTMP_DRIVER_STA_DEV_TYPE_SET(pAd, net_dev->type); */
@@ -711,7 +713,10 @@ resume :
 /*
  *	Driver module load/unload function
  */
+
 int __init rt_pci_init_module(void)
+
+
 {
 	int ret;
 	MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_INFO, "register %s\n", RTMP_DRV_NAME);

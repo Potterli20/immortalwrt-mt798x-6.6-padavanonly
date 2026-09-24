@@ -2626,7 +2626,6 @@ BOOLEAN PeerTdlsSetupConfSanity(
 			break;
 
 		case IE_ADD_HT:
-		case IE_ADD_HT2:
 			if (parse_ht_info_ie(pEid)) {
 				/* This IE allows extension, but we can ignore extra bytes beyond our knowledge , so only */
 				/* copy first sizeof(ADD_HT_INFO_IE) */

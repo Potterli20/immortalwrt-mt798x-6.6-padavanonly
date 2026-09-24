@@ -1855,7 +1855,7 @@ static INT rx_scatter_gather_copy(
 #if defined(CONFIG_WIFI_PAGE_ALLOC_SKB)
 			if (drop_scatter == FALSE) {
 				dma_sync_single_for_cpu((struct device *)(((POS_COOKIE)(pAd->OS_Cookie))->pDev),
-										(dma_addr_t)pCurRxD->SDP0, rx_ring->RxBufferSize, DMA_FROM_DEVICE);
+										(dma_addr_t)pCurRxD->SDP0, rx_ring->RxBufferSize, PCI_DMA_FROMDEVICE);
 				memcpy((cp_skb_pkt + buf_idx), cur_alloc_va, pCurRxD->SDL0);
 				buf_idx += pCurRxD->SDL0;
 			}
@@ -2059,7 +2059,7 @@ struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
 		}
 
 		dma_sync_single_for_cpu((struct device *)(((POS_COOKIE)(pAd->OS_Cookie))->pDev),
-								(dma_addr_t)pRxD->SDP0, rx_ring->RxBufferSize, DMA_FROM_DEVICE);
+								(dma_addr_t)pRxD->SDP0, rx_ring->RxBufferSize, PCI_DMA_FROMDEVICE);
 
 		RTMP_DCACHE_FLUSH(cur_alloc_pa, pRxCell->DmaBuf.AllocSize);
 
@@ -4307,11 +4307,14 @@ static VOID pci_mac_recovery_func(unsigned long data)
 		INT_MCU_CMD = MT_INT_MCU2HOST_SW_INT_STS_BIT;
 #endif
 
+	pAd->ErrRecoveryCtl.hostSerStep = 6;
+
 	RTMP_SPIN_LOCK_IRQSAVE(&pci_hif_chip->LockInterrupt, &Flags);
 	status = pAd->ErrRecoveryCtl.status;
 	pAd->ErrRecoveryCtl.status = 0;
 	RTMP_SPIN_UNLOCK_IRQRESTORE(&pci_hif_chip->LockInterrupt, &Flags);
 
+	pAd->ErrRecoveryCtl.hostSerStep = 7;
 	RTMP_MAC_RECOVERY(pAd, status);
 
 	RTMP_INT_LOCK(&pci_hif_chip->LockInterrupt, Flags);
@@ -4357,6 +4360,7 @@ static VOID pci_sw_int_func(unsigned long data)
 	struct pci_hif_chip *pci_hif_chip = (struct pci_hif_chip *)data;
 	struct _RTMP_ADAPTER *pAd = RTMP_OS_NETDEV_GET_PRIV(pci_hif_chip->hif->net_dev);
 
+	pAd->ErrRecoveryCtl.hostSerStep = 2;
 	chip_sw_int_handler(pAd, pci_hif_chip);
 }
 

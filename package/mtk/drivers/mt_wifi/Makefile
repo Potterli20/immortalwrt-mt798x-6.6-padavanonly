@@ -17,7 +17,7 @@ endif
 endif
 
 PKG_BUILD_DEPENDS:=warp
-PKG_VERSION:=7.6.6.1-$(PKG_SUFFIX)
+PKG_VERSION:=7.6.7.3-$(PKG_SUFFIX)
 
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
@@ -172,6 +172,8 @@ PKG_KCONFIG:= \
 	CUSTOMISED_HOSTAPD_SUPPORT \
 	HOSTAPD_WPA3_SUPPORT \
 	HOSTAPD_WPA3R3_SUPPORT \
+	HOSTAPD_MAP_SUPPORT \
+	HOSTAPD_WAPP_SUPPORT \
 	DBDC_ONE_BAND_SUPPORT \
 	APCLI_STA_SUPPORT \
 	WDS_STA_SUPPORT \
@@ -268,6 +270,7 @@ PKG_KCONFIG:= \
 	WIFI_SKB_USES_SLAB \
 	WIFI_CSI_CN_INFO_SUPPORT \
 	6G_AFC_SUPPORT \
+	DFS_SLAVE_SUPPORT \
 
 PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_$c),CONFIG_$(c)))
 PKG_PREPARED_DEPENDS:= \
@@ -297,17 +300,6 @@ endef
 define KernelPackage/mt_wifi/config
 	source "$(SOURCE)/config.in"
 endef
-
-define FIXUP_NEW_MCU_FW_API
-		echo "Fixup new mcu fw API"; \
-		patch -p1 -d $(PKG_BUILD_DIR) < ./files/fix-new-mcu-fw-api.patch
-	@if [ "$$(CONFIG_MTK_CHIP_MT7986)" = "y" ] && [ -n "$$(CONFIG_MTK_MT_WIFI_FIRMWARE_PATH_MT7986)" ]; then \
-		echo "Fixup eeprom reading API"; \
-		patch -p1 -d $(PKG_BUILD_DIR) < ./files/eeprom-flash-api.patch; \
-	fi
-endef
-
-Hooks/Prepare/Post := FIXUP_NEW_MCU_FW_API
 
 define Build/Compile
 	+$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \

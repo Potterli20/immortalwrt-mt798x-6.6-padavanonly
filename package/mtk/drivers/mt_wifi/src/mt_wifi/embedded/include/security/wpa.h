@@ -547,6 +547,14 @@ const UCHAR *RTMPFindWPSIE(
 #endif /* RT_CFG80211_SUPPORT */
 
 
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+int ccmp_encrypt(TX_BLK * pTxBlk, u8 *hdr_ptr, u8 *wifi_hdr);
+int ccmp_decrypt(struct crypto_aead *tfm, RX_BLK *pRxBlk, u8 *pn, u8 *wifi_hdr);
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+
+
 /* --------------------Eddy---------------- */
 VOID PRF(
 	IN UCHAR *key,
@@ -772,6 +780,10 @@ VOID WPABuildGroupMsg1(
 	IN struct _SECURITY_CONFIG *pSecConfig,
 	IN MAC_TABLE_ENTRY * pEntry);
 
+VOID WPAGroupRekey(
+	IN PRTMP_ADAPTER pAd,
+	IN MAC_TABLE_ENTRY * pEntry);
+
 VOID WPABuildGroupMsg2(
 	IN PRTMP_ADAPTER pAd,
 	IN struct _SECURITY_CONFIG *pSecConfig,
@@ -816,6 +828,7 @@ VOID PeerGroupMsg2Action(
 DECLARE_TIMER_FUNCTION(WPAStartFor4WayExec);
 DECLARE_TIMER_FUNCTION(WPAStartFor2WayExec);
 DECLARE_TIMER_FUNCTION(WPAHandshakeMsgRetryExec);
+DECLARE_TIMER_FUNCTION(WPA2WayTimeoutDeauthExec);
 VOID WPAStartFor4WayExec(
 	IN PVOID SystemSpecific1,
 	IN PVOID FunctionContext,
@@ -829,6 +842,12 @@ VOID WPAStartFor2WayExec(
 	IN PVOID SystemSpecific3);
 
 VOID WPAHandshakeMsgRetryExec(
+	IN PVOID SystemSpecific1,
+	IN PVOID FunctionContext,
+	IN PVOID SystemSpecific2,
+	IN PVOID SystemSpecific3);
+
+VOID WPA2WayTimeoutDeauthExec(
 	IN PVOID SystemSpecific1,
 	IN PVOID FunctionContext,
 	IN PVOID SystemSpecific2,

@@ -65,7 +65,7 @@ static void bss_color_ageout(struct wifi_dev *wdev, UINT8 sec)
 #ifdef CONFIG_AP_SUPPORT
 	ULONG current_time;
 #endif
-	UINT_8 idx;
+	UINT_8 band_idx, idx;
 	struct wifi_dev *tmp_wdev;
 
 #ifdef CONFIG_AP_SUPPORT
@@ -75,6 +75,8 @@ static void bss_color_ageout(struct wifi_dev *wdev, UINT8 sec)
 		if (RTMP_TIME_AFTER(current_time, bss_color->collision_time + (sec * OS_HZ))) {
 			bss_color->collision_time = 0;
 			bss_color->collision_detected = FALSE;
+			band_idx = HcGetBandByWdev(wdev);
+			ad->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx] = 0;
 		}
 	}
 #endif
@@ -266,8 +268,12 @@ static void bss_color_trigger_collision(struct wifi_dev *wdev, UINT8 OP_MODE)
 				bssinfo = &curr_wdev->bss_info_argument;
 				bss_color = &bssinfo->bss_color;
 
-				if (bss_color->collision_detected == FALSE)
+				if (bss_color->collision_detected == FALSE) {
 					pAd->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx]++;
+					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_COLOR, DBG_LVL_DEBUG,
+						"rem_ap_bss_color_change_cnt for band %d after ++: %d\n",
+						band_idx, pAd->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx]);
+				}
 
 
 				/* since timeout handler will use the age out mechanism to
@@ -411,6 +417,8 @@ void bss_color_collision_detect(struct wifi_dev *wdev, BOOLEAN disabled, UINT8 c
 #ifdef CONFIG_AP_SUPPORT
 	UINT8 band_idx = 0;
 	RTMP_ADAPTER *pAd = NULL;
+	UINT8 i = 0;
+	struct wifi_dev *curr_wdev = NULL;
 #endif
 
 #ifdef CONFIG_AP_SUPPORT
@@ -429,16 +437,48 @@ void bss_color_collision_detect(struct wifi_dev *wdev, BOOLEAN disabled, UINT8 c
 			"received BSS color disabled = %d, color = %d\n", disabled, color);
 
 	if (disabled == FALSE) {
-		if (color == bss_color->color) {
 #ifdef CONFIG_AP_SUPPORT
+		if (wdev->wdev_type == WDEV_TYPE_AP) {
+			/* per-band BSS Color collision detection and update */
 			if (IS_BSS_COLOR_MANUAL_ACTIVE(pAd, band_idx)) {
-				bss_color_trigger_collision(wdev, BSS_COLOR_OPMODE_BAND);
-			} else
-#endif
-			bss_color_trigger_collision(wdev, BSS_COLOR_OPMODE_SINGLE);
+				if (color == bss_color->color) {
+					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_COLOR, DBG_LVL_DEBUG,
+					"Triggered BSS Color update of wdev = %s\n", wdev->if_dev->name);
+					bss_color_trigger_collision(wdev, BSS_COLOR_OPMODE_BAND);
+				} else
+					hc_bcolor_occupy(wdev, color);
+			}
+			/* per-device BSS Color collision detection and update:
+			* need to check collision of all dev in current band
+			*/
+			else {
+				for (i = 0; i < WDEV_NUM_MAX; i++) {
+					curr_wdev = pAd->wdev_list[i];
+					if (curr_wdev && (band_idx == HcGetBandByWdev(curr_wdev))
+						&& (WDEV_BSS_STATE(curr_wdev) == BSS_READY) && (curr_wdev->wdev_type == WDEV_TYPE_AP)) {
+
+						bssinfo = &curr_wdev->bss_info_argument;
+						bss_color = &bssinfo->bss_color;
+
+						if (color == bss_color->color) {
+							MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_COLOR, DBG_LVL_DEBUG,
+								"Triggered BSS Color update of wdev = %s\n", curr_wdev->if_dev->name);
+							bss_color_trigger_collision(curr_wdev, BSS_COLOR_OPMODE_SINGLE);
+						} else
+							hc_bcolor_occupy(curr_wdev, color);
+					}
+				}
+			}
 		}
-		else
-			hc_bcolor_occupy(wdev, color);
+#endif
+#ifdef CONFIG_STA_SUPPORT
+		if (wdev->wdev_type == WDEV_TYPE_STA) {
+			if (color == bss_color->color)
+				bss_color_trigger_collision(wdev, BSS_COLOR_OPMODE_SINGLE);
+			else
+				hc_bcolor_occupy(wdev, color);
+		}
+#endif
 	}
 }
 
@@ -466,10 +506,13 @@ void bss_color_event_handler(struct wifi_dev *wdev)
 	if (IS_BSS_COLOR_MANUAL_ACTIVE(ad, band_idx)) {
 		if (ad->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx] > 0)
 			ad->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx]--;
+			MTWF_DBG(ad, DBG_CAT_PROTO, CATPROTO_COLOR, DBG_LVL_DEBUG,
+				"rem_ap_bss_color_change_cnt for band %d after --: %d\n",
+				band_idx, ad->ApCfg.bss_color_cfg.rem_ap_bss_color_change_cnt[band_idx]);
 
 	} else
 #endif
-	bss_color->disabled = FALSE;
+		bss_color->disabled = FALSE;
 
 	bss_color->color = bss_color->next_color;
 	bss_color->next_color = 0;
@@ -695,15 +738,15 @@ void trigger_timer_callback(
 				bss_color->next_color = ad->ApCfg.bss_color_cfg.bss_color_next[band_idx];
 			}
 		} else 	{
-		/* acquire next BSS color which is used in BSS Color Change
-		 * Announcement IE and update it to wlan_opertaion module
-		 */
-		if (bss_color_acquire(wdev, &next_color) == FALSE) {
-			/* error handling to add */
-			bss_color->u.ap_ctrl.trigger_timer_running = FALSE;
-			return;
-		}
-		bss_color->next_color = next_color;
+			/* acquire next BSS color which is used in BSS Color Change
+			* Announcement IE and update it to wlan_opertaion module
+			*/
+			if (bss_color_acquire(wdev, &next_color) == FALSE) {
+				/* error handling to add */
+				bss_color->u.ap_ctrl.trigger_timer_running = FALSE;
+				return;
+			}
+			bss_color->next_color = next_color;
 		}
 
 
@@ -799,10 +842,11 @@ void show_bss_color_info(struct _RTMP_ADAPTER *ad)
 #endif
 
 			get_bss_color_bitmap(wdev, bitmap);
-			MTWF_PRINT("wdev_idx type dis color next collision running bitmap\n");
-			MTWF_PRINT("-------- ---- --- ----- ---- --------- ------- ------------------\n");
+			MTWF_PRINT("wdev_name wdev_idx type dis color next collision running bitmap\n");
+			MTWF_PRINT("--------- -------- ---- --- ----- ---- --------- ------- ------------------\n");
 
-			MTWF_PRINT("%8d %4d %3d %5d %4d %9d %7d 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
+			MTWF_PRINT("%9s %8d %4d %3d %5d %4d %9d %7d 0x%02x%02x%02x%02x%02x%02x%02x%02x\n",
+					 wdev->if_dev->name,
 					 idx, wdev->wdev_type,
 					 bss_color->disabled, bss_color->color,
 					 bss_color->next_color,

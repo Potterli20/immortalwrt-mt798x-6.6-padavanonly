@@ -398,6 +398,10 @@ VOID MtAsicSetMbssWdevIfAddrGen2(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wde
 			if (idx >= 16)
 				if_addr[3] ^= 0x1;
 
+			// to avoid mbss have same mac addr with main interface
+			if (NdisEqualMemory(if_addr, pAd->CurrentAddress, MAC_ADDR_LEN))
+				if_addr[3] = if_addr[3] & MacMask;
+
 			COPY_MAC_ADDR(pAd->ExtendMBssAddr[idx - 1], if_addr);
 		} else
 			COPY_MAC_ADDR(if_addr, pAd->ExtendMBssAddr[idx - 1]);

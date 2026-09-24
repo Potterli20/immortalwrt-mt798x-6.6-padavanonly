@@ -99,7 +99,8 @@ typedef struct _WTBL_CFG {
 #ifdef WIFI_TWT_SUPPORT
 struct twt_ctrl {
 	BOOLEAN initd;
-	UINT8 max_twt_node_num;				/* twt node num (i + b + g) */
+	UINT8 max_twt_node_num;				/* max twt node num (i + b + g) */
+	UINT8 max_btwt_node_num;			/* max twt node num (btwt) */
 	UINT8 free_twt_node_num_individual;	/* twt node num (individual) */
 	UINT8 free_twt_node_num_btwt;		/* twt node num (btwt) */
 	UINT8 free_twt_node_num_group;		/* twt node num (group) */

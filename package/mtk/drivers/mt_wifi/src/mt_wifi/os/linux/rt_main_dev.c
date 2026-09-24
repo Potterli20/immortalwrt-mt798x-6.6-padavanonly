@@ -50,8 +50,11 @@ module_param(mode, charp, 0);
 MODULE_PARM_DESC(mac, "rt_wifi: wireless mac addr");
 MODULE_PARM_DESC(mode, "rt_wifi: wireless operation mode");
 
+#if !defined(CONFIG_PROPRIETARY_DRIVER) || defined(CONFIG_DBG_OOM)
 MODULE_LICENSE("GPL");
-
+#else
+MODULE_LICENSE("Proprietary");
+#endif
 
 #ifdef OS_ABL_SUPPORT
 RTMP_DRV_ABL_OPS RtmpDrvOps, *pRtmpDrvOps = &RtmpDrvOps;
@@ -82,7 +85,7 @@ static int rt_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
 	NdisZeroMemory(&req, sizeof(req));
 	rt28xx_ioctl(dev, (struct ifreq *)&req, SIOCGIWRATE);
 	cmd->speed = req.u.bitrate.value/1000000; /* The speed is Mbit/s */
-	printk("DBG2:: SIOCGIWRATE called, Rate = %lu",req.u.bitrate.value);
+
 	return 0;
 }
 
@@ -496,7 +499,11 @@ int virtual_if_up_handler(VOID *dev)
 	}
 #endif	/* DFS_VENDOR10_CUSTOM_FEATURE */
 	wdev_if_up_down(pAd, wdev, TRUE);
-
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (is_afc_stop() == TRUE)
+		afc_initiate_request_to_daemon(pAd, wdev);
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 #ifdef OFFCHANNEL_SCAN_FEATURE
 	u1EDCCAStd = GetEDCCAStd(pAd->CommonCfg.CountryCode, wdev->PhyMode);
 	if (u1EDCCAStd == EDCCA_Country_FCC6G && wdev->wdev_type == WDEV_TYPE_AP)

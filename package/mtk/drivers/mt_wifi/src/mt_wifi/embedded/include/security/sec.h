@@ -266,6 +266,10 @@ INT ap_set_key_for_sta_rec(
 	IN struct wifi_dev *wdev,
 	IN STA_REC_CTRL_T * sta_rec);
 
+VOID group_key_update(
+	struct _RTMP_ADAPTER *ad,
+	struct wifi_dev *wdev);
+
 DECLARE_TIMER_FUNCTION(GroupRekeyExec);
 VOID GroupRekeyExec(
 	IN PVOID SystemSpecific1,

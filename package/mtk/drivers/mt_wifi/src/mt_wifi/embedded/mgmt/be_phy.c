@@ -152,6 +152,7 @@ static BOOLEAN cal_cent_ch_ate(UCHAR prim_ch, CHAR ext_cha, UCHAR *cen_ch)
 static BOOLEAN phy_freq_adjust(struct wifi_dev *wdev, struct freq_cfg *cfg, struct freq_oper *op)
 {
 	UCHAR reg_cap_bw;
+	struct _RTMP_ADAPTER *pAd = (struct _RTMP_ADAPTER *)wdev->sys_handle;
 
 	/*initial to legacy setting*/
 	if (cfg->prim_ch == 0) {
@@ -202,6 +203,17 @@ static BOOLEAN phy_freq_adjust(struct wifi_dev *wdev, struct freq_cfg *cfg, stru
 				phy_ht_vht_bw_adjust(op->bw, &op->ht_bw, &op->vht_bw);
 			}
 		}
+
+		if (pAd && pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitSupport &&
+			(wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) &&
+			pAd->CommonCfg.DfsParameter.ZwAdjBwFlag) {
+			if (pAd->CommonCfg.DfsParameter.ZwAdjBw < op->bw) {
+				op->bw = pAd->CommonCfg.DfsParameter.ZwAdjBw;
+				phy_ht_vht_bw_adjust(op->bw, &op->ht_bw, &op->vht_bw);
+				MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_NOTICE,
+					"zw bw is reconfigured to be %d\n", pAd->CommonCfg.DfsParameter.ZwAdjBw);
+			}
+		}
 	}
 
 	/*central ch*/
@@ -248,6 +260,7 @@ static VOID phy_freq_update(struct wifi_dev *wdev, struct freq_oper *oper)
 	ad = (struct _RTMP_ADAPTER *)wdev->sys_handle;
 	if (IS_MAP_TURNKEY_ENABLE(ad)) {
 		if (oper->bw != op->phy_oper.wdev_bw ||
+			oper->vht_bw != op->vht_oper.vht_bw ||
 			oper->ht_bw != op->ht_oper.ht_bw) {
 			wdev->map_indicate_channel_change = 1;
 		}
@@ -262,41 +275,6 @@ static VOID phy_freq_update(struct wifi_dev *wdev, struct freq_oper *oper)
 	op->vht_oper.vht_bw = oper->vht_bw;
 	operate_loader_vht_bw(op);
 #endif /*DOT11_VHT_AC*/
-}
-
-static VOID phy_freq_get_max(struct wifi_dev *wdev, struct freq_oper *result)
-{
-	struct wlan_operate *op = (struct wlan_operate *)wdev->wpf_op;
-
-	if (op->phy_oper.prim_ch != result->prim_ch)
-		return;
-
-	/*bw*/
-	if (op->phy_oper.wdev_bw > result->bw) {
-		result->bw = op->phy_oper.wdev_bw;
-		result->cen_ch_1 = op->phy_oper.cen_ch_1;
-		result->cen_ch_2 = op->phy_oper.cen_ch_2;
-		result->ext_cha = op->ht_oper.ext_cha;
-	}
-}
-
-static VOID phy_freq_decision(struct wifi_dev *wdev, struct freq_oper *want, struct freq_oper *result)
-{
-	struct _RTMP_ADAPTER *ad = (struct _RTMP_ADAPTER *)wdev->sys_handle;
-	struct wifi_dev *cur_wdev;
-	UCHAR i;
-	/*basic setting*/
-	os_move_mem(result, want, sizeof(struct freq_oper));
-
-	/*check max capability for each operating*/
-	for (i = 0; i < WDEV_NUM_MAX; i++) {
-		cur_wdev = ad->wdev_list[i];
-
-		if (cur_wdev &&
-			wlan_operate_get_state(cur_wdev) &&
-			wmode_band_equal(wdev->PhyMode, cur_wdev->PhyMode))
-			phy_freq_get_max(cur_wdev, result);
-	}
 }
 
 BOOLEAN phy_get_freq_adjust(struct wifi_dev *wdev, struct freq_cfg *cfg, struct freq_oper *op)
@@ -366,7 +344,7 @@ VOID operate_loader_prim_ch(struct wlan_operate *op)
 VOID operate_loader_phy(struct wifi_dev *wdev, struct freq_cfg *cfg)
 {
 	struct freq_oper oper_dev;
-	struct freq_oper oper_radio;
+
 	struct radio_res res;
 	UCHAR i = 0;
 	UCHAR band_idx = 0;
@@ -419,21 +397,20 @@ VOID operate_loader_phy(struct wifi_dev *wdev, struct freq_cfg *cfg)
 	}
 #endif
 	/*get last radio result for hdev check and update*/
-	phy_freq_decision(wdev, &oper_dev, &oper_radio);
 	MTWF_DBG(ad, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_NOTICE,
-			 "oper_radio after decision: bw(%d), prim_ch(%d), cen_ch_1(%d), cen_ch_2(%d)!\n",
-			  oper_radio.bw,
-			  oper_radio.prim_ch,
-			  oper_radio.cen_ch_1,
-			  oper_radio.cen_ch_2);
+			 "oper_dev after decision: bw(%d), prim_ch(%d), cen_ch_1(%d), cen_ch_2(%d)!\n",
+			  oper_dev.bw,
+			  oper_dev.prim_ch,
+			  oper_dev.cen_ch_1,
+			  oper_dev.cen_ch_2);
 	/*acquire radio resouce*/
 	res.reason = REASON_NORMAL_SW;
-	res.oper = &oper_radio;
+	res.oper = &oper_dev;
 
 #ifdef CONFIG_AP_SUPPORT
 #ifdef MT_DFS_SUPPORT
 	/* Perform CAC only for DFS Channel */
-	if (DfsRadarChannelCheck(ad, wdev, oper_radio.cen_ch_2, oper_radio.bw))
+	if (DfsRadarChannelCheck(ad, wdev, oper_dev.cen_ch_2, oper_dev.bw))
 		DfsCacNormalStart(ad, wdev, RD_SILENCE_MODE);
 #endif
 #endif
@@ -457,9 +434,8 @@ VOID operate_loader_phy(struct wifi_dev *wdev, struct freq_cfg *cfg)
 	DfsCacNormalStart(ad, wdev, RD_NORMAL_MODE);
 
 	/* Perform CAC & Radar Detect only for DFS Channel */
-	if (DfsRadarChannelCheck(ad, wdev, oper_radio.cen_ch_2, oper_radio.bw)) {
+	if (DfsRadarChannelCheck(ad, wdev, oper_dev.cen_ch_2, oper_dev.bw))
 		WrapDfsRadarDetectStart(ad, wdev);
-	}
 #endif
 #endif
 
@@ -473,6 +449,10 @@ VOID operate_loader_phy(struct wifi_dev *wdev, struct freq_cfg *cfg)
 			phy_freq_update(tdev, &oper_dev);
 		}
 	}
+#ifdef SPECIAL_11B_OBW_FEATURE
+	if (WMODE_CAP_2G(wdev->PhyMode))
+		MtCmdSetTxTdCck(ad, TRUE);
+#endif
 }
 
 

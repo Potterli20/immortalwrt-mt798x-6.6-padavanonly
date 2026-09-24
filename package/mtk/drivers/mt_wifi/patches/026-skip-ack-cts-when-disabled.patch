@@ -1,6 +1,8 @@
+diff --git a/mt_wifi/embedded/common/cmm_cfg.c b/mt_wifi/embedded/common/cmm_cfg.c
+index 56132fc..baa0d81 100644
 --- a/mt_wifi/embedded/common/cmm_cfg.c
 +++ b/mt_wifi/embedded/common/cmm_cfg.c
-@@ -13425,6 +13425,9 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
+@@ -13627,6 +13627,9 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
  	}
  
  	for (idx = 0; idx < DBDC_BAND_NUM; idx++) {
@@ -9,4 +11,4 @@
 +
  		if (pAd->CommonCfg.distance[idx] > 0) {
  			value = pAd->CommonCfg.distance[idx];
- 			value = value*2/LIGHT_SPEED;
+ 			value = (value / LIGHT_SPEED * 2) & MAX_ACK_TIMEOUT;

@@ -312,10 +312,12 @@ BOOLEAN wmode_valid_and_correct(RTMP_ADAPTER *pAd, USHORT *wmode)
 	if (*wmode == WMODE_INVALID)
 		*wmode = (WMODE_B | WMODE_G | WMODE_GN |
 				WMODE_A | WMODE_AN | WMODE_AC |
-				WMODE_AX_5G | WMODE_AX_24G);
+				WMODE_AX_5G | WMODE_AX_24G | WMODE_AX_6G);
 
 	while (1) {
-		if (WMODE_CAP_5G(*wmode) && (!PHY_CAP_5G(cap->phy_caps)))
+		if (WMODE_CAP_6G(*wmode) && (!PHY_CAP_6G(cap->phy_caps)))
+			*wmode = *wmode & ~(WMODE_AX_6G);
+		else if (WMODE_CAP_5G(*wmode) && (!PHY_CAP_5G(cap->phy_caps)))
 			*wmode = *wmode & ~(WMODE_A | WMODE_AN | WMODE_AC | WMODE_AX_5G);
 		else if (WMODE_CAP_2G(*wmode) && (!PHY_CAP_2G(cap->phy_caps)))
 			*wmode = *wmode & ~(WMODE_B | WMODE_G | WMODE_GN | WMODE_AX_24G);
@@ -325,12 +327,12 @@ BOOLEAN wmode_valid_and_correct(RTMP_ADAPTER *pAd, USHORT *wmode)
 		else if (WMODE_CAP_AC(*wmode) && (!PHY_CAP_AC(cap->phy_caps)))
 			*wmode = *wmode & ~(WMODE_AC);
 		else if (WMODE_CAP_AX(*wmode) && (!PHY_CAP_AX(cap->phy_caps)))
-			*wmode = *wmode & ~(WMODE_AX_24G | WMODE_AX_5G);
+			*wmode = *wmode & ~(WMODE_AX_24G | WMODE_AX_5G | WMODE_AX_6G);
 
 		if (*wmode == 0) {
 			*wmode = (WMODE_B | WMODE_G | WMODE_GN |
 					WMODE_A | WMODE_AN | WMODE_AC |
-					WMODE_AX_24G | WMODE_AX_5G);
+					WMODE_AX_24G | WMODE_AX_5G | WMODE_AX_6G);
 			break;
 		} else
 			break;
@@ -559,7 +561,8 @@ static BOOLEAN wmode_valid(RTMP_ADAPTER *pAd, enum WIFI_MODE wmode)
 {
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
 
-	if ((WMODE_CAP_5G(wmode) && (!PHY_CAP_5G(cap->phy_caps))) ||
+	if ((WMODE_CAP_6G(wmode) && (!PHY_CAP_6G(cap->phy_caps))) ||
+		(WMODE_CAP_5G(wmode) && (!PHY_CAP_5G(cap->phy_caps))) ||
 	    (WMODE_CAP_2G(wmode) && (!PHY_CAP_2G(cap->phy_caps))) ||
 	    (WMODE_CAP_N(wmode) && RTMP_TEST_MORE_FLAG(pAd, fRTMP_ADAPTER_DISABLE_DOT_11N))
 	   )
@@ -1342,7 +1345,8 @@ INT RTMP_COM_IoctlHandle(
 
 	case CMD_RTPRIV_SET_PRECONFIG_VALUE:
 		/* Set some preconfigured value before interface up*/
-		pAd->CommonCfg.DfsType = MAX_RD_REGION;
+		if (!pAd->CommonCfg.bExtChListDisabled)
+			pAd->CommonCfg.DfsType = MAX_RD_REGION;
 		break;
 #endif /* EXT_BUILD_CHANNEL_LIST */
 
@@ -1452,13 +1456,15 @@ INT RTMP_COM_IoctlHandle(
 #ifdef RT_CFG80211_SUPPORT
 
 	case CMD_RTPRIV_IOCTL_CFG80211_CFG_START:
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 		if (wdev)
 			RT_CFG80211_REINIT(pAd, wdev);
 
 #ifndef DISABLE_HOSTAPD_BEACON
-		RT_CFG80211_CRDA_REG_RULE_APPLY(pAd);
+		if (!pAd->CommonCfg->bHostapdDisabled)
+			RT_CFG80211_CRDA_REG_RULE_APPLY(pAd);
 #endif
-
+	}
 		break;
 #endif /* RT_CFG80211_SUPPORT */
 #ifdef INF_PPA_SUPPORT
@@ -1844,6 +1850,12 @@ INT RTMP_COM_IoctlHandle(
 		}
 
 		NdisZeroMemory(hqa_frame, sizeof(*hqa_frame));
+		if (wrq->u.data.length > sizeof(*hqa_frame)) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"The length of message not match!\n");
+			Status = -EFAULT;
+			goto IOCTL_TEST_ERROR;
+		}
 		Status = copy_from_user((PUCHAR)hqa_frame, wrq->u.data.pointer, wrq->u.data.length);
 
 		if (Status)	{
@@ -1893,6 +1905,12 @@ IOCTL_TEST_ERROR:
 		}
 
 		NdisZeroMemory(HqaCmdFrame, sizeof(*HqaCmdFrame));
+		if (wrq->u.data.length > sizeof(*HqaCmdFrame)) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"The length of message not match!\n");
+			Status = -EFAULT;
+			goto IOCTL_ATE_ERROR;
+		}
 		Status = copy_from_user((PUCHAR)HqaCmdFrame, wrq->u.data.pointer, wrq->u.data.length);
 
 		if (Status)	{
@@ -2114,7 +2132,8 @@ IOCTL_ATE_ERROR:
 #ifdef RT_CFG80211_SUPPORT
 
 	if ((cmd >= CMD_RTPRIV_IOCTL_80211_START) &&
-	    (cmd <= CMD_RTPRIV_IOCTL_80211_END))
+	    (cmd <= CMD_RTPRIV_IOCTL_80211_END) &&
+	    (!pAd->CommonCfg.bcfg80211Disabled))
 		Status = CFG80211DRV_IoctlHandle(pAd, wrq, cmd, subcmd, pData, Data);
 
 #endif /* RT_CFG80211_SUPPORT */
@@ -6749,6 +6768,54 @@ INT SetSKUCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 #endif /* SINGLE_SKU_V2 */
 }
 
+INT SetSKUDupCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8   i;
+	CHAR	*value = 0;
+	UCHAR sku_dup_en = 1;
+
+	/* sanity check for input parameter format */
+	if (!arg) {
+		MTWF_PRINT("No parameters!!\n");
+		return FALSE;
+	}
+
+	if (strlen(arg) != 1) {
+		MTWF_PRINT("Wrong parameter format!!\n");
+		MTWF_PRINT("Please use input format like X (X = 0,1)!!\n");
+		return FALSE;
+	}
+
+	/* parameter parsing */
+	for (i = 0, value = rstrtok(arg, ":"); value; value = rstrtok(NULL, ":"), i++) {
+		switch (i) {
+		case 0:
+			sku_dup_en = os_str_tol(arg, 0, 10);
+			break;
+
+		default: {
+			MTWF_PRINT("set wrong parameters\n");
+			break;
+		}
+		}
+	}
+
+	/* sanity check for input parameter */
+	if ((sku_dup_en != FALSE) && (sku_dup_en != TRUE)) {
+		MTWF_PRINT("Please input 1(Enable) or 0(Disable)!!\n");
+		return FALSE;
+	}
+
+	pAd->CommonCfg.SKU_DUP_Patch_enable = sku_dup_en;
+#ifdef SINGLE_SKU_V2
+	MtPwrLimitTblChProc(pAd, pAd->CommonCfg.SKUBandIdx,
+				pAd->CommonCfg.SKUChannelBand,
+				pAd->CommonCfg.SKUControlChannel,
+				pAd->CommonCfg.SKUCentralChannel);
+#endif
+	return TRUE;
+}
+
 INT SetPercentageCtrl(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT8	i;
@@ -7214,6 +7281,61 @@ INT SetCCKTxStream(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	return TxCCKStreamCtrl(pAd, pAd->CommonCfg.CCKTxStream[ucBandIdx], ucBandIdx);
 }
+
+INT SetOFDMTxStream(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT8   i;
+	CHAR    *value = 0;
+	LONG    OFDMTxStream = 0;
+	INT     status = TRUE;
+	UINT8   ucBandIdx = 0;
+	struct  wifi_dev *wdev;
+
+	POS_COOKIE  pObj = (POS_COOKIE) pAd->OS_Cookie;
+
+	wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+	if (wdev)
+		ucBandIdx = HcGetBandByWdev(wdev);
+	if (ucBandIdx >= DBDC_BAND_NUM)
+		return FALSE;
+
+	/* sanity check for input parameter format */
+	if (!arg) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "No parameters!!\n");
+		return FALSE;
+	}
+
+	/* parameter parsing */
+	for (i = 0, value = rstrtok(arg, ":"); value; value = rstrtok(NULL, ":"), i++) {
+		switch (i) {
+		case 0:
+			if (kstrtol(value, 10, &OFDMTxStream))
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"OFDMTxStream:%ld\n", OFDMTxStream);
+			break;
+
+		default:
+			status = FALSE;
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"set wrong parameters\n");
+			break;
+		}
+	}
+
+	/* sanity check for input parameter range */
+	if (OFDMTxStream >= WF_NUM || !OFDMTxStream) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "set wrong parameters\n");
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"EX. iwpriv <interface> set OFDMTxStream=1 (1~4)\n");
+		return FALSE;
+	}
+
+	/* Update Profile Info for Power Percentage Drop Value */
+	pAd->CommonCfg.OFDMTxStream[ucBandIdx] = OFDMTxStream;
+
+	return TxOFDMStreamCtrl(pAd, pAd->CommonCfg.OFDMTxStream[ucBandIdx], ucBandIdx);
+}
+
 
 INT SetRfTxAnt(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
@@ -8637,6 +8759,93 @@ INT set_gpio_value(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 	return SetGpioValue(pAd, gpio_idx, gpio_val);
 }
 #endif /* WIFI_GPIO_CTRL */
+
+#ifdef MT7916_GPIO_SUPPORT
+/*
+	Support for MT7916 GPIO control.
+	Control 4 GPIOs (GPIO 6, 8, 9 and 10)
+*/
+
+static void set_pinmux_to_gpio(RTMP_ADAPTER *pAd)
+{
+	UINT32 val;
+
+	val = 0;
+	RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005050, &val);
+	val |= 0x05000000;
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70005050, val);
+
+	val = 0;
+	RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005054, &val);
+	val |= 0x00000555;
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70005054, val);
+}
+
+INT Set_GPIO_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	CHAR *pch = NULL;
+	UINT8 gpio_idx, gpio_val;
+	UINT32 Value = 0;
+
+	if (arg == NULL) {
+		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Invalid parameters\n");
+		return FALSE;
+	}
+
+	pch = strsep(&arg, ":");
+
+	if (pch != NULL)
+		gpio_idx = (UINT8) os_str_toul(pch, 0, 10);
+	else {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"No parameters for gpio_idx!!\n");
+		return FALSE;
+	}
+
+	/*Check for available GPIO idx (6, 8, 9 and 10 only)*/
+	if (gpio_idx != 6 && gpio_idx != 8 && gpio_idx != 9 && gpio_idx != 10) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"gpio_idx value invalid!\n");
+		return FALSE;
+	}
+
+	pch = arg;
+	if (pch != NULL)
+		gpio_val = (UINT8) os_str_toul(pch, 0, 10);
+	else {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"No parameters for gpio_val!!\n");
+		return FALSE;
+	}
+
+	if (gpio_val != 0 && gpio_val != 1) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"gpio_val value invalid!\n");
+		return FALSE;
+	}
+
+	set_pinmux_to_gpio(pAd);
+
+	MTWF_PRINT("%s: gpio_num:%u Value:%u\n",
+		__func__, gpio_idx, gpio_val);
+
+	Value = BIT(gpio_idx);
+
+	/*Set GPIO direction as output*/
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004034, Value);
+
+	if (gpio_val == 1) {
+		/*Set GPIO output signal as high*/
+		RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004024, Value);
+	} else {
+		/*Set GPIO output signal as low*/
+		RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004028, Value);
+	}
+
+	return TRUE;
+}
+#endif
 
 INT SetRxvEnCtrlProc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
@@ -13352,12 +13561,6 @@ INT set_ack_timeout_mode_byband(
 	RTMP_CHIP_OP *chip_ops = hc_get_chip_ops(pAd->hdev_ctrl);
 	INT ret = TRUE;
 
-	if ((timeout > MAX_ACK_TIMEOUT)) {
-		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-			"CTS/ACK Timeout Range should between [0xFFFF:0]!!\n");
-		return FALSE;
-	}
-
 	if (pAd->CommonCfg.ack_cts_enable[bandidx] == FALSE) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"ERROR! BAND%u, ack_cts_enable=%u, CTS/ACK FEATURE is not enable!!\n",
@@ -13411,11 +13614,10 @@ INT32 set_cck_ofdm_ofdma_tout (RTMP_ADAPTER *pAd, UINT32 timeout, ACK_TIMEOUT_MO
 	return TRUE;
 }
 
-
 INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
 {
 	UCHAR idx = 0;
-	UINT32 value = 0;
+	UINT32 value = 0, bCCKTimeout = 0, bOFDMTimeout = 0, bOFDMATimeout = 0;
 
 	if (NULL == pAd) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -13427,19 +13629,39 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
 	for (idx = 0; idx < DBDC_BAND_NUM; idx++) {
 		if (pAd->CommonCfg.distance[idx] > 0) {
 			value = pAd->CommonCfg.distance[idx];
-			value = value*2/LIGHT_SPEED;
+			value = (value / LIGHT_SPEED * 2) & MAX_ACK_TIMEOUT;
 
-			if (TRUE != set_ack_timeout_mode_byband(pAd,
-				value, idx, ACK_ALL_TIME_OUT)) {
+			bCCKTimeout = DEFALT_TMAC_CDTR_VALUE;
+			bCCKTimeout += (value << 16) | value;
+			if (set_ack_timeout_mode_byband(pAd,
+				bCCKTimeout, idx, CCK_TIME_OUT) != TRUE) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-				"DAT config band(%u) Distance Fail!\n",
+				"DAT config band(%u) Distance CCK Timeout Fail!\n",
+				 idx);
+			}
+
+			bOFDMTimeout = DEFALT_TMAC_ODTR_VALUE;
+			bOFDMTimeout += (value << 16) | value;
+			if (set_ack_timeout_mode_byband(pAd,
+				bOFDMTimeout, idx, OFDM_TIME_OUT) != TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"DAT config band(%u) Distance OFDM Timeout Fail!\n",
+				 idx);
+			}
+
+			bOFDMATimeout = DEFALT_TMAC_OMDTR_VALUE;
+			bOFDMATimeout += (value << 16) | value;
+			if (set_ack_timeout_mode_byband(pAd,
+				bOFDMATimeout, idx, OFDMA_TIME_OUT) != TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"DAT config band(%u) Distance OFDMA Timeout Fail!\n",
 				 idx);
 			}
 		} else {
 			if (pAd->CommonCfg.cck_timeout[idx] > 0) {
 				value = pAd->CommonCfg.cck_timeout[idx];
-				if (TRUE != set_ack_timeout_mode_byband(pAd,
-					value, idx, CCK_TIME_OUT)) {
+				if (set_ack_timeout_mode_byband(pAd,
+					value, idx, CCK_TIME_OUT) != TRUE) {
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"DAT config band(%u) cck_timeout Fail!\n",
 					idx);
@@ -13449,8 +13671,8 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
 			if (pAd->CommonCfg.ofdm_timeout[idx] > 0) {
 				value = pAd->CommonCfg.ofdm_timeout[idx];
 
-				if (TRUE != set_ack_timeout_mode_byband(pAd,
-					value, idx, OFDM_TIME_OUT)) {
+				if (set_ack_timeout_mode_byband(pAd,
+					value, idx, OFDM_TIME_OUT) != TRUE) {
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"DAT config band(%u) ofdm_timeout Fail!\n",
 					idx);
@@ -13460,8 +13682,8 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
 			if (pAd->CommonCfg.ofdma_timeout[idx] > 0) {
 				value = pAd->CommonCfg.ofdma_timeout[idx];
 
-				if (TRUE != set_ack_timeout_mode_byband(pAd,
-					value, idx, OFDMA_TIME_OUT)) {
+				if (set_ack_timeout_mode_byband(pAd,
+					value, idx, OFDMA_TIME_OUT) != TRUE) {
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"DAT config band(%u) ofdma_timeout Fail!\n",
 					idx);
@@ -13477,7 +13699,11 @@ INT32 set_datcfg_ack_cts_timeout (RTMP_ADAPTER *pAd)
 
 INT set_dst2acktimeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
-	UINT32 bTimeout = 0, distance = 0;
+	UINT32 distance = 0;
+	UINT32 bCckCCAtout = 0, bCckMDRDYtout = 0;
+	UINT32 bOfdmCCAtout = 0, bOfdmMDRDYtout = 0;
+	UINT32 bOfdmaCCAtout = 0, bOfdmaMDRDYtout = 0;
+	UINT32 bCCKTimeout = 0, bOFDMTimeout = 0, bOFDMATimeout = 0;
 
 	if (arg == NULL) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -13487,20 +13713,62 @@ INT set_dst2acktimeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	/* Get distance and store in wdev*/
 	distance = os_str_tol(arg, 0, 10);
+	distance = distance / LIGHT_SPEED * 2;
+	if (distance > MAX_ACK_TIMEOUT) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"Distance is too long, not support!\n");
+		return FALSE;
+	}
 
-	/* Calculate, timeout=((distance/speed of light)*2) */
-	bTimeout = distance/LIGHT_SPEED;
-	bTimeout *= 2;
+	/* Calculate timeout = Suggest Value + (distance / speed of light) * 2
+	*  FOR CCK
+	*	CCA timeout value = PIFS + margin = 30 + 18 = 48us
+	*	MDRDY timeout value = SIFS + DeSIG + margin = 10 + 192 + 29 = 231us
+	*  FOR LG-OFDM
+	*	CCA timeout value = PIFS + margin = 25 + 5 = 30us
+	*	MDRDY timeout value = SIFS + DeSIG + margin = 16 + 24 + 20 = 60us
+	*
+	*  We can use TMAC_CDTR/ODTR/OMDTR default CR + distance timeout value.
+	*/
+	bCckCCAtout = (DEFALT_TMAC_CDTR_VALUE >> 16) + distance;
+	bCckMDRDYtout = (DEFALT_TMAC_CDTR_VALUE & MAX_ACK_TIMEOUT) + distance;
+	bOfdmCCAtout = (DEFALT_TMAC_ODTR_VALUE >> 16) + distance;
+	bOfdmMDRDYtout = (DEFALT_TMAC_ODTR_VALUE & MAX_ACK_TIMEOUT) + distance;
+	bOfdmaCCAtout = (DEFALT_TMAC_OMDTR_VALUE >> 16) + distance;
+	bOfdmaMDRDYtout = (DEFALT_TMAC_OMDTR_VALUE & MAX_ACK_TIMEOUT) + distance;
 
-	if ((bTimeout <= 0) || (bTimeout > MAX_ACK_TIMEOUT)) {
+	if ((bCckCCAtout <= 0 || bCckCCAtout > MAX_ACK_TIMEOUT)
+		|| (bCckMDRDYtout <= 0 || bCckMDRDYtout > MAX_ACK_TIMEOUT)
+		|| (bOfdmCCAtout <= 0 || bOfdmCCAtout > MAX_ACK_TIMEOUT)
+		|| (bOfdmMDRDYtout <= 0 || bOfdmMDRDYtout > MAX_ACK_TIMEOUT)
+		|| (bOfdmaCCAtout <= 0 || bOfdmaCCAtout > MAX_ACK_TIMEOUT)
+		|| (bOfdmaMDRDYtout <= 0 || bOfdmaMDRDYtout > MAX_ACK_TIMEOUT)) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"CTS/ACK Timeout Range should between [0xFFFF:0)!!\n");
 		return FALSE;
 	}
 
-	if (FALSE == set_cck_ofdm_ofdma_tout(pAd, bTimeout, ACK_ALL_TIME_OUT)) {
+	bCCKTimeout = DEFALT_TMAC_CDTR_VALUE;
+	bCCKTimeout += (distance << 16) | distance;
+	if (FALSE == set_cck_ofdm_ofdma_tout(pAd, bCCKTimeout, CCK_TIME_OUT)) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-			"SET CTS/ACK Timeout Fail!!\n");
+			"SET CTS/ACK CCK Timeout Fail!!\n");
+		return FALSE;
+	}
+
+	bOFDMTimeout = DEFALT_TMAC_ODTR_VALUE;
+	bOFDMTimeout += (distance << 16) | distance;
+	if (FALSE == set_cck_ofdm_ofdma_tout(pAd, bOFDMTimeout, OFDM_TIME_OUT)) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"SET CTS/ACK OFDM Timeout Fail!!\n");
+		return FALSE;
+	}
+
+	bOFDMATimeout = DEFALT_TMAC_OMDTR_VALUE;
+	bOFDMATimeout += (distance << 16) | distance;
+	if (FALSE == set_cck_ofdm_ofdma_tout(pAd, bOFDMATimeout, OFDMA_TIME_OUT)) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"SET CTS/ACK OFDMA Timeout Fail!!\n");
 		return FALSE;
 	}
 
@@ -13554,6 +13822,7 @@ INT set_ackcts_timeout_enable_porc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 INT set_cck_ack_timeout_porc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT32 bTimeout = 0;
+	UINT16 bCCAtout = 0, bMDRDYtout = 0;
 
 	if (NULL == pAd) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -13564,9 +13833,12 @@ INT set_cck_ack_timeout_porc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	bTimeout = os_str_tol(arg, 0, 10);
 
-	if ((bTimeout <= 0) || (bTimeout > MAX_ACK_TIMEOUT)) {
+	bCCAtout = (bTimeout >> 16) & MAX_ACK_TIMEOUT;
+	bMDRDYtout = bTimeout & MAX_ACK_TIMEOUT;
+	if ((bCCAtout <= 0 || bCCAtout > MAX_ACK_TIMEOUT)
+		|| (bMDRDYtout <= 0 || bMDRDYtout > MAX_ACK_TIMEOUT)) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-			"CTS/ACK Timeout Range [0xFFFF:0)!!\n");
+			"CTS/ACK Timeout Range should between [0xFFFF:0)!!\n");
 		return FALSE;
 	}
 
@@ -13584,6 +13856,7 @@ INT set_cck_ack_timeout_porc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 INT set_ofdm_ack_timeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
 	UINT32 bTimeout = 0;
+	UINT16 bCCAtout = 0, bMDRDYtout = 0;
 
 	if (NULL == pAd) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -13594,9 +13867,12 @@ INT set_ofdm_ack_timeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	bTimeout = os_str_tol(arg, 0, 10);
 
-	if ((bTimeout <= 0) || (bTimeout > MAX_ACK_TIMEOUT)) {
+	bCCAtout = (bTimeout >> 16) & MAX_ACK_TIMEOUT;
+	bMDRDYtout = bTimeout & MAX_ACK_TIMEOUT;
+	if ((bCCAtout <= 0 || bCCAtout > MAX_ACK_TIMEOUT)
+		|| (bMDRDYtout <= 0 || bMDRDYtout > MAX_ACK_TIMEOUT)) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-			"CTS/ACK Timeout Range [0xFFFF:0)!!\n");
+			"CTS/ACK Timeout Range should between [0xFFFF:0)!!\n");
 		return FALSE;
 	}
 
@@ -13613,7 +13889,8 @@ INT set_ofdm_ack_timeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 INT set_ofdma_ack_timeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 {
-	UINT32  bTimeout = 0;
+	UINT32 bTimeout = 0;
+	UINT16 bCCAtout = 0, bMDRDYtout = 0;
 
 	if (NULL == pAd) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -13624,9 +13901,12 @@ INT set_ofdma_ack_timeout_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 	bTimeout = os_str_tol(arg, 0, 10);
 
-	if ((bTimeout <= 0) || (bTimeout > MAX_ACK_TIMEOUT)) {
+	bCCAtout = (bTimeout >> 16) & MAX_ACK_TIMEOUT;
+	bMDRDYtout = bTimeout & MAX_ACK_TIMEOUT;
+	if ((bCCAtout <= 0 || bCCAtout > MAX_ACK_TIMEOUT)
+		|| (bMDRDYtout <= 0 || bMDRDYtout > MAX_ACK_TIMEOUT)) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-			"CTS/ACK Timeout Range [0xFFFF:0)!!\n");
+			"CTS/ACK Timeout Range should between [0xFFFF:0)!!\n");
 		return FALSE;
 	}
 
@@ -13677,95 +13957,64 @@ error:
 #ifdef CFG_SUPPORT_CSI
 int make_common_info (RTMP_ADAPTER *pAd, struct sk_buff *nl_skb, struct CSI_DATA_T *tmp_csi_data)
 {
-	enum ENUM_CSI_MODULATION_BW_TYPE_T eModulationType = 0;
-	struct nlattr *tmp_attr = NULL;
-	int i = 0;
+	struct wifi_dev *pwdev;
 
-	if (tmp_csi_data->ucBw == 0)
-		eModulationType = CSI_TYPE_OFDM_BW20;
-	else if (tmp_csi_data->ucBw == 1)
-		eModulationType = CSI_TYPE_OFDM_BW40;
-	else if (tmp_csi_data->ucBw == 2)
-		eModulationType = CSI_TYPE_OFDM_BW80;
+	struct CSI_INFO_T *prCSIInfo = &pAd->rCSIInfo;
 
-	/*add magic number*/
-	nla_put_u32(nl_skb, CSI_ATTR_MAGIC_NUMBER, 0xAABBCCDD);
+	/*TBD: maybe we need check pentry to drop related pkts if station is offline*/
+	pwdev = prCSIInfo->csi_wdev[tmp_csi_data->ucDbdcIdx];
 
 	/*add common info*/
-	if (nla_put_u8(nl_skb, CSI_ATTR_VER, tmp_csi_data->FWVer) ||
-		nla_put_u8(nl_skb, CSI_ATTR_TYPE, eModulationType) ||
+	if (nla_put_u16(nl_skb, CSI_ATTR_PKT_IDX, PARSE_CSI_SEQ_NUM(tmp_csi_data->chain_info)) ||
 		nla_put_u32(nl_skb, CSI_ATTR_TS, tmp_csi_data->u4TimeStamp) ||
+		nla_put_u8(nl_skb, CSI_ATTR_BAND_IDX, tmp_csi_data->ucDbdcIdx) ||
+		nla_put_u16(nl_skb, CSI_ATTR_CHANNEL, pwdev->channel) ||
+		nla_put_u8(nl_skb, CSI_ATTR_CBW, tmp_csi_data->ucBw) ||
 		nla_put_u8(nl_skb, CSI_ATTR_DBW, tmp_csi_data->ucDataBw) ||
+		nla_put_u8(nl_skb, CSI_ATTR_CHAIN_NUM, PARSE_MAX_CHAIN_NUM(tmp_csi_data->chain_info)) ||
 		nla_put_u8(nl_skb, CSI_ATTR_CH_IDX, tmp_csi_data->ucPrimaryChIdx) ||
-		nla_put_u32(nl_skb, CSI_ATTR_EXTRA_INFO, tmp_csi_data->u4ExtraInfo) ||
-		nla_put_u8(nl_skb, CSI_ATTR_FRAME_MODE, tmp_csi_data->ucRxMode)) {
+		nla_put_u16(nl_skb, CSI_ATTR_FRAME_MODE, tmp_csi_data->ucRxMode) ||
+		nla_put_u8(nl_skb, CSI_ATTR_FRAME_TYPE, FC_TYPE_DATA + (SUBTYPE_QDATA << 2)) ||
+		nla_put_u16(nl_skb, CSI_ATTR_CSI_LEN, tmp_csi_data->u2DataCount) ||
+		nla_put_u16(nl_skb, CSI_ATTR_MCS_RATE, tmp_csi_data->rx_rate)
+	) {
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 		"make_common_info fail!!!\n");
 		return -1;
 	}
 
-	/*add TA*/
-	tmp_attr = nla_nest_start(nl_skb, CSI_ATTR_TA);
-		for (i = 0; i < MAC_ADDR_LEN; i++)
-			if (nla_put_u8(nl_skb, i, tmp_csi_data->aucTA[i])) {
-				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-				"add TA info fail!!!\n");
-				return -1;
-			}
-	nla_nest_end(nl_skb, tmp_attr);
+	nla_put(nl_skb, CSI_ATTR_RA, MAC_ADDR_LEN, pwdev->bssid);
+	nla_put(nl_skb, CSI_ATTR_TA, MAC_ADDR_LEN, tmp_csi_data->aucTA);
+
+	nla_put_u32(nl_skb, CSI_ATTR_EXTRA_INFO, tmp_csi_data->u4ExtraInfo);
+
+	/*put some csi info to skb cb*/
+	SET_CSI_INFO_TO_SKB(nl_skb, CB_CHAIN_NUM, PARSE_MAX_CHAIN_NUM(tmp_csi_data->chain_info));
 
 	return 0;
 }
 
 int append_specific_info (RTMP_ADAPTER *pAd, struct sk_buff *nl_skb, struct CSI_DATA_T *tmp_csi_data)
 {
-	struct nlattr *chain_attr = NULL, *tmp_attr = NULL;
-	int i = 0;
+	struct nlattr *chain_attr = NULL;
 	UINT16 data_count = tmp_csi_data->u2DataCount;
 
 	chain_attr = nla_nest_start(nl_skb, CSI_ATTR_CHAIN_HEADER);
-	if (nla_put_u32(nl_skb, CSI_ATTR_H_IDX, tmp_csi_data->Antenna_pattern) ||
+	if (nla_put_u8(nl_skb, CSI_ATTR_CHAIN_IDX, PARSE_CHAIN_IDX(tmp_csi_data->chain_info)) ||
 		nla_put_s8(nl_skb, CSI_ATTR_RSSI, tmp_csi_data->cRssi) ||
 		nla_put_u8(nl_skb, CSI_ATTR_SNR, tmp_csi_data->ucSNR) ||
-		nla_put_u16(nl_skb, CSI_ATTR_TX_IDX, (UINT16)(((tmp_csi_data->Tx_Rx_Idx)&0xffff0000) >> 16)) ||
-		nla_put_u16(nl_skb, CSI_ATTR_RX_IDX, (UINT16)((tmp_csi_data->Tx_Rx_Idx)&0xffff))) {
+		nla_put_u16(nl_skb, CSI_ATTR_TX_IDX, (UINT16)(GET_CSI_TX_IDX(tmp_csi_data->Tx_Rx_Idx))) ||
+		nla_put_u16(nl_skb, CSI_ATTR_RX_IDX, (UINT16)(GET_CSI_RX_IDX(tmp_csi_data->Tx_Rx_Idx)))) {
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "add fragment info fail!\n");
 		return -1;
 	}
 
-	/*add I Q data*/
-	tmp_attr = nla_nest_start(nl_skb, CSI_ATTR_I);
-
-	if (!tmp_attr) {
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-		"nla_nest_start fail!\n");
-		return -1;
-	}
-
-	for (i = 0; i < data_count; i++)
-		if (nla_put_s16(nl_skb, i, tmp_csi_data->ac2IData[i])) {
-			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "add chain I data[%d] fail!\n", i));
-			return -1;
-		}
-
-	nla_nest_end(nl_skb, tmp_attr);
-
-	tmp_attr = nla_nest_start(nl_skb, CSI_ATTR_Q);
-
-	if (!tmp_attr) {
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-		"nla_nest_start fail!\n");
-		return -1;
-	}
-
-	for (i = 0; i < data_count; i++)
-		if (nla_put_s16(nl_skb, i, tmp_csi_data->ac2QData[i])) {
-			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "add chain Q data[%d] fail!\n", i));
-			return -1;
-		}
-
-	nla_nest_end(nl_skb, tmp_attr);
+	nla_put(nl_skb, CSI_ATTR_I, data_count*sizeof(INT_16), tmp_csi_data->ac2IData);
+	nla_put(nl_skb, CSI_ATTR_Q, data_count*sizeof(INT_16), tmp_csi_data->ac2QData);
 	nla_nest_end(nl_skb, chain_attr);
+
+	/*put some csi info to skb cb*/
+	SET_CSI_INFO_TO_SKB(nl_skb, CB_CHAIN_IDX, PARSE_CHAIN_IDX(tmp_csi_data->chain_info));
 
 	return 0;
 }
@@ -13834,10 +14083,77 @@ out:
 	return ret;
 }
 
+int wlanCheckCSISegmentData(RTMP_ADAPTER *pAd, struct CSI_DATA_T *prCSIData)
+{
+	struct CSI_INFO_T *prCSIInfo = &pAd->rCSIInfo;
+	struct CSI_DATA_T *prCSISegmentTemp;
+
+	MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+		"Segment number=%d, Remain last=%d\n",
+		prCSIData->u4SegmentNum, prCSIData->ucRemainLast);
+
+	if (prCSIData->u4SegmentNum == 0 &&
+		prCSIData->ucRemainLast == 0)	/*case 1: csi complete chain data, push directly*/
+		return CSI_CHAIN_COMPLETE;
+	/* Put the segment CSI data into CSI segment temp */
+	else if (prCSIData->u4SegmentNum == 0 &&
+		prCSIData->ucRemainLast == 1) {		/*case 2: the first segment*/
+		os_move_mem(&(prCSIInfo->rCSISegmentTemp),
+				prCSIData, sizeof(struct CSI_DATA_T));
+
+		return CSI_CHAIN_SEGMENT_FIRST;
+	} else if (prCSIData->u4SegmentNum != 0) {		/*case 3: the left segment*/
+		prCSISegmentTemp = &(prCSIInfo->rCSISegmentTemp);
+		if (prCSIData->chain_info !=
+			prCSISegmentTemp->chain_info ||
+			prCSIData->u4SegmentNum !=
+			(prCSISegmentTemp->u4SegmentNum + 1)) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"H_IDX [%d/%d] is different or SEG_NUM [%d/%d] is not sequential.\n",
+				prCSISegmentTemp->chain_info,
+				prCSIData->chain_info,
+				prCSISegmentTemp->u4SegmentNum,
+				prCSIData->u4SegmentNum);
+
+			return CSI_CHAIN_SEGMENT_ERR;
+		}
+
+		os_move_mem(&prCSISegmentTemp->ac2IData[
+				prCSISegmentTemp->u2DataCount],
+			prCSIData->ac2IData,
+			prCSIData->u2DataCount * sizeof(INT_16));
+
+		os_move_mem(&prCSISegmentTemp->ac2QData[
+				prCSISegmentTemp->u2DataCount],
+			prCSIData->ac2QData,
+			prCSIData->u2DataCount * sizeof(INT_16));
+
+		prCSISegmentTemp->u2DataCount += prCSIData->u2DataCount;
+		prCSISegmentTemp->u4SegmentNum = prCSIData->u4SegmentNum;
+		prCSISegmentTemp->ucRemainLast = prCSIData->ucRemainLast;
+
+		if (prCSIData->ucRemainLast == 0)
+			return CSI_CHAIN_SEGMENT_LAST;
+		else if (prCSIData->ucRemainLast == 1)
+			return CSI_CHAIN_SEGMENT_MIDDLE;
+	}
+
+	return CSI_CHAIN_ERR;
+
+}
 
 bool wlanPushCSIData(RTMP_ADAPTER *pAd, struct CSI_DATA_T *prCSIData)
 {
 	struct CSI_INFO_T *prCSIInfo = &(pAd->rCSIInfo);
+	UCHAR band_idx;
+
+	band_idx = prCSIData->ucDbdcIdx;
+
+	if (prCSIInfo->csi_wdev[band_idx] == NULL) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+		"%s: CSI config error, need check!\n", __func__);
+		return FALSE;
+	}
 
 	NdisAcquireSpinLock(&prCSIInfo->CSIBufferLock);
 
@@ -13866,8 +14182,8 @@ bool wlanPushCSIData(RTMP_ADAPTER *pAd, struct CSI_DATA_T *prCSIData)
 
 	NdisReleaseSpinLock(&prCSIInfo->CSIBufferLock);
 	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-	("%s: CSIBufferUsed=%d, CSIBufferHead=%d, CSIBufferTail=%d\n", __func__,
-	prCSIInfo->u4CSIBufferUsed, prCSIInfo->u4CSIBufferHead, prCSIInfo->u4CSIBufferTail));
+	"%s: CSIBufferUsed=%d, CSIBufferHead=%d, CSIBufferTail=%d\n", __func__,
+	prCSIInfo->u4CSIBufferUsed, prCSIInfo->u4CSIBufferHead, prCSIInfo->u4CSIBufferTail);
 	return TRUE;
 }
 
@@ -14097,6 +14413,77 @@ VOID wlanApplyCSIToneMask(
 					ZERO_RANGE(127, 255);
 				}
 			}
+		} else if (ucCBW == RX_VT_FR_MODE_160) {
+			if (ucDBW == RX_VT_FR_MODE_160) {
+				ZERO_RANGE(0, 2);
+				ZERO(128);
+				ZERO_RANGE(254, 258);
+				ZERO(384);
+				ZERO(510);
+				ZERO(511);
+			} else if (ucDBW == RX_VT_FR_MODE_80) {
+				if (ucPrimaryChIdx <= 3) {
+					ZERO_RANGE(0, 258);
+					ZERO(384);
+					ZERO_RANGE(510, 511);
+				} else {
+					ZERO_RANGE(0, 2);
+					ZERO(128);
+					ZERO_RANGE(254, 511);
+				}
+			} else if (ucDBW == RX_VT_FR_MODE_40) {
+				if (ucPrimaryChIdx == 0 || ucPrimaryChIdx == 1) {
+					ZERO_RANGE(0, 258);
+					ZERO(320);
+					ZERO_RANGE(382, 511);
+				} else if (ucPrimaryChIdx == 2 || ucPrimaryChIdx == 3) {
+					ZERO_RANGE(0, 386);
+					ZERO(448);
+					ZERO_RANGE(510, 511);
+				} else if (ucPrimaryChIdx == 4 || ucPrimaryChIdx == 5) {
+					ZERO_RANGE(0, 2);
+					ZERO(64);
+					ZERO_RANGE(126, 511);
+				} else if (ucPrimaryChIdx == 6 || ucPrimaryChIdx == 7) {
+					ZERO_RANGE(0, 130);
+					ZERO(192);
+					ZERO_RANGE(254, 511);
+				}
+			} else if (ucDBW == RX_VT_FR_MODE_20) {
+				if (ucPrimaryChIdx == 0) {
+					ZERO_RANGE(0, 257);
+					ZERO(288);
+					ZERO_RANGE(319, 511);
+				} else if (ucPrimaryChIdx == 1) {
+					ZERO_RANGE(0, 321);
+					ZERO(352);
+					ZERO_RANGE(383, 511);
+				} else if (ucPrimaryChIdx == 2) {
+					ZERO_RANGE(0, 385);
+					ZERO(416);
+					ZERO_RANGE(447, 511);
+				} else if (ucPrimaryChIdx == 3) {
+					ZERO_RANGE(0, 449);
+					ZERO(480);
+					ZERO(511);
+				} else if (ucPrimaryChIdx == 4) {
+					ZERO_RANGE(0, 1);
+					ZERO(32);
+					ZERO_RANGE(63, 511);
+				} else if (ucPrimaryChIdx == 5) {
+					ZERO_RANGE(0, 65);
+					ZERO(96);
+					ZERO_RANGE(127, 511);
+				} else if (ucPrimaryChIdx == 6) {
+					ZERO_RANGE(0, 129);
+					ZERO(160);
+					ZERO_RANGE(191, 511);
+				} else if (ucPrimaryChIdx == 7) {
+					ZERO_RANGE(0, 193);
+					ZERO(224);
+					ZERO_RANGE(255, 511);
+				}
+			}
 		}
 	}
 
@@ -14197,8 +14584,79 @@ VOID wlanApplyCSIToneMask(
 					ZERO(84); ZERO(67);
 				}
 			}
+		} else if (ucCBW == RX_VT_FR_MODE_160) {
+			if (ucDBW == RX_VT_FR_MODE_160) {
+				ZERO(11); ZERO(28);
+				ZERO(105); ZERO(122);
+				ZERO(134); ZERO(151);
+				ZERO(228); ZERO(245);
+				ZERO(267); ZERO(284);
+				ZERO(361); ZERO(378);
+				ZERO(390); ZERO(407);
+				ZERO(484); ZERO(501);
+			} else if (ucDBW == RX_VT_FR_MODE_80) {
+				if (ucPrimaryChIdx <= 3) {
+					ZERO(267); ZERO(284);
+					ZERO(361); ZERO(378);
+					ZERO(390); ZERO(407);
+					ZERO(484); ZERO(501);
+				} else {
+					ZERO(11); ZERO(28);
+					ZERO(105); ZERO(122);
+					ZERO(134); ZERO(151);
+					ZERO(228); ZERO(245);
+				}
+			} else if (ucDBW == RX_VT_FR_MODE_40) {
+				if (ucPrimaryChIdx == 0 || ucPrimaryChIdx == 1) {
+					ZERO(267); ZERO(284);
+					ZERO(294); ZERO(311);
+					ZERO(329); ZERO(346);
+					ZERO(356); ZERO(373);
+				} else if (ucPrimaryChIdx == 2 || ucPrimaryChIdx == 3) {
+					ZERO(395); ZERO(412);
+					ZERO(422); ZERO(439);
+					ZERO(457); ZERO(474);
+					ZERO(484); ZERO(501);
+				} else if (ucPrimaryChIdx == 4 || ucPrimaryChIdx == 5) {
+					ZERO(11); ZERO(28);
+					ZERO(38); ZERO(55);
+					ZERO(73); ZERO(90);
+					ZERO(100); ZERO(117);
+				} else if (ucPrimaryChIdx == 6 || ucPrimaryChIdx == 7) {
+					ZERO(139); ZERO(156);
+					ZERO(166); ZERO(183);
+					ZERO(201); ZERO(218);
+					ZERO(228); ZERO(245);
+				}
+			} else if (ucDBW == RX_VT_FR_MODE_20) {
+				if (ucPrimaryChIdx == 0) {
+					ZERO(259); ZERO(276);
+					ZERO(300); ZERO(317);
+				} else if (ucPrimaryChIdx == 1) {
+					ZERO(323); ZERO(340);
+					ZERO(364); ZERO(381);
+				} else if (ucPrimaryChIdx == 2) {
+					ZERO(387); ZERO(404);
+					ZERO(428); ZERO(445);
+				} else if (ucPrimaryChIdx == 3) {
+					ZERO(451); ZERO(468);
+					ZERO(492); ZERO(509);
+				} else if (ucPrimaryChIdx == 4) {
+					ZERO(3); ZERO(20);
+					ZERO(44); ZERO(61);
+				} else if (ucPrimaryChIdx == 5) {
+					ZERO(67); ZERO(84);
+					ZERO(108); ZERO(125);
+				} else if (ucPrimaryChIdx == 6) {
+					ZERO(131); ZERO(148);
+					ZERO(172); ZERO(189);
+				} else if (ucPrimaryChIdx == 7) {
+					ZERO(195); ZERO(212);
+					ZERO(236); ZERO(253);
+				}
+			}
 		}
-		}
+	}
 }
 /*
 *CSI TONE SHIFT

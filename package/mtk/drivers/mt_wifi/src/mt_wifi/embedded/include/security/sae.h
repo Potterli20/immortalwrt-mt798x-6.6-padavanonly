@@ -133,13 +133,20 @@ UCHAR sae_handle_auth(
 	IN USHORT auth_seq,
 	IN USHORT auth_status,
 	OUT UCHAR **pmk,
-	OUT UCHAR *sae_conn_type);
+	OUT UCHAR *sae_conn_type,
+	OUT UCHAR *Instance_created);
+
+
+VOID delete_saeinstance_entry(
+	IN SAE_CFG * pSaeCfg,
+	IN MAC_TABLE_ENTRY * pEntry);
 
 
 USHORT sae_sm_step(
 	IN RTMP_ADAPTER * pAd,
 	IN SAE_INSTANCE *pSaeIns,
-	IN USHORT auth_seq);
+	IN USHORT auth_seq,
+	IN UINT32 allow_reuse);
 
 
 UCHAR sae_check_big_sync(

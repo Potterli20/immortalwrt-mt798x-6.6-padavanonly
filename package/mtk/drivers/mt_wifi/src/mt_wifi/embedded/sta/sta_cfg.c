@@ -736,6 +736,7 @@ static struct {
 	{"dvt", dvt_feature_search},
 #endif /*CONFIG_WIFI_SYSDVT*/
 #ifdef CONFIG_WIFI_DBG_TXCMD
+
 		{"dbg_txcmd", dbg_txcmd_feature_search},
 #endif /*CONFIG_WIFI_DBG_TXCMD*/
 	{NULL,}
@@ -1255,7 +1256,10 @@ INT Set_EncrypType_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 		pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, BandIdx);
 		hc_set_ChCtrlChListStat(pChCtrl, CH_LIST_STATE_NONE);
 #ifdef EXT_BUILD_CHANNEL_LIST
-		BuildChannelListEx(pAd, wdev);
+		if (!pAd->CommonCfg.bExtChListDisabled)
+			BuildChannelListEx(pAd, wdev);
+		else
+			BuildChannelList(pAd, wdev);
 #else
 		BuildChannelList(pAd, wdev);
 #endif
@@ -5755,8 +5759,12 @@ INT RTMPQueryInformation(
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "OID_802_11_BUILD_CHANNEL_EX\n");
 		wrq->u.data.length = sizeof(UCHAR);
 #ifdef EXT_BUILD_CHANNEL_LIST
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Support EXT_BUILD_CHANNEL_LIST.\n");
-		value = 1;
+		if (!pAd->CommonCfg.bExtChListDisabled) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Support EXT_BUILD_CHANNEL_LIST.\n");
+			value = 1;
+		} else
+			value = 0;
 #else
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Doesn't support EXT_BUILD_CHANNEL_LIST.\n");
 		value = 0;
@@ -8771,7 +8779,8 @@ RtmpIoctl_rt_ioctl_siwpmksa(
 #ifdef SUPP_SAE_SUPPORT
 	struct wifi_dev *wdev = &pStaCfg->wdev;
 	struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
-	if (pSecConfig && IS_AKM_SAE_SHA256(pSecConfig->AKMMap))
+	if (pSecConfig && IS_AKM_SAE_SHA256(pSecConfig->AKMMap) &&
+		!pAd->CommonCfg.bSuppSAEDisabled)
 		return NDIS_STATUS_SUCCESS;
 #endif
 	switch (pIoctlPmaSa->Cmd) {

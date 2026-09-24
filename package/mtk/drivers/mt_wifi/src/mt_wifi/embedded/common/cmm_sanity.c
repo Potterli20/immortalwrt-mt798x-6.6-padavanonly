@@ -320,13 +320,15 @@ BOOLEAN parse_mbssid_subelement(
 	UINT16 sub_len, offset, profile_len, profile_offset;
 	PEID_STRUCT sub_ie;
 	PEID_STRUCT profile_ie;
-	PEID_STRUCT mbssid_idx_ie;
+	PEID_STRUCT mbssid_idx_ie = NULL;
+	PEID_STRUCT non_tx_ssid_ie = NULL;
 	PEID_STRUCT mbssid_ie = (struct _EID_STRUCT *)ie_head;
 	struct _bcn_ie_list *bcn_ie = (struct _bcn_ie_list *)ie_list;
 	UINT8 bssid[MAC_ADDR_LEN];
 	UINT8 bssid_lsb;
 	BSS_TABLE *ScanTab = get_scan_tab_by_wdev(pAd, wdev);
 	ULONG idx;
+	int ret = TRUE;
 
 
 	if (mbssid_ie->Octet[0] <= 0 ||
@@ -337,12 +339,17 @@ BOOLEAN parse_mbssid_subelement(
 		return FALSE;
 	}
 
+	if (mbssid_ie->Len == 0) {
+		MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_CAT_AP, DBG_LVL_ERROR,
+			"illegal mbssid ie len.\n");
+		return FALSE;
+	}
 
 	sub_ie = (struct _EID_STRUCT *)&mbssid_ie->Octet[1];
 	sub_len = mbssid_ie->Len - 1; /* minus max MBSSID indicator */
 
 	offset = 0;
-	while ((offset + 2 + sub_ie->Len) <= sub_len) {
+	while ((sub_len - offset) >= 2 && (offset + 2 + sub_ie->Len) <= sub_len) {
 
 		profile_ie = NULL;
 		/*search for each nontransmitted bssid profile*/
@@ -354,6 +361,13 @@ BOOLEAN parse_mbssid_subelement(
 		if (profile_ie == NULL)
 			goto PARSE_END;
 
+
+		if (profile_len - profile_offset < 2) {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_CAT_AP, DBG_LVL_ERROR,
+				"illegal mbssid profile len.\n");
+			return FALSE;
+		}
+
 		/*search for mbssid index ie in each profile*/
 		mbssid_idx_ie = NULL;
 		while ((profile_offset + 2 + profile_ie->Len) <= profile_len) {
@@ -364,7 +378,18 @@ BOOLEAN parse_mbssid_subelement(
 					mbssid_idx_ie = profile_ie;
 				break;
 			}
+			if (profile_ie->Eid == IE_SSID)
+				non_tx_ssid_ie = profile_ie;
+
+
 			profile_offset = profile_offset + 2 + profile_ie->Len;
+
+			if (profile_offset == profile_len)
+				break;
+			else if (profile_offset + 2 > profile_len)
+				goto PARSE_END;
+
+
 			profile_ie = (PEID_STRUCT)
 				((UCHAR *)profile_ie + 2 + profile_ie->Len);
 		}
@@ -372,6 +397,11 @@ BOOLEAN parse_mbssid_subelement(
 		if (mbssid_idx_ie == NULL ||
 			mbssid_idx_ie->Octet[0] == 0) /* check BSSID index */
 			goto PARSE_END;
+
+		if (non_tx_ssid_ie == NULL ||
+			non_tx_ssid_ie->Octet[0] == 0) /* check non-tx ssid */
+			goto PARSE_END;
+
 
 		/*calculate BSSID of this profile*/
 		NdisMoveMemory(bssid, &bcn_ie->Bssid[0], MAC_ADDR_LEN);
@@ -409,9 +439,12 @@ void parse_rnr_subelement(
 	if (rnr_ie->Len >= 4) {
 		ptr = (UCHAR *)&rnr_ie->Octet[0];
 		ptr += 2;
-		bcn_ie->rnr_info.op = *ptr;
-		ptr++;
-		bcn_ie->rnr_info.channel = *ptr;
+		/* Update RNR info only for 6E channels */
+		if ((*ptr > 130 &&  *ptr <= 137)) {
+			bcn_ie->rnr_info.op = *ptr;
+			ptr++;
+			bcn_ie->rnr_info.channel = *ptr;
+		}
 	}
 #endif
 
@@ -450,6 +483,49 @@ BOOLEAN parse_ext_cap_ie(PEXT_CAP_INFO_ELEMENT pExtCapInfo, EID_STRUCT *eid_ptr)
 				return FALSE;
 }
 #endif /* OOB_CHK_SUPPORT */
+
+void PeerBeaconWscSelReg(PEID_STRUCT pEid, BCN_IE_LIST *ie_list)
+{
+	PUCHAR		pData;
+	INT		Len = 0;
+	USHORT		DataLen = 0;
+	PWSC_IE		pWscIE;
+
+	pData = (PUCHAR) pEid->Octet + WSC_OUI_LEN;
+	Len = (SHORT)(pEid->Len - WSC_OUI_LEN);
+
+	if (Len <= 0 || Len > MAX_LEN_OF_WSC_IE)
+		return;
+
+	while (Len >= WSC_TAG_LEN_SIZE) {
+		WSC_IE	WscIE;
+		INT	WscIELen;
+
+		NdisMoveMemory(&WscIE, pData, sizeof(WSC_IE));
+		/* Check for WSC IEs */
+		pWscIE = &WscIE;
+
+		if (pWscIE->Length == 0)
+			return;
+		WscIELen = (INT)(be2cpu16(pWscIE->Length)) + WSC_TAG_LEN_SIZE;
+		if (WscIELen > Len)
+			return;
+
+		if (be2cpu16(pWscIE->Type) == WSC_ID_SEL_REGISTRAR) {
+			DataLen = be2cpu16(pWscIE->Length);
+			NdisMoveMemory(&ie_list->selReg,
+				pData + WSC_TAG_LEN_SIZE, sizeof(ie_list->selReg));
+			break;
+		}
+		/* Set the offset and look for next WSC Tag information */
+		/* Since Type and Length are both short type,
+			we need to offset 4, not 2
+		*/
+		Len   -= WscIELen;
+		if (Len >= WSC_TAG_LEN_SIZE)
+			pData += WscIELen;
+	}
+}
 
 /*
     ==========================================================================
@@ -523,6 +599,7 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
 	INT OceNonOcePresentOldValue;
 #endif /* CONFIG_AP_SUPPORT */
 #endif /* OCE_SUPPORT */
+	UINT remainBufferLen;
 
 	os_alloc_mem(NULL, &pPeerWscIe, 512);
 	Sanity = 0;		/* Add for 3 necessary EID field check*/
@@ -545,7 +622,15 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
 		Ptr = (UINT8 *)Msg;
 		pFrame = NULL; /* init. */
 	}
-
+	/* If AP received self beacon Drop it !! */
+	if (pFrame && wdev->wdev_type == WDEV_TYPE_AP &&
+			pAd->OpMode == OPMODE_AP &&
+			SubType == SUBTYPE_BEACON &&
+			MAC_ADDR_EQUAL(wdev->bssid, pFrame->Hdr.Addr2)) {
+		if (pPeerWscIe)
+			os_free_mem(pPeerWscIe);
+		return FALSE;
+	}
 	/* get timestamp from payload and advance the pointer*/
 	NdisMoveMemory(&ie_list->TimeStamp, Ptr, TIMESTAMP_LEN);
 	ie_list->TimeStamp.u.LowPart = cpu2le32(ie_list->TimeStamp.u.LowPart);
@@ -1199,7 +1284,8 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
 #if defined(EXT_BUILD_CHANNEL_LIST) || defined(RT_CFG80211_SUPPORT)
 
 		case IE_COUNTRY:
-			copy_to_vie((UCHAR *)pVIE, LengthVIE, ptr_eid, pEid);
+			if (!pAd->CommonCfg.bcfg80211Disabled)
+				copy_to_vie((UCHAR *)pVIE, LengthVIE, ptr_eid, pEid);
 			break;
 #endif /* EXT_BUILD_CHANNEL_LIST */
 #endif /* CONFIG_STA_SUPPORT */
@@ -1414,14 +1500,19 @@ BOOLEAN PeerBeaconAndProbeRspSanity(
 
 		Sanity |= 0x4;
 	}
+	remainBufferLen = MAX_VIE_LEN - *LengthVIE ;
 
-	if (pPeerWscIe && (PeerWscIeLen > 0) && (PeerWscIeLen <= 512) && (bWscCheck == TRUE)) {
+	if ((pPeerWscIe && (PeerWscIeLen > 0) && (PeerWscIeLen <= 512) && (bWscCheck == TRUE)) && ((PeerWscIeLen + 6) <= remainBufferLen)) {
 		UCHAR WscIe[] = {0xdd, 0x00, 0x00, 0x50, 0xF2, 0x04};
 
 		Ptr = (PUCHAR) pVIE;
 		WscIe[1] = PeerWscIeLen + 4;
 		NdisMoveMemory(Ptr + *LengthVIE, WscIe, 6);
 		NdisMoveMemory(Ptr + *LengthVIE + 6, pPeerWscIe, PeerWscIeLen);
+
+		if (SubType == SUBTYPE_BEACON || SubType == SUBTYPE_PROBE_RSP)
+			PeerBeaconWscSelReg((PEID_STRUCT)(Ptr + *LengthVIE), ie_list);
+
 		*LengthVIE += (PeerWscIeLen + 6);
 #ifdef IWSC_SUPPORT
 
@@ -1572,6 +1663,10 @@ BOOLEAN PeerBeaconAndProbeRspSanity2(
 	BOOLEAN				brc;
 	CSA_IE_INFO *CsaInfo = &ie_list->CsaInfo;
 
+
+	if (MsgLen <= LENGTH_802_11 + TIMESTAMP_LEN + 2 + 2)
+		return FALSE;
+
 	pFrame = (PFRAME_802_11)Msg;
 	*RegClass = 0;
 	Ptr = pFrame->Octet;
@@ -1588,6 +1683,9 @@ BOOLEAN PeerBeaconAndProbeRspSanity2(
 	pEid = (PEID_STRUCT) Ptr;
 	brc = FALSE;
 	RTMPZeroMemory(BssScan, sizeof(OVERLAP_BSS_SCAN_IE));
+
+	if (MsgLen - Length < 2)
+		return FALSE;
 
 	/* get variable fields from payload and advance the pointer*/
 	while ((Length + 2 + pEid->Len) <= MsgLen) {
@@ -1636,6 +1734,10 @@ BOOLEAN PeerBeaconAndProbeRspSanity2(
 		}
 
 		Length = Length + 2 + pEid->Len;  /* Eid[1] + Len[1]+ content[Len]	*/
+
+		if (MsgLen - Length < 2)
+			return FALSE;
+
 		pEid = (PEID_STRUCT)((UCHAR *)pEid + 2 + pEid->Len);
 	}
 
@@ -2034,6 +2136,11 @@ NDIS_802_11_NETWORK_TYPE NetworkTypeInUseSanity(BSS_ENTRY *pBss)
 			NetWorkType = Ndis802_11OFDM24_HE;
 	}
 
+#if defined(CONFIG_6G_SUPPORT) && defined(DOT11_HE_AX)
+	if (HAS_HE_6G_CAP_EXIST(pBss->ie_exists))
+		NetWorkType = Ndis802_11OFDM6_HE;
+#endif /*CONFIG_6G_SUPPORT && DOT11_HE_AX*/
+
 	return NetWorkType;
 }
 
@@ -2083,6 +2190,10 @@ BOOLEAN PeerProbeReqSanity(
 	UCHAR current_band = 0;
 #endif /*WSC_INCLUDED*/
 
+
+	if (MsgLen < LENGTH_802_11 + 2)
+		return FALSE;
+
 	/* NdisZeroMemory(ProbeReqParam, sizeof(*ProbeReqParam)); */
 	COPY_MAC_ADDR(ProbeReqParam->Addr2, &Fr->Hdr.Addr2);
 	COPY_MAC_ADDR(ProbeReqParam->Addr3, &Fr->Hdr.Addr3);
@@ -2090,7 +2201,8 @@ BOOLEAN PeerProbeReqSanity(
 	COPY_MAC_ADDR(ProbeReqParam->Addr1, &Fr->Hdr.Addr1);
 #endif
 
-	if (Fr->Octet[0] != IE_SSID || Fr->Octet[1] > MAX_LEN_OF_SSID) {
+
+	if (Fr->Octet[0] != IE_SSID || Fr->Octet[1] > MAX_LEN_OF_SSID || Fr->Octet[1] > (MsgLen - LENGTH_802_11 - 2)) {
 		MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_INFO, "(): sanity fail - wrong SSID IE\n");
 		return FALSE;
 	}
@@ -2110,6 +2222,11 @@ BOOLEAN PeerProbeReqSanity(
 	COPY_MAC_ADDR(Addr1, &Fr->Hdr.Addr1);
 #ifdef WSC_AP_SUPPORT
 	os_alloc_mem(NULL, &pPeerWscIe, 512);
+	if (pPeerWscIe == NULL) {
+		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"allocate memory for pPeerWscIe failed!\n");
+		return FALSE;
+	}
 #endif /* WSC_AP_SUPPORT */
 #endif /* CONFIG_AP_SUPPORT */
 	Ptr = Fr->Octet;
@@ -2198,7 +2315,6 @@ BOOLEAN PeerProbeReqSanity(
 						}
 					}
 				} else {
-					bWscCheck = FALSE;
 					MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "Error!!! pPeerWscIe is empty!\n");
 				}
 
@@ -2278,7 +2394,8 @@ BOOLEAN PeerProbeReqSanity(
 #ifdef DOT11_VHT_AC
 
 		case IE_VHT_CAP:
-			if (parse_vht_cap_ie(eid_len)) {
+
+			if (eid_len >= SIZE_OF_VHT_CAP_IE) {
 #ifdef BAND_STEERING
 
 				if (pAd->ApCfg.BandSteering)
@@ -2306,12 +2423,29 @@ BOOLEAN PeerProbeReqSanity(
 #endif
 
 		case IE_WLAN_EXTENSION:
+			if (eid_len < 1) {
+#ifdef WSC_AP_SUPPORT
+				if (pPeerWscIe)
+					os_free_mem(pPeerWscIe);
+#endif /* WSC_AP_SUPPORT */
+				return FALSE;
+			}
+
 #ifdef OCE_SUPPORT
 #ifdef CONFIG_AP_SUPPORT
 
 			if (IS_OCE_ENABLE(wdev) && ProbeReqParam->IsOceCapability &&
 				*(eid_data) == FILS_REQ_ID_EXTENSION &&
 				MAC_ADDR_EQUAL(ProbeReqParam->Addr1, BROADCAST_ADDR)) {
+
+				if (eid_len - 2 < sizeof(MaxChannelTime)) {
+#ifdef WSC_AP_SUPPORT
+					if (pPeerWscIe)
+						os_free_mem(pPeerWscIe);
+#endif /* WSC_AP_SUPPORT */
+					return FALSE;
+				}
+
 				MaxChannelTime = *(eid_data + 2);
 				ProbeReqParam->MaxChannelTime = MaxChannelTime;
 				if (!pOceCtrl->MaxChannelTimerRunning) {
@@ -2326,9 +2460,21 @@ BOOLEAN PeerProbeReqSanity(
 			/*parse_he_probe_req_ies(Ptr, ie_lists);*/
 
 			if (*(eid_data) == EID_EXT_SHORT_SSID_LIST) {
-				NdisMoveMemory(&ProbeReqParam->ShortSSID, eid_data + 1, SHORT_SSID_LEN);
-				MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-						 "(): short ssid = %08x\n", ProbeReqParam->ShortSSID);
+				if (eid_len <= 1)/* bypass for length is zero */
+				;
+				else if (eid_len - 1 < SHORT_SSID_LEN) {
+#ifdef WSC_AP_SUPPORT
+					if (pPeerWscIe)
+						os_free_mem(pPeerWscIe);
+#endif /* WSC_AP_SUPPORT */
+						MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+								"wrong Short SSID length. eid_len = %d\n", eid_len);
+						return FALSE;
+				} else {
+					NdisMoveMemory(&ProbeReqParam->ShortSSID, eid_data + 1, SHORT_SSID_LEN);
+					MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+							 "(): short ssid = %08x\n", ProbeReqParam->ShortSSID);
+				}
 			}
 #endif /*DOT11_HE_AX*/
 			break;
@@ -2336,6 +2482,9 @@ BOOLEAN PeerProbeReqSanity(
 		default:
 			break;
 		}
+
+		if (MsgLen - LENGTH_802_11 - total_ie_len < 2)
+			break;
 
 		eid = Ptr[total_ie_len];
 		eid_len = Ptr[total_ie_len + 1];

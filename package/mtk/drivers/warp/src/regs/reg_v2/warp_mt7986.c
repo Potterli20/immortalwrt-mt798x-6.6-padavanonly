@@ -418,15 +418,6 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 }
 
 /*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
-void
-warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
-{
-}
-
-/*
 * Panther only support one PCIE
 */
 void

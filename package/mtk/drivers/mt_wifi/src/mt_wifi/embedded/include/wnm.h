@@ -304,13 +304,16 @@ BOOLEAN IsIPv4ProxyARPCandidate(IN PRTMP_ADAPTER pAd,
 								IN PUCHAR pData);
 
 BOOLEAN IsIPv6ProxyARPCandidate(IN PRTMP_ADAPTER pAd,
-								IN PUCHAR pData);
+								IN PUCHAR pData,
+								IN PUCHAR pDataEnd);
 
 BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
-								 IN PUCHAR pData);
+								 IN PUCHAR pData,
+								 IN PUCHAR pDataEnd);
 
 BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
-								 IN PUCHAR pData);
+								 IN PUCHAR pData,
+								 IN PUCHAR pDataEnd);
 
 BOOLEAN IsIPv6RouterAdvertisement(IN PRTMP_ADAPTER pAd,
 								  IN PUCHAR pData,
@@ -328,6 +331,7 @@ BOOLEAN IPv4ProxyARP(IN PRTMP_ADAPTER pAd,
 
 BOOLEAN IsIpv6DuplicateAddrDetect(PRTMP_ADAPTER pAd,
 								  PUCHAR pData,
+								  PUCHAR pDataEnd,
 								  PUCHAR pOffset);
 
 BOOLEAN IPv6ProxyARP(IN PRTMP_ADAPTER pAd,

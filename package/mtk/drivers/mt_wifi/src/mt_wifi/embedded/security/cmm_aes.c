@@ -946,6 +946,148 @@ BOOLEAN RTMPSoftDecryptCCMP(
 	return TRUE;
 }
 
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+static int ccmp_pn2hdr(u8 key_idx, u8 *pn, u8 *ccmp_hdr)
+{
+	ccmp_hdr[0] = pn[0];
+	ccmp_hdr[1] = pn[1];
+	ccmp_hdr[2] = 0;
+	ccmp_hdr[3] = (key_idx << 6) | 0x20;
+	ccmp_hdr[4] = pn[2];
+	ccmp_hdr[5] = pn[3];
+	ccmp_hdr[6] = pn[4];
+	ccmp_hdr[7] = pn[5];
+
+	return LEN_CCMP_HDR;
+}
+
+static int ccmp_hdr2pn(u8 *pn, u8 *ccmp_hdr)
+{
+	pn[0] = ccmp_hdr[0];
+	pn[1] = ccmp_hdr[1];
+	pn[2] = ccmp_hdr[4];
+	pn[3] = ccmp_hdr[5];
+	pn[4] = ccmp_hdr[6];
+	pn[5] = ccmp_hdr[7];
+
+	return LEN_CCMP_HDR;
+}
+
+static int ccmp_init_iv_and_aad(u8 *hdr_ptr, u8 *pn, u8 *iv, u8 *aad)
+{
+	u8 i;
+	u8 *pos, qc = 0;
+	size_t aad_len;
+	int a4_included, qc_included;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)hdr_ptr;
+
+	a4_included = ieee80211_has_a4(hdr->frame_control);
+	qc_included = ieee80211_is_data_qos(hdr->frame_control);
+
+	aad_len = 22;
+	if (a4_included)
+		aad_len += 6;
+	if (qc_included) {
+		pos = (u8 *)&hdr->addr4;
+		if (a4_included)
+		pos += 6;
+		qc = *pos & 0x0f;
+		aad_len += 2;
+	}
+
+	/* In CCM, the initial vectors (IV) used for CTR mode encryption and CBC
+	* mode authentication are not allowed to collide, yet both are derived
+	* from the same vector. We only set L := 1 here to indicate that the
+	* data size can be represented in (L+1) bytes. The CCM layer will take
+	* care of storing the data length in the top (L+1) bytes and setting
+	* and clearing the other bits as is required to derive the two IVs.
+	*/
+	iv[0] = 0x1;
+
+	/* Nonce: QC | A2 | PN */
+	iv[1] = qc;
+	memcpy(iv + 2, hdr->addr2, ETH_ALEN);
+	/* ref. RTMPConstructCCMPNonce() */
+	/* 	Fill in the PN. The PN field occupies octets 7-12
+	*	The octets of PN shall be ordered so that PN0 is at octet index 12
+	*	and PN5 is at octet index 7.
+	*/
+
+	for (i = 0; i < LEN_PN; i++)
+	iv[8 + i] = pn[5 - i];
+
+	/* AAD:
+	* FC with bits 4..6 and 11..13 masked to zero; 14 is always one
+	* A1 | A2 | A3
+	* SC with bits 4..15 (seq#) masked to zero
+	* A4 (if present)
+	* QC (if present)
+	*/
+	pos = (u8 *) hdr;
+	aad[0] = pos[0] & 0x8f;
+	aad[1] = pos[1] & 0xc7;
+	memcpy(aad + 2, hdr->addr1, 3 * ETH_ALEN);
+	pos = (u8 *)&hdr->seq_ctrl;
+	aad[20] = pos[0] & 0x0f;
+	aad[21] = 0;            /* all bits masked */
+	memset(aad + 22, 0, 8);
+	if (a4_included)
+		memcpy(aad + 22, hdr->addr4, ETH_ALEN);
+	if (qc_included) {
+		aad[a4_included ? 28 : 22] = qc;
+		/* rest of QC masked */
+	}
+	return aad_len;
+}
+
+int ccmp_encrypt(TX_BLK *pTxBlk, u8 *hdr_ptr, u8 *wifi_hdr)
+{
+	u8 aad[30];
+	u8 iv[AES_BLOCK_SIZES];
+	int aad_len;
+	u8 iv_offset = 0;
+	size_t mic_len = crypto_aead_authsize((pTxBlk->tfm));
+
+	iv_offset = ccmp_pn2hdr(pTxBlk->KeyIdx, pTxBlk->pKey->TxTsc, hdr_ptr);
+	hdr_ptr += iv_offset;
+	pTxBlk->MpduHeaderLen += iv_offset;
+
+	aad_len = ccmp_init_iv_and_aad(wifi_hdr, pTxBlk->pKey->TxTsc, iv, aad);
+	if (aead_encrypt((struct crypto_aead *)(pTxBlk->tfm), iv, aad, aad_len, pTxBlk->pSrcBufData, pTxBlk->SrcBufLen, (pTxBlk->pSrcBufData + pTxBlk->SrcBufLen))) {
+		/* encryp error , drop */
+		return NDIS_STATUS_FAILURE;
+	}
+	pTxBlk->SrcBufLen += mic_len;
+	pTxBlk->TotalFrameLen += mic_len;
+
+	return NDIS_STATUS_SUCCESS;
+}
+
+int ccmp_decrypt(struct crypto_aead *tfm, RX_BLK *pRxBlk, u8 *pn, u8 *wifi_hdr)
+{
+	u8 aad[30];
+	u8 iv[AES_BLOCK_SIZES];
+	int aad_len;
+	u8 iv_offset = 0;
+	u8 *hdr_ptr = pRxBlk->pData;
+	u16 data_len = pRxBlk->DataSize;
+	size_t mic_len = crypto_aead_authsize((struct crypto_aead *)tfm);
+
+	iv_offset = ccmp_hdr2pn(pn, hdr_ptr);
+	aad_len = ccmp_init_iv_and_aad(wifi_hdr, pn, iv, aad);
+
+
+	if (aead_decrypt((struct crypto_aead *)tfm, iv, aad, aad_len, hdr_ptr + iv_offset, data_len - iv_offset - mic_len, hdr_ptr + data_len - mic_len))
+		return NDIS_STATUS_FAILURE;
+
+	return NDIS_STATUS_SUCCESS;
+}
+
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+
+
 /*
 	========================================================================
 	Routine Description:

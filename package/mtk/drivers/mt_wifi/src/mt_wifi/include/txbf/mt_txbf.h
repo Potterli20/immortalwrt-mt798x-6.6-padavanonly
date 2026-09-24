@@ -1218,6 +1218,9 @@ void mt_WrapSetVHTETxBFCap(
 BOOLEAN txbf_peer_he_bfee_cap(
 	struct he_bf_info *he_bf_struct);
 
+BOOLEAN txbf_peer_he_bfer_cap(
+	struct he_bf_info *he_bf_struct);
+
 void mt_wrap_get_he_bf_cap(
 	struct wifi_dev *wdev,
 	struct he_bf_info *he_bf_struct);

@@ -1832,6 +1832,14 @@ typedef struct GNU_PACKED _FRAME_FTM_ACTION {
 #define CONTD_PER_ERR_CNT_UC			200				/* 200*300ms = 60s*/
 #define CONTD_TX_FAIL_CNT				(100 * 256)
 												/* mpdu fail per 300ms */
+#ifdef ZERO_LOSS_CSA_SUPPORT
+/* Limit of total continue tx fail packets */
+#define CONTD_TX_FAIL_CNT_LIMIT 2000
+ /* Limit of max number of samples of continue tx fail */
+#define CONTD_TX_FAIL_SAMPLE_LIMIT 5
+/* Limit of continue tx fail packets per sample i.e. every 300ms */
+#define TX_FAIL_CNT_LIMIT_PER_SAMPLE 300
+#endif /* ZERO_LOSS_CSA_SUPPORT */
 
 /* Value domain of pMacEntry->Sst */
 typedef enum _Sst {
@@ -2016,10 +2024,8 @@ typedef struct _bcn_ie_list {
 	EXT_CAP_INFO_ELEMENT ExtCapInfo;
 	UCHAR NewExtChannelOffset;
 #ifdef CONFIG_STA_SUPPORT
-#ifdef NATIVE_WPA_SUPPLICANT_SUPPORT
 	/* TODO: shiang-usw, is the size large enough? */
 	UCHAR selReg;
-#endif /* NATIVE_WPA_SUPPLICANT_SUPPORT */
 #endif /* CONFIG_STA_SUPPORT */
 	BOOLEAN  FromBcnReport;
 	BOOLEAN is_marvell_ap;

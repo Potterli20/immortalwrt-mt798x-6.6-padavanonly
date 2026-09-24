@@ -29,6 +29,7 @@ static INT token_tx_queue_destroy(
 	INT idx;
 	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)(pktTokenCb->pAd);
 	struct token_tx_pkt_entry *entry = NULL;
+	UINT32 start_offset = 0;
 
 	if (que->token_inited == TRUE) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
@@ -37,10 +38,19 @@ static INT token_tx_queue_destroy(
 		que->token_inited = FALSE;
 		RTMP_SEM_UNLOCK(&que->enq_lock);
 
+#ifdef WHNAT_SUPPORT
+		/* The area of pkt_token[0~8191] is for HNAT */
+		/* Set offset to zero if whnat is ON due to  */
+		/* the pkt_token[start] is for SW */
+		if (!pAd->CommonCfg.whnat_en)
+			start_offset = que->pkt_tkid_start;/* Backup Start offset */
+#else
+		start_offset = que->pkt_tkid_start;/* Backup Start offset */
+#endif
 		for (idx = que->pkt_tkid_start; idx <= que->pkt_tkid_end; idx++) {
 			if (!que->pkt_token)
 				break;
-			entry = &que->pkt_token[idx];
+			entry = &que->pkt_token[idx - start_offset];
 
 			if (entry && entry->pkt_buf) {
 				PCI_UNMAP_SINGLE(pAd, entry->pkt_phy_addr,

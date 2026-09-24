@@ -517,6 +517,7 @@ BOOLEAN cntl_scan_conf(
 	SCAN_INFO *ScanInfo;
 	SCAN_CTRL *ScanCtrl = NULL;
 	BSS_TABLE *ScanTab = NULL;
+	BCN_REQ_DATA *BcnReqData = NULL;
 	INT BssIdx;
 	UCHAR ch, band_idx;
 	INT MaxNumBss;
@@ -535,6 +536,8 @@ BOOLEAN cntl_scan_conf(
 		return FALSE;
 	}
 
+	BcnReqData = &wdev->Bcn_Req_Data;
+
 	ScanInfo = &wdev->ScanInfo;
 	/* scan completed, init to not FastScan */
 	ScanInfo->bImprovedScan = FALSE;
@@ -552,7 +555,8 @@ BOOLEAN cntl_scan_conf(
 	}
 
 #ifdef APCLI_CFG80211_SUPPORT
-	RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
+	if (!pAd->CommonCfg.bApcliCfg80211Disabled)
+		RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
 #endif /* APCLI_CFG80211_SUPPORT */
 
 #ifdef LED_CONTROL_SUPPORT
@@ -667,6 +671,12 @@ full_reset:
 
 	MTWF_PRINT("SCAN DONE, Reset FSM/CNTL IDLE.\n");
 
+	if (BcnReqData->BcnReqScan) {
+		BcnReqData->BcnReqScan = FALSE;
+		RRM_SendBeaconRep(wdev, pAd);
+		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "BcnRep Done\n");
+	}
+
 	owner = GetCurrentChannelOpOwner(pAd, wdev);
 	if (owner == CH_OP_OWNER_SCAN)
 		ReleaseChannelOpCharge(pAd, wdev, owner);
@@ -678,7 +688,7 @@ full_reset:
 		ReleaseChannelOpCharge(pAd, wdev, CH_OP_OWNER_PARTIAL_SCAN);
 	}
 #ifdef SCAN_RADAR_COEX_SUPPORT
-	if (wdev != NULL && wdev->RadarDetected)
+	if (wdev != NULL && pAd->radar_handling)
 		RTMP_OS_COMPLETE(&wdev->scan_complete);
 #endif
 	if (wdev != NULL && wdev->ch_set_in_progress && wdev->ch_wait_in_progress)
@@ -726,6 +736,14 @@ BOOLEAN cntl_auth_assoc_conf(
 			"pAd is NULL!\n");
 		return FALSE;
 	}
+
+#ifdef DFS_SLAVE_SUPPORT
+	if ((wdev->wdev_type == WDEV_TYPE_STA) &&
+		(event_type == CNTL_MLME_DISASSOC_CONF ||
+		event_type == CNTL_MLME_DEAUTH_CONF) &&
+		SLAVE_MODE_EN(pAd, HcGetBandByWdev(wdev)))
+		slave_bh_event(pAd, wdev, FALSE);
+#endif /* DFS_SLAVE_SUPPORT */
 
 	if ((event_type == CNTL_MLME_DISASSOC_CONF)
 		&& (cntl_curr_state != CNTL_WAIT_DISASSOC)) {

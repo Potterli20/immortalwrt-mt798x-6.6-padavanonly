@@ -110,6 +110,12 @@ struct GNU_PACKED cac_capability_lib
 	unsigned char cac_mode;
 };
 #endif
+struct GNU_PACKED bh_assoc_disallow_info
+{
+	unsigned char bssid[ETH_ALEN];
+	unsigned int profile1_bh_assoc_disallow;
+	unsigned int profile2_bh_assoc_disallow;
+};
 
 #define MAP_DISABLED		0
 #define MAP_TURNKEY			1

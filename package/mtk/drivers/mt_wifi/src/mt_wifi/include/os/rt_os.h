@@ -33,7 +33,7 @@
 #define _RT_OS_H_
 
 /* SIOCDEVPRIVATE and SIOCIWFIRSTPRIV always exist in sockios.h and wireless.h until latest kernel v5.6*/
-#if (KERNEL_VERSION(7, 6, 0) > LINUX_VERSION_CODE)
+#if (KERNEL_VERSION(5, 6, 0) > LINUX_VERSION_CODE)
 
 #ifdef LINUX
 #if WIRELESS_EXT <= 11

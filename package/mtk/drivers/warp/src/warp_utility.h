@@ -44,7 +44,7 @@
 #define WARP_FAIL_STATUS (-1)
 #define WARP_OK_STATUS (0)
 #define WARP_ALREADY_DONE_STATUS (1)
-#define PDE_DATA(i) pde_data(i)
+
 enum {
 	WARP_DBG_START,
 	WARP_DBG_OFF = WARP_DBG_START,
@@ -96,7 +96,6 @@ struct warp_dma_cb {
 	dma_addr_t pkt_pa;
 	unsigned int pkt_size;
 	struct warp_dma_cb *next;
-	struct list_head list;
 };
 
 #define WED_TX_RING_SIZE 4096

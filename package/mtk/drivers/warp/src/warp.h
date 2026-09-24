@@ -118,13 +118,10 @@ warp_get_ref(void);
 
 /*export functions for wifi client to call when events happened.*/
 
-void *
-warp_page_hash_get(void *priv_data, dma_addr_t pa);
-
 /*
 * wifi client call when tx packet is happening for add this tx session to hw path
 */
-int
+void
 warp_wlan_tx(void *priv_data, u8 *tx_info);
 
 void
@@ -207,20 +204,6 @@ warp_dma_handler_after_fwdl(void *priv_data, int dma_ctrl);
 */
 void
 warp_isr_handler(void *priv_data);
-
-#ifdef WARP_SUSPEND_RESUME
-/*
-*
-*/
-void
-warp_gen4m_suspend_handler(void *priv_data);
-
-/*
-*
-*/
-int
-warp_gen4m_resume_handler(struct wifi_hw *hw, struct wifi_ops *ops);
-#endif /*WARP_SUSPEND_RESUME*/
 
 /*
 *

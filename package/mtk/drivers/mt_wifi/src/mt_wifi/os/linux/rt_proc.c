@@ -63,6 +63,7 @@ int wl_proc_exit(void);
 #ifdef CFG_SUPPORT_CSI
 #define CSI_PROC_ROOT			"wlan"
 #define PROC_CSI_DATA_NAME		"csi_data"
+#define PROC_CSI_DBG_NAME		"csi_debug"
 #define CSI_DATA_DIR_PATH		"/proc/net/wlan"
 
 static ssize_t procCSIDataRead(struct file *filp,
@@ -75,6 +76,16 @@ static ssize_t procCSIDataPrepare(
 
 static int procCSIDataOpen(struct inode *n, struct file *f);
 static int procCSIDataRelease(struct inode *n, struct file *f);
+
+static int proc_csi_dbg_open(struct inode *inode, struct file *file);
+
+static const struct file_operations csi_debug_ops = {
+	.owner = THIS_MODULE,
+	.open = proc_csi_dbg_open,
+	.read	= seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
 
 static const struct file_operations csidata_ops = {
 	.owner = THIS_MODULE,
@@ -594,6 +605,74 @@ int wl_proc_exit(void)
 #ifdef CFG_SUPPORT_CSI
 static struct proc_dir_entry *csi_proc_dir;
 static INT8 csi_if_num;	/*csi proc interface counter*/
+
+static int proc_csi_dbg_info_show(struct seq_file *seq, void *v)
+{
+	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)seq->private;
+	UCHAR csi_mode;
+	struct wifi_dev *pwdev;
+	struct CSI_INFO_T *prCSIInfo = NULL;
+	UCHAR band_idx = 0;
+	PCSI_STA pCSISta = NULL;
+	UCHAR csi_sta_num;
+
+	prCSIInfo = &pAd->rCSIInfo;
+	csi_mode = prCSIInfo->CSI_report_mode;
+
+	seq_printf(seq, "csi_fw_version: %03d\n", prCSIInfo->FWVer);
+
+	seq_printf(seq, "csi_buffer_cnt: used(%d)-total(%d)\n", prCSIInfo->u4CSIBufferUsed, CSI_RING_SIZE);
+
+	if (csi_mode)
+		seq_printf(seq, "report_mode: %s\n", (csi_mode == CSI_PROC)?"PROC" : "NETLINK");
+	else
+		seq_printf(seq, "report_mode: %s\n", "DISABLE");
+
+	/*show sta list*/
+	NdisAcquireSpinLock(&prCSIInfo->CSIStaListLock);
+	seq_puts(seq, "dump csi sta mac list:\n");
+	DlListForEach(pCSISta, &prCSIInfo->CSIStaList, CSI_STA, List) {
+		seq_printf(seq, "STA%02d-band%d-%02x:%02x:%02x:%02x:%02x:%02x\n",
+			csi_sta_num, pCSISta->band_idx, PRINT_MAC(pCSISta->Addr));
+		csi_sta_num++;
+	}
+	NdisReleaseSpinLock(&prCSIInfo->CSIStaListLock);
+
+	for (band_idx = 0; band_idx < DBDC_BAND_NUM; band_idx++) {
+
+		pwdev = prCSIInfo->csi_wdev[band_idx];
+
+		seq_printf(seq, "band%d_status: %s\n", band_idx, (pwdev)?"ON" : "OFF");
+
+		if (pwdev) {
+			seq_printf(seq, "band%d_channel: %d\n", band_idx, pwdev->channel);
+			seq_printf(seq, "band%d_MAC: "MACSTR"\n", band_idx, MAC2STR(pwdev->bssid));
+		}
+
+		if (prCSIInfo->ucValue2[band_idx][CSI_CONFIG_FRAME_TYPE])
+			seq_printf(seq, "band%d_frame_type(Subtype+Type): %d\n", band_idx, prCSIInfo->ucValue2[band_idx][CSI_CONFIG_FRAME_TYPE]);
+
+		if (prCSIInfo->ucValue1[band_idx][CSI_CONFIG_OUTPUT_FORMAT])
+			seq_printf(seq, "band%d_tone_process: %s\n", band_idx,
+			(prCSIInfo->ucValue1[band_idx][CSI_CONFIG_OUTPUT_FORMAT] == CSI_OUTPUT_TONE_MASKED)?"tone_mask" : "tone_mask_reorder");
+		else
+			seq_printf(seq, "band%d_tone_process: %s\n", band_idx, "raw_tone");
+
+
+		seq_printf(seq, "band%d_protocol: %03d\n", band_idx, prCSIInfo->protocol_filter[band_idx]);
+
+	}
+
+	return 0;
+}
+
+
+/*for debug proc*/
+static int proc_csi_dbg_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_csi_dbg_info_show, PDE_DATA(file_inode(file)));
+}
+
 static int procCSIDataOpen(struct inode *n, struct file *f)
 {
 	struct CSI_INFO_T *prCSIInfo = NULL;
@@ -651,14 +730,6 @@ static ssize_t procCSIDataPrepare(
 	UINT_8 *tmpBuf = buf;
 	UINT_16 u2DataSize = prCSIData->u2DataCount * sizeof(INT_16);
 	UINT_16 u2Rsvd1Size = prCSIData->ucRsvd1Cnt * sizeof(INT_32);
-	enum ENUM_CSI_MODULATION_BW_TYPE_T eModulationType = 0;
-
-	if (prCSIData->ucBw == 0)
-		eModulationType = CSI_TYPE_OFDM_BW20;
-	else if (prCSIData->ucBw == 1)
-		eModulationType = CSI_TYPE_OFDM_BW40;
-	else if (prCSIData->ucBw == 2)
-		eModulationType = CSI_TYPE_OFDM_BW80;
 
 	/* magic number */
 	put_unaligned(0xAA, (tmpBuf + i4Pos));
@@ -684,7 +755,7 @@ static ssize_t procCSIDataPrepare(
 	i4Pos++;
 	put_unaligned(1, (UINT_16 *) (tmpBuf + i4Pos));
 	i4Pos += 2;
-	put_unaligned(eModulationType, (UINT_8 *) (tmpBuf + i4Pos));
+	put_unaligned(prCSIData->ucBw, (UINT_8 *) (tmpBuf + i4Pos));
 	i4Pos++;
 
 	put_unaligned(CSI_DATA_TS, (UINT_8 *) (tmpBuf + i4Pos));
@@ -750,7 +821,7 @@ static ssize_t procCSIDataPrepare(
 	os_move_mem((tmpBuf + i4Pos), prCSIData->ac2QData, u2DataSize);
 	i4Pos += u2DataSize;
 
-	if (prCSIInfo->ucValue1[CSI_CONFIG_INFO] & CSI_INFO_RSVD1) {
+	if (prCSIInfo->ucValue1[prCSIData->ucDbdcIdx][CSI_CONFIG_INFO] & CSI_INFO_RSVD1) {
 		put_unaligned(CSI_DATA_RSVD1, (UINT_8 *) (tmpBuf + i4Pos));
 		i4Pos++;
 		put_unaligned(u2Rsvd1Size, (UINT_16 *) (tmpBuf + i4Pos));
@@ -773,7 +844,7 @@ static ssize_t procCSIDataPrepare(
 		i4Pos += sizeof(INT_32);
 	}
 
-	if (prCSIInfo->ucValue1[CSI_CONFIG_INFO] & CSI_INFO_RSVD2) {
+	if (prCSIInfo->ucValue1[prCSIData->ucDbdcIdx][CSI_CONFIG_INFO] & CSI_INFO_RSVD2) {
 		put_unaligned(CSI_DATA_RSVD4, (UINT_8 *) (tmpBuf + i4Pos));
 		i4Pos++;
 		put_unaligned(sizeof(UINT_8), (INT_16 *) (tmpBuf + i4Pos));
@@ -786,30 +857,51 @@ static ssize_t procCSIDataPrepare(
 	i4Pos++;
 	put_unaligned(sizeof(UINT_16), (INT_16 *) (tmpBuf + i4Pos));
 	i4Pos += 2;
-	put_unaligned((UINT_16)(((prCSIData->Tx_Rx_Idx)&0xffff0000) >> 16), (UINT_16 *) (tmpBuf + i4Pos));
+	put_unaligned((UINT_16)(GET_CSI_TX_IDX(prCSIData->Tx_Rx_Idx)), (UINT_16 *) (tmpBuf + i4Pos));
 	i4Pos += sizeof(UINT_16);
 
 	put_unaligned(CSI_DATA_RX_IDX, (UINT_8 *) (tmpBuf + i4Pos));
 	i4Pos++;
 	put_unaligned(sizeof(UINT_16), (INT_16 *) (tmpBuf + i4Pos));
 	i4Pos += 2;
-	put_unaligned((UINT_16)((prCSIData->Tx_Rx_Idx)&0xffff), (UINT_16 *) (tmpBuf + i4Pos));
+	put_unaligned((UINT_16)(GET_CSI_RX_IDX(prCSIData->Tx_Rx_Idx)), (UINT_16 *) (tmpBuf + i4Pos));
 	i4Pos += sizeof(UINT_16);
 
 	put_unaligned(CSI_DATA_FRAME_MODE, (UINT_8 *) (tmpBuf + i4Pos));
 	i4Pos++;
-	put_unaligned(sizeof(UINT_8), (INT_16 *) (tmpBuf + i4Pos));
+	put_unaligned(sizeof(UINT_16), (INT_16 *) (tmpBuf + i4Pos));
 	i4Pos += 2;
-	put_unaligned(prCSIData->ucRxMode, (UINT_8 *) (tmpBuf + i4Pos));
-	i4Pos += sizeof(UINT_8);
+	put_unaligned(prCSIData->ucRxMode, (UINT_16 *) (tmpBuf + i4Pos));
+	i4Pos += sizeof(UINT_16);
 
 	/* add antenna pattern*/
 	put_unaligned(CSI_DATA_H_IDX, (UINT_8 *) (tmpBuf + i4Pos));
 	i4Pos++;
 	put_unaligned(sizeof(UINT_32), (INT_16 *) (tmpBuf + i4Pos));
 	i4Pos += 2;
-	put_unaligned(prCSIData->Antenna_pattern, (UINT_32 *) (tmpBuf + i4Pos));
+	put_unaligned(prCSIData->chain_info, (UINT_32 *) (tmpBuf + i4Pos));
 	i4Pos += sizeof(UINT_32);
+
+	put_unaligned(CSI_DATA_RX_RATE, (UINT_8 *) (tmpBuf + i4Pos));
+	i4Pos++;
+	put_unaligned(sizeof(UINT_16), (INT_16 *) (tmpBuf + i4Pos));
+	i4Pos += 2;
+	put_unaligned(prCSIData->rx_rate, (UINT_16 *) (tmpBuf + i4Pos));
+	i4Pos += sizeof(UINT_16);
+
+	put_unaligned(CSI_DATA_PKT_SN, (UINT_8 *) (tmpBuf + i4Pos));
+	i4Pos++;
+	put_unaligned(sizeof(UINT_16), (INT_16 *) (tmpBuf + i4Pos));
+	i4Pos += 2;
+	put_unaligned(prCSIData->pkt_sn, (UINT_16 *) (tmpBuf + i4Pos));
+	i4Pos += sizeof(UINT_16);
+
+	put_unaligned(CSI_DATA_TR_STREAM, (UINT_8 *) (tmpBuf + i4Pos));
+	i4Pos++;
+	put_unaligned(sizeof(UINT_8), (INT_16 *) (tmpBuf + i4Pos));
+	i4Pos += 2;
+	put_unaligned(prCSIData->tr_stream, (UINT_8 *) (tmpBuf + i4Pos));
+	i4Pos += sizeof(UINT_8);
 
 	/*
 	 * The lengths of magic number (4 byte) and total length (2 bytes)
@@ -847,7 +939,7 @@ static ssize_t procCSIDataRead(struct file *filp,
 	temp = prCSIInfo->byte_stream;
 
 	if (!temp) {
-		MTWF_DBG(pAd, (DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 		"temp NULL pointer!!!\n");
 		return -1;
 	}
@@ -927,6 +1019,12 @@ int csi_proc_init(RTMP_ADAPTER *pAd)
 		}
 	}
 
+	/*for debug proc*/
+	snprintf(csi_proc_name, sizeof(csi_proc_name), "%s_card%d", PROC_CSI_DBG_NAME, get_dev_config_idx(pAd));
+	/* proc /net /wlan /csi_debug_card0 */
+	prEntry = proc_create_data(csi_proc_name, 0664, csi_proc_dir, &csi_debug_ops, pAd);
+
+	/*for data proc*/
 	snprintf(csi_proc_name, sizeof(csi_proc_name), "%s_%d", PROC_CSI_DATA_NAME, get_dev_config_idx(pAd));
 	/* proc /net /wlan /csi_data_0 */
 	prEntry = proc_create_data(csi_proc_name, 0664, csi_proc_dir, &csidata_ops, pAd);
@@ -950,8 +1048,13 @@ int csi_proc_deinit(RTMP_ADAPTER *pAd)
 		return -1;
 	}
 
+	/*delect data proc entry*/
 	snprintf(Entry_name, sizeof(Entry_name), "%s_%d", PROC_CSI_DATA_NAME, get_dev_config_idx(pAd));
-	/*delect  proc -net -wlan-csi_data*/
+	remove_proc_entry(Entry_name, csi_proc_dir);
+
+	/*delect debug proc entry*/
+	os_zero_mem(Entry_name, sizeof(Entry_name));
+	snprintf(Entry_name, sizeof(Entry_name), "%s_card%d", PROC_CSI_DBG_NAME, get_dev_config_idx(pAd));
 	remove_proc_entry(Entry_name, csi_proc_dir);
 
 	csi_if_num--;

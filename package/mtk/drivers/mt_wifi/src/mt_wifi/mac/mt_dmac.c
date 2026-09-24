@@ -1798,9 +1798,10 @@ VOID mtd_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *pTxBlk)
 	txd_l->TxD2.bc_mc_pkt = (pTxBlk->TxFrameType == TX_MCAST_FRAME ? 1 : 0);
 
 	if (TX_BLK_TEST_FLAG(pTxBlk, fTX_ForceRate)) {
+		UCHAR BandIdx = HcGetBandByWdev(pTxBlk->wdev);
 		txd_l->TxD2.fix_rate = 1;
-		if (pAd->CommonCfg.bSeOff != TRUE) {
-			if (HcGetBandByWdev(pTxBlk->wdev) == BAND0) {
+		if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+			if (BandIdx == BAND0) {
 				if (cap->txd_type == TXD_V1) {
 					*txd_7 &= ~SPE_IDX_MASK;
 					*txd_7 |= SPE_IDX(BAND0_SPE_IDX);
@@ -1808,7 +1809,7 @@ VOID mtd_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *pTxBlk)
 					*txd_7 &= ~CON_SPE_IDX_MASK;
 					*txd_7 |= CON_SPE_IDX(BAND0_SPE_IDX);
 				}
-			} else if (HcGetBandByWdev(pTxBlk->wdev) == BAND1) {
+			} else if (BandIdx == BAND1) {
 				if (cap->txd_type == TXD_V1) {
 					*txd_7 &= ~SPE_IDX_MASK;
 					*txd_7 |= SPE_IDX(BAND1_SPE_IDX);
@@ -1849,10 +1850,10 @@ VOID mtd_write_tmac_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *pTxBlk)
 			txd_l->TxD2.timing_measure = 1;
 	}
 
-	if (IS_CIPHER_NONE(pTxBlk->CipherAlg))
-		txd_3->protect_frm = 0;
-	else
+	if (pTxBlk->CipherAlg)
 		txd_3->protect_frm = 1;
+	else
+		txd_3->protect_frm = 0;
 
 	txd_l->TxD5.pid = pTxBlk->Pid;
 
@@ -2231,9 +2232,10 @@ VOID mtd_write_tmac_info_by_host_cached(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *p
 		txd_l->TxD2.bc_mc_pkt = (pTxBlk->TxFrameType == TX_MCAST_FRAME ? 1 : 0);
 
 		if (TX_BLK_TEST_FLAG(pTxBlk, fTX_ForceRate)) {
+			UCHAR BandIdx = HcGetBandByWdev(pTxBlk->wdev);
 			txd_l->TxD2.fix_rate = 1;
-			if (pAd->CommonCfg.bSeOff != TRUE) {
-				if (HcGetBandByWdev(pTxBlk->wdev) == BAND0) {
+			if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+				if (BandIdx == BAND0) {
 					if (cap->txd_type == TXD_V1) {
 						*txd_7 &= ~SPE_IDX_MASK;
 						*txd_7 |= SPE_IDX(BAND0_SPE_IDX);
@@ -2241,7 +2243,7 @@ VOID mtd_write_tmac_info_by_host_cached(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *p
 						*txd_7 &= ~CON_SPE_IDX_MASK;
 						*txd_7 |= CON_SPE_IDX(BAND0_SPE_IDX);
 					}
-				} else if (HcGetBandByWdev(pTxBlk->wdev) == BAND1) {
+				} else if (BandIdx == BAND1) {
 					if (cap->txd_type == TXD_V1) {
 						*txd_7 &= ~SPE_IDX_MASK;
 						*txd_7 |= SPE_IDX(BAND1_SPE_IDX);
@@ -2276,10 +2278,10 @@ VOID mtd_write_tmac_info_by_host_cached(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *p
 				txd_l->TxD2.timing_measure = 1;
 		}
 
-		if (IS_CIPHER_NONE(pTxBlk->CipherAlg))
-			txd_3->protect_frm = 0;
-		else
+		if (pTxBlk->CipherAlg)
 			txd_3->protect_frm = 1;
+		else
+			txd_3->protect_frm = 0;
 
 		txd_l->TxD5.pid = pTxBlk->Pid;
 
@@ -2438,7 +2440,7 @@ INT32 mtd_write_txp_info_by_host(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_blk)
 	wdev = tx_blk->wdev;
 
 	if (pAd->CommonCfg.dbdc_mode)
-		band = WMODE_CAP_5G(wdev->PhyMode) ? 1 : 0;
+		band = (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode)) ? 1 : 0;
 	if (pAd->vow_dvt_en) {
 		if ((!RTMP_GET_PACKET_MGMT_PKT(tx_blk->pPacket)) &&
 			(RTMP_GET_PACKET_TYPE(tx_blk->pPacket) != TX_ALTX) &&
@@ -2534,7 +2536,7 @@ INT32 mtd_write_txp_info_by_host_v2(RTMP_ADAPTER *pAd, UCHAR *buf, TX_BLK *tx_bl
 	wdev = tx_blk->wdev;
 
 	if (pAd->CommonCfg.dbdc_mode)
-		band = WMODE_CAP_5G(wdev->PhyMode) ? 1 : 0;
+		band = (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode)) ? 1 : 0;
 	if (pAd->vow_dvt_en) {
 		if ((!RTMP_GET_PACKET_MGMT_PKT(tx_blk->pPacket)) &&
 			(RTMP_GET_PACKET_TYPE(tx_blk->pPacket) != TX_ALTX) &&
@@ -2755,6 +2757,7 @@ INT dump_txp_info(RTMP_ADAPTER *pAd, CR4_TXP_MSDU_INFO *txp_info)
 VOID mtd_write_tmac_info_mgmt(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR sub_type, UCHAR *tmac_buf, HTTRANSMIT_SETTING *BeaconTransmit, ULONG frmLen)
 {
 	MAC_TX_INFO mac_info;
+	UINT8 BandIdx = 0;
 
 	NdisZeroMemory((UCHAR *)&mac_info, sizeof(mac_info));
 	mac_info.Type = FC_TYPE_MGMT;
@@ -2788,10 +2791,11 @@ VOID mtd_write_tmac_info_mgmt(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR su
 	mac_info.Preamble = LONG_PREAMBLE;
 	mac_info.IsAutoRate = FALSE;
 
-	if (pAd->CommonCfg.bSeOff != TRUE) {
-		if (HcGetBandByWdev(wdev) == BAND0)
+	BandIdx = HcGetBandByWdev(wdev);
+	if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+		if (BandIdx == BAND0)
 			mac_info.AntPri = BAND0_SPE_IDX;
-		else if (HcGetBandByWdev(wdev) == BAND1)
+		else if (BandIdx == BAND1)
 			mac_info.AntPri = BAND1_SPE_IDX;
 	}
 	NdisZeroMemory(tmac_buf, sizeof(TMAC_TXD_L));

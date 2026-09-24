@@ -161,7 +161,6 @@ VOID TRTableResetEntry(RTMP_ADAPTER *pAd, UINT16 tr_tb_idx)
 	struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
 	struct _STA_TR_ENTRY *tr_entry;
 	INT qidx;
-	struct qm_ops *ops = pAd->qm_ops;
 
 	if (!IS_TR_WCID_VALID(pAd, tr_tb_idx))
 		return;
@@ -173,9 +172,6 @@ VOID TRTableResetEntry(RTMP_ADAPTER *pAd, UINT16 tr_tb_idx)
 
 	tr_entry->enq_cap = FALSE;
 	tr_entry->deq_cap = FALSE;
-
-	if (ops->sta_clean_queue)
-		ops->sta_clean_queue(pAd, tr_entry->wcid);
 
 	SET_ENTRY_NONE(tr_entry);
 
@@ -362,10 +358,12 @@ VOID TRTableInsertMcastEntry(RTMP_ADAPTER *pAd, UINT16 tr_tb_idx, struct wifi_de
 	}
 }
 
-VOID MgmtTableSetMcastEntry(RTMP_ADAPTER *pAd, UINT16 wcid)
+VOID MgmtTableSetMcastEntry(RTMP_ADAPTER *pAd, UINT16 wcid, struct wifi_dev *wdev)
 {
 	MAC_TABLE_ENTRY *pEntry = NULL;
-
+#ifdef CONFIG_6G_SUPPORT
+	UCHAR iob_mode;
+#endif /* CONFIG_6G_SUPPORT */
 	if (wcid >= MAX_LEN_OF_MAC_TABLE)
 		return;
 
@@ -382,16 +380,13 @@ VOID MgmtTableSetMcastEntry(RTMP_ADAPTER *pAd, UINT16 wcid)
 	pEntry->HTPhyMode.field.MODE = MODE_OFDM;
 	pEntry->HTPhyMode.field.MCS = 3;
 	NdisMoveMemory(pEntry->Addr, &BROADCAST_ADDR[0], MAC_ADDR_LEN);
-#ifdef CONFIG_AP_SUPPORT
-	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
-		pEntry->wdev = &pAd->ApCfg.MBSSID[MAIN_MBSSID].wdev;
-	}
-#endif /* CONFIG_AP_SUPPORT */
-#ifdef CONFIG_STA_SUPPORT
-	IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
-		pEntry->wdev = &pAd->StaCfg[MAIN_MSTA_ID].wdev;
-	}
-#endif /* CONFIG_AP_SUPPORT */
+	pEntry->wdev = wdev;
+#ifdef CONFIG_6G_SUPPORT
+	iob_mode = wlan_config_get_unsolicit_tx_mode(wdev);
+	if (wdev && WMODE_CAP_6G(wdev->PhyMode)
+		&& (iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP))
+		pEntry->MaxHTPhyMode.field.BW = BW_80;
+#endif /* CONFIG_6G_SUPPORT */
 }
 
 
@@ -663,6 +658,7 @@ BOOLEAN StaUpdateMacTableEntry(
 	struct _RTMP_CHIP_CAP *cap;
 	struct common_ies *cmm_ies = &ie_list->cmm_ies;
 	struct _HT_CAPABILITY_IE *ht_cap = &cmm_ies->ht_cap;
+	UCHAR i = 0;
 
 	if (!pEntry)
 		return FALSE;
@@ -757,7 +753,28 @@ BOOLEAN StaUpdateMacTableEntry(
 				&& HAS_HE_CAPS_EXIST(cmm_ies->ie_exists)) {
 			update_peer_he_caps(pEntry, cmm_ies);
 			update_peer_he_operation(pEntry, cmm_ies);
-			he_mode_adjust(wdev, pEntry, NULL);
+			he_mode_adjust(wdev, pEntry, NULL, TRUE);
+			for (i = 0; i < DOT11AX_MAX_STREAM; i++) {
+				if (pEntry->cap.rate.he80_rx_nss_mcs[i] == 3)
+					break;
+			}
+			if (i != 0) {
+				i = i <= wlan_operate_get_tx_stream(wdev) ? i : wlan_operate_get_tx_stream(wdev);
+				pEntry->MaxHTPhyMode.field.MCS = ((i-1) << 4);
+			} else {
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"STA antenna information provided is incorrect");
+			}
+
+			if (pEntry->cap.rate.he80_rx_nss_mcs[0] == 2)
+				pEntry->MaxHTPhyMode.field.MCS += HE_MCS_11;
+			else if (pEntry->cap.rate.he80_rx_nss_mcs[0] == 1)
+				pEntry->MaxHTPhyMode.field.MCS += HE_MCS_9;
+			else if (pEntry->cap.rate.he80_rx_nss_mcs[0] == 0)
+				pEntry->MaxHTPhyMode.field.MCS += HE_MCS_7;
+			else
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"STA MCS information provided is incorrect");
 		}
 #endif /*DOT11_HE_AX*/
 	}
@@ -766,7 +783,7 @@ BOOLEAN StaUpdateMacTableEntry(
 				&& HAS_HE_CAPS_EXIST(cmm_ies->ie_exists)) {
 		update_peer_he_caps(pEntry, cmm_ies);
 		update_peer_he_operation(pEntry, cmm_ies);
-		he_mode_adjust(wdev, pEntry, NULL);
+		he_mode_adjust(wdev, pEntry, NULL, FALSE);
 	}
 #endif /*DOT11_HE_AX*/
 	else
@@ -912,6 +929,16 @@ INT MacTableResetEntry(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, BOOLEAN clean
 	RTMPCancelTimer(&pSecConfig->PmfCfg.SAQueryConfirmTimer, &Cancelled);
 #endif /* DOT11W_PMF_SUPPORT */
 	ba_session_tear_down_all(pAd, pEntry->wcid, FALSE);
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+	if (pSecConfig->tfm) {
+		aead_key_free(pSecConfig->tfm);
+		pSecConfig->tfm = NULL;
+	}
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+
 	NdisZeroMemory(pEntry, sizeof(MAC_TABLE_ENTRY));
 
 	if (clean == TRUE) {
@@ -1087,6 +1114,8 @@ MAC_TABLE_ENTRY *MacTableInsertEntry(
 			RTMPInitTimer(pAd, &pSecConfig->StartFor4WayTimer, GET_TIMER_FUNCTION(WPAStartFor4WayExec), pEntry, FALSE);
 			RTMPInitTimer(pAd, &pSecConfig->StartFor2WayTimer, GET_TIMER_FUNCTION(WPAStartFor2WayExec), pEntry, FALSE);
 			RTMPInitTimer(pAd, &pSecConfig->Handshake.MsgRetryTimer, GET_TIMER_FUNCTION(WPAHandshakeMsgRetryExec), pEntry, FALSE);
+			RTMPInitTimer(pAd, &pSecConfig->Handshake.rekey_deauth_delay_timer,
+						GET_TIMER_FUNCTION(WPA2WayTimeoutDeauthExec), pEntry, FALSE);
 #ifdef DOT11W_PMF_SUPPORT
 			RTMPInitTimer(pAd, &pSecConfig->PmfCfg.SAQueryTimer, GET_TIMER_FUNCTION(PMF_SAQueryTimeOut), pEntry, FALSE);
 			RTMPInitTimer(pAd, &pSecConfig->PmfCfg.SAQueryConfirmTimer, GET_TIMER_FUNCTION(PMF_SAQueryConfirmTimeOut), pEntry, FALSE);
@@ -1115,6 +1144,12 @@ MAC_TABLE_ENTRY *MacTableInsertEntry(
 		pEntry->PsMode = PWR_ACTIVE;
 		pEntry->NoDataIdleCount = 0;
 		pEntry->ContinueTxFailCnt = 0;
+#ifdef ZERO_LOSS_CSA_SUPPORT
+		pEntry->ContTxFailCnt300ms = 0;
+		pEntry->ContTxFailCntTotal = 0;
+		pEntry->ContTxFailOccurance = 0;
+		pEntry->per_err_times = 0;
+#endif
 #ifdef WDS_SUPPORT
 		pEntry->LockEntryTx = FALSE;
 #endif /* WDS_SUPPORT */
@@ -1135,6 +1170,10 @@ MAC_TABLE_ENTRY *MacTableInsertEntry(
 		pEntry->bTxPktChk = FALSE;
 		pEntry->TotalTxSuccessCnt = 0;
 		pEntry->TxStatRspCnt = 0;
+#endif
+#if defined(ZERO_LOSS_CSA_SUPPORT) && defined(IGMP_SNOOP_SUPPORT)
+		pEntry->M2U_TxPackets = 0;
+		pEntry->M2U_TxBytes = 0;
 #endif
 
 		do {
@@ -1650,10 +1689,6 @@ static VOID mac_entry_disconn_act(struct _RTMP_ADAPTER *pAd, struct _MAC_TABLE_E
 #ifdef CONFIG_STA_SUPPORT
 	/* snowpin for ap/sta */
 	pStaCfg = GetStaCfgByWdev(pAd, wdev);
-	if (pStaCfg && pStaCfg->pAssociatedAPEntry)
-			if (pStaCfg->pAssociatedAPEntry == pEntry) {
-				pStaCfg->pAssociatedAPEntry = NULL;
-			}
 
 #if (defined(WOW_SUPPORT) && defined(RTMP_MAC_USB)) || defined(NEW_WOW_SUPPORT) || defined(MT_WOW_SUPPORT)
 
@@ -1679,12 +1714,134 @@ static VOID mac_entry_disconn_act(struct _RTMP_ADAPTER *pAd, struct _MAC_TABLE_E
 #endif /* CONFIG_STA_SUPPORT */
 }
 
-BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
+#ifdef DOT11N_DRAFT3
+
+static BOOLEAN check_bw_intolerant_status(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry)
+{
+	/*debug log*/
+	MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO,
+		"20/40 BW sync: Bss2040CoexistFlag=%d,bForty_Mhz_Intolerant=%d\n",
+	pAd->CommonCfg.Bss2040CoexistFlag & BSS_2040_COEXIST_TIMER_FIRED, pEntry->bForty_Mhz_Intolerant);
+
+	if (pEntry->bForty_Mhz_Intolerant == TRUE)
+		return TRUE;
+	else
+		return FALSE;
+}
+static BOOLEAN per_band_need_restore_bw(RTMP_ADAPTER *pAd)
 {
 	MAC_TABLE_ENTRY *pEntry;
+	struct wifi_dev *wdev;
+	UINT32 i;
+
+	for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
+		pEntry = &pAd->MacTab.Content[i];
+		if (pEntry && IS_ENTRY_CLIENT(pEntry) && (pEntry->Sst == SST_ASSOC)) {
+			wdev = pEntry->wdev;
+			if (wdev == NULL)
+				continue;
+			if ((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G) &&
+				(pEntry->bForty_Mhz_Intolerant == TRUE))
+				return FALSE;
+		}
+	}
+	return TRUE;
+}
+static VOID per_band_restore_bw(RTMP_ADAPTER *pAd, UCHAR channel)
+{
+	struct wifi_dev *wdev;
+	UINT32 i;
+	UCHAR cfg_ht_bw;
+	UCHAR cfg_ext_cha;
+	/*debug log*/
+	MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO, "20/40 BW sync: channel=%d\n", channel);
+	if (channel <= 14) {
+		for (i = 0; i < WDEV_NUM_MAX; i++) {
+			wdev = pAd->wdev_list[i];
+			if (!wdev || (WDEV_BSS_STATE(wdev) < BSS_READY) || (wlan_operate_get_prim_ch(wdev) != channel) ||
+				(wdev->wdev_type != WDEV_TYPE_AP))
+				continue;
+			cfg_ext_cha = wlan_config_get_ext_cha(wdev);
+			cfg_ht_bw = wlan_config_get_ht_bw(wdev);
+			/*debug log*/
+			MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO, "20/40 BW sync: wdev_list=%d,cfg_ht_bw=%d,cfg_ext_cha=%d\n",
+			i, cfg_ht_bw, cfg_ext_cha);
+			wlan_operate_set_ht_bw(wdev, cfg_ht_bw, cfg_ext_cha);
+		}
+	}
+}
+
+static VOID bw_2040_sync(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, MAC_TABLE_ENTRY *pEntry, USHORT wcid)
+{
+	BOOLEAN hasFallbackBW;
+	BOOLEAN needRestore;
+	INT i = 0;
+	INT bw40_sta_cnt = 0, idx = 0;
+	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	if (wdev && (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G)) {
+		/*sync 2G sysstem BW*/
+		/*debug log*/
+		MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO,
+		"20/40 BW sync: phymode_2g=%d,config_Forty_Mhz_Intolerant=%d\n",
+		wlan_config_get_ch_band(wdev), pAd->CommonCfg.bForty_Mhz_Intolerant);
+		hasFallbackBW = check_bw_intolerant_status(pAd, pEntry);
+		MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO,
+			"20/40 BW sync: hasFallbackBW=%d\n", hasFallbackBW);
+		if (hasFallbackBW) {
+			pEntry->bForty_Mhz_Intolerant = FALSE;
+			needRestore = per_band_need_restore_bw(pAd);
+			MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO,
+				"20/40 BW sync: needRestore=%d\n", needRestore);
+			if (needRestore) {
+				pAd->MacTab.fAnyStaFortyIntolerant = FALSE;
+				per_band_restore_bw(pAd, wlan_operate_get_prim_ch(wdev));
+				ap_sync_bssinfo_to_fw(pAd, wdev);
+				/* Update BSS2040back for pEntry */
+#ifdef RACTRL_FW_OFFLOAD_SUPPORT
+			if (cap->fgRateAdaptFWOffload == TRUE) {
+				CMD_STAREC_AUTO_RATE_UPDATE_T rRaParam;
+
+				NdisZeroMemory(&rRaParam, sizeof(CMD_STAREC_AUTO_RATE_UPDATE_T));
+				for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
+					PMAC_TABLE_ENTRY pTmpEntry = &pAd->MacTab.Content[i];
+
+					if (!IS_ENTRY_CLIENT(pTmpEntry) || (pTmpEntry->Sst != SST_ASSOC))
+						continue;
+					if ((pTmpEntry->MaxHTPhyMode.field.BW == BW_40) && pTmpEntry->wdev &&
+						(wlan_config_get_ch_band(pTmpEntry->wdev) == CMD_CH_BAND_24G) && idx < MAX_BW40_CNT) {
+						rRaParam.u2Bw40StaWlanIdx[idx] = i;
+						idx++;
+						bw40_sta_cnt++;
+					}
+				}
+				if (bw40_sta_cnt > MAX_BW40_CNT)
+					bw40_sta_cnt = MAX_BW40_CNT;
+				rRaParam.u1Bw40StaCnt = bw40_sta_cnt;
+				rRaParam.u4Field = RA_PARAM_HT_2040_BACK;
+				RAParamUpdate(pAd, pEntry, &rRaParam);
+				MTWF_DBG(pAd, DBG_CAT_ALL, CATMLME_WTBL, DBG_LVL_INFO,
+					"20/40 BW sync RA_PARAM_HT_2040_BACK\n");
+			}
+#endif
+				UpdateBeaconHandler(pAd, wdev, BCN_UPDATE_IE_CHG);
+			}
+		}
+	}
+
+}
+
+#endif
+
+BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
+{
+	MAC_TABLE_ENTRY *pEntry = NULL;
 	STA_TR_ENTRY *tr_entry;
 	BOOLEAN Cancelled;
 	BOOLEAN	bDeleteEntry = FALSE;
+#ifdef CONFIG_STA_SUPPORT
+	PSTA_ADMIN_CONFIG pStaCfg = NULL;
+#endif /* CONFIG_STA_SUPPORT */
 #ifdef DATA_TXPWR_CTRL
 	UINT8 u1BwIdx = 0, u1McsIdx = 0;
 #endif
@@ -1734,6 +1891,12 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 
 	pEntry = &pAd->MacTab.Content[wcid];
 	tr_entry = &tr_ctl->tr_entry[wcid];
+	/*get wdev*/
+	wdev = pEntry->wdev;
+#ifdef DOT11N_DRAFT3
+	/*20/40 BW sync*/
+	bw_2040_sync(pAd, wdev, pEntry, wcid);
+#endif
 
 #ifdef DOT11_HE_AX
 #ifdef WIFI_TWT_SUPPORT
@@ -1776,9 +1939,9 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 #endif /* MWDS */
 #if defined(CONFIG_MAP_SUPPORT) && defined(A4_CONN)
 		map_a4_peer_disable(pAd, pEntry, TRUE);
+		pEntry->a4_grpkey_status = FALSE;
 #endif
-		/*get wdev*/
-		wdev = pEntry->wdev;
+
 #ifdef CONFIG_AP_SUPPORT
 		WLAN_MR_TIM_BIT_CLEAR(pAd, pEntry->func_tb_idx, pEntry->Aid);
 #endif /* CONFIG_AP_SUPPORT */
@@ -1838,7 +2001,8 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 #ifdef CLIENT_WDS
-			if (IS_ENTRY_CLIWDS(pEntry))
+			if (IS_ENTRY_CLIWDS(pEntry) &&
+				(!pAd->CommonCfg.bClientWdsDisabled))
 				CliWdsEnryFreeAid(pAd, pEntry->wcid);
 #endif
 
@@ -1851,7 +2015,7 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 
 				/* Notify 802.1x daemon to clear this sta info*/
 				if (IS_AKM_1X_Entry(pEntry)
-					|| IS_IEEE8021X_Entry(wdev)
+					|| IS_IEEE8021X_Entry(pEntry)
 #ifdef RADIUS_ACCOUNTING_SUPPORT
 					|| IS_AKM_WPA_CAPABILITY_Entry(pEntry)
 #endif /*RADIUS_ACCOUNTING_SUPPORT*/
@@ -1899,6 +2063,12 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 			}
 
 #endif /* CONFIG_AP_SUPPORT */
+#ifdef CONFIG_STA_SUPPORT
+			pStaCfg = GetStaCfgByWdev(pAd, wdev);
+			if (pStaCfg && pStaCfg->pAssociatedAPEntry)
+				if (pStaCfg->pAssociatedAPEntry == pEntry)
+					pStaCfg->pAssociatedAPEntry = NULL;
+#endif /* CONFIG_STA_SUPPORT */
 			MacTableDelEntryFromHash(pAd, pEntry);
 #ifdef CONFIG_AP_SUPPORT
 			APCleanupPsQueue(pAd, &tr_entry->ps_queue); /* return all NDIS packet in PSQ*/
@@ -1934,6 +2104,16 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 				RTMPReleaseTimer(&pSecConfig->PmfCfg.SAQueryTimer, &Cancelled);
 				RTMPReleaseTimer(&pSecConfig->PmfCfg.SAQueryConfirmTimer, &Cancelled);
 #endif /* DOT11W_PMF_SUPPORT */
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+				if (pSecConfig->tfm) {
+					aead_key_free(pSecConfig->tfm);
+					pSecConfig->tfm = NULL;
+				}
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+
 			}
 #ifdef CONFIG_AP_SUPPORT
 #ifdef WSC_AP_SUPPORT
@@ -2084,7 +2264,7 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 #ifdef RT_CFG80211_SUPPORT
 
 
-		if (bIndicateSendEvent && pEntry && !IS_ENTRY_NONE(pEntry) && IS_ENTRY_CLIENT(pEntry)) {
+		if (bIndicateSendEvent && pEntry && !IS_ENTRY_NONE(pEntry) && IS_ENTRY_CLIENT(pEntry) && !pAd->CommonCfg.bcfg80211Disabled) {
 			if (RTMP_CFG80211_HOSTAPD_ON(pAd)
 #ifdef RT_CFG80211_P2P_SUPPORT
 				|| RTMP_CFG80211_VIF_P2P_GO_ON(pAd)
@@ -2105,7 +2285,7 @@ BOOLEAN MacTableDeleteEntry(RTMP_ADAPTER *pAd, USHORT wcid, UCHAR *pAddr)
 		}
 #endif /* MBO_SUPPORT */
 #ifdef WAPP_SUPPORT
-		if (IS_ENTRY_CLIENT(pEntry)) {
+		if (IS_ENTRY_CLIENT(pEntry) && !pAd->CommonCfg.bWappSupportDisabled) {
 			if (wdev->if_dev)
 				wapp_send_cli_leave_event(pAd, RtmpOsGetNetIfIndex(wdev->if_dev), TmpAddrForIndicate, pEntry);
 		}

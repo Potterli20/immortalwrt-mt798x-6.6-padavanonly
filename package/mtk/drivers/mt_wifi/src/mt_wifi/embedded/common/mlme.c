@@ -25,7 +25,7 @@
 */
 
 #include "rt_config.h"
-#include <linux/stdarg.h>
+#include <stdarg.h>
 #ifdef DOT11R_FT_SUPPORT
 #include "ft.h"
 #endif /* DOT11R_FT_SUPPORT */
@@ -330,6 +330,17 @@ VOID RTMPSuspendMsduTransmission(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 		}
 	}
 #endif /*ZERO_LOSS_CSA_SUPPORT*/
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (WMODE_CAP_6G(wdev->PhyMode) && (wdev->wdev_type == WDEV_TYPE_AP)) {
+		/*stop netif queue, to avoid packet from os*/
+		RTMP_OS_NETDEV_STOP_QUEUE(wdev->if_dev);
+		/*give time to clear netif stack pkt buffer, else pkt drop*/
+		udelay(500);
+	}
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 	MSDU_FORBID_SET(wdev, MSDU_FORBID_CHANNEL_MISMATCH);
 #ifdef OFFCHANNEL_ZERO_LOSS
 	if (wdev->wdev_type == WDEV_TYPE_AP) {
@@ -446,6 +457,13 @@ VOID RTMPResumeMsduTransmission(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 		}
 	}
 #endif /*ZERO_LOSS_CSA_SUPPORT*/
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (WMODE_CAP_6G(wdev->PhyMode) && (wdev->wdev_type == WDEV_TYPE_AP))
+		RTMP_OS_NETDEV_WAKE_QUEUE(wdev->if_dev);
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 	qm_ops->schedule_tx_que(pAd, idx);
 }
 
@@ -1074,7 +1092,7 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 					pEntry->andlink_sample_tx_bytes[idx] = 0;
 					pEntry->andlink_sample_rx_bytes[idx] = 0;
 
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 					"[%s](%d):IF%d sec_count:%lu, sample tx_rate: %llu, rx_rate: %llu.\n",
 					__func__, __LINE__, idx, tick, pEntry->andlink_tx_rate_rt[idx], pEntry->andlink_rx_rate_rt[idx]);
 				}
@@ -1083,7 +1101,7 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 					pEntry->andlink_avg_tx_rate[idx] = div_u64(pEntry->andlink_period_tx_bytes[idx], period_time);
 					pEntry->andlink_avg_rx_rate[idx] = div_u64(pEntry->andlink_period_rx_bytes[idx], period_time);
 
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 					"[%s](%d):IF%d sec_count:%lu, period avg_tx_rate: %llu, avgrx_rate: %llu.\n",
 					__func__, __LINE__, idx, tick, pEntry->andlink_avg_tx_rate[idx], pEntry->andlink_avg_rx_rate[idx]);
 
@@ -1095,19 +1113,19 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 				/*update max_rate*/
 				if (pEntry->andlink_max_tx_rate[idx] < pEntry->andlink_tx_rate_rt[idx]) {
 					pEntry->andlink_max_tx_rate[idx] = pEntry->andlink_tx_rate_rt[idx];
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 					"[%s](%d):IF%d sec_count:%lu, max_tx_rate: %llu.\n",
 					__func__, __LINE__, idx, tick, pEntry->andlink_max_tx_rate[idx]);
 				}
 
 				if (pEntry->andlink_max_rx_rate[idx] < pEntry->andlink_rx_rate_rt[idx]) {
 					pEntry->andlink_max_rx_rate[idx] = pEntry->andlink_rx_rate_rt[idx];
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 					"[%s](%d):IF%d sec_count:%lu, max_rx_rate: %llu.\n",
 					__func__, __LINE__, idx, tick, pEntry->andlink_max_rx_rate[idx]);
 				}
 			} else {
-				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 						"[%s](%d): period_time and sample is 0, close compute sta statistic;\n",
 						__func__, __LINE__);
 				pEntry->andlink_tx_rate_rt[idx] = 0;
@@ -1145,7 +1163,7 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 							apcli_entry->andlink_sample_tx_bytes[idx] = 0;
 							apcli_entry->andlink_sample_rx_bytes[idx] = 0;
 
-							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 							"[%s](%d):APCLI IF%d sec_count:%lu, sample tx_rate: %llu, rx_rate: %llu.\n",
 							__func__, __LINE__, idx, tick, apcli_entry->andlink_tx_rate_rt[idx], apcli_entry->andlink_rx_rate_rt[idx]);
 						}
@@ -1154,7 +1172,7 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 							apcli_entry->andlink_avg_tx_rate[idx] = div_u64(apcli_entry->andlink_period_tx_bytes[idx], period_time);
 							apcli_entry->andlink_avg_rx_rate[idx] = div_u64(apcli_entry->andlink_period_rx_bytes[idx], period_time);
 
-							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 							"[%s](%d):IF%d sec_count:%lu, period avg_tx_rate: %llu, avgrx_rate: %llu.\n",
 							__func__, __LINE__, idx, tick, apcli_entry->andlink_avg_tx_rate[idx], apcli_entry->andlink_avg_rx_rate[idx]);
 
@@ -1166,14 +1184,14 @@ INT update_andlink_statistics(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
 						/*update max_rate*/
 						if (apcli_entry->andlink_max_tx_rate[idx] < apcli_entry->andlink_tx_rate_rt[idx]) {
 							apcli_entry->andlink_max_tx_rate[idx] = apcli_entry->andlink_tx_rate_rt[idx];
-							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 							"[%s](%d):IF%d sec_count:%lu, max_tx_rate: %llu.\n",
 							__func__, __LINE__, idx, tick, apcli_entry->andlink_max_tx_rate[idx]);
 						}
 
 						if (apcli_entry->andlink_max_rx_rate[idx] < apcli_entry->andlink_rx_rate_rt[idx]) {
 							apcli_entry->andlink_max_rx_rate[idx] = apcli_entry->andlink_rx_rate_rt[idx];
-							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+							MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 							"[%s](%d):IF%d sec_count:%lu, max_rx_rate: %llu.\n",
 							__func__, __LINE__, idx, tick, apcli_entry->andlink_max_rx_rate[idx]);
 						}
@@ -2444,7 +2462,11 @@ struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
 	if (IS_MT7615(pAd) || IS_MT7622(pAd) || IS_MT7663(pAd) || IS_MT7626(pAd) ||
 		IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) || IS_MT7981(pAd)) {
 #ifdef CONFIG_AP_SUPPORT
-		BcnCheck(pAd);
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+		if (afc_bcn_check(pAd))
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+			BcnCheck(pAd);
 #endif /* CONFIG_AP_SUPPORT */
 
 		if ((pAd->Mlme.PeriodicRound % 5) == 0) { /* 500ms update */
@@ -2644,11 +2666,6 @@ struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
 		if (ops->hw_auto_debug_check)
 			ops->hw_auto_debug_check(pAd);
 
-#ifdef EAP_STATS_SUPPORT
-		if (pAd->ApCfg.EntryClientCount) {
-			MtCmdGetAllStaStats(pAd, EVENT_PHY_PER_STA_TX_STAT);
-		}
-#endif
 #ifdef CONFIG_MAP_SUPPORT
 		if ((IS_MAP_TURNKEY_ENABLE(pAd) || IS_MAP_BS_ENABLE(pAd))) {
 			if (pAd->ApCfg.EntryClientCount) {
@@ -2657,8 +2674,10 @@ struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
 		}
 #endif
 
-			if (pAd->ApCfg.EntryClientCount)
-				MtCmdGetAllStaStats(pAd, EVENT_PHY_PER_STA_TXRX_AIR_TIME);
+		if (pAd->ApCfg.EntryClientCount) {
+			MtCmdGetAllStaStats(pAd, EVENT_PHY_PER_STA_TXRX_AIR_TIME);
+			MtCmdGetAllStaStats(pAd, EVENT_PHY_PER_STA_TX_STAT);
+		}
 		/* NICUpdateRawCountersNew(pAd); */
 		RTMP_UPDATE_RAW_COUNTER(pAd);
 		RTMP_SECOND_CCA_DETECTION(pAd);
@@ -2728,9 +2747,11 @@ struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
 			update_ap_qload_to_bcn(pAd);
 #endif /* AP_QLOAD_SUPPORT */
 #ifdef WAPP_SUPPORT
+			if (!pAd->CommonCfg.bWappSupportDisabled) {
 #ifdef OCE_SUPPORT
-			wapp_bss_load_check(pAd);
+				wapp_bss_load_check(pAd);
 #endif /* OCE_SUPPORT */
+			}
 #endif /* WAPP_SUPPORT */
 			APMlmePeriodicExec(pAd);
 #ifdef BACKGROUND_SCAN_SUPPORT
@@ -2906,6 +2927,12 @@ struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
 		}
 	}
 #endif /*RATE_PRIOR_SUPPORT*/
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	afc_send_inquiry_event_timer(pAd);
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 
 
 }
@@ -3124,9 +3151,11 @@ VOID STAMlmePeriodicExec(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 			   ) {
 				MlmeDeAuthAction(pAd, pEntry, REASON_DISASSOC_STA_LEAVING, FALSE);
 #ifdef RT_CFG80211_SUPPORT
-				CFG80211OS_DelSta(pAd->net_dev, pStaCfg->Bssid);
-				MTWF_DBG(NULL, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "%s: del this ad-hoc "MACSTR"\n",
-						 __func__, MAC2STR(pStaCfg->Bssid));
+				if (!pAd->CommonCfg.bcfg80211Disabled) {
+					CFG80211OS_DelSta(pAd->net_dev, pStaCfg->Bssid);
+					MTWF_DBG(NULL, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "%s: del this ad-hoc "MACSTR"\n",
+							 __func__, MAC2STR(pStaCfg->Bssid));
+				}
 #endif /* RT_CFG80211_SUPPORT */
 			}
 		}
@@ -4355,7 +4384,10 @@ VOID MlmeUpdateTxRates(RTMP_ADAPTER *pAd, BOOLEAN bLinkUp, UCHAR apidx)
 
 			memset(&tPhyMode, 0, sizeof(HTTRANSMIT_SETTING));
 #ifdef MCAST_VENDOR10_CUSTOM_FEATURE
-			transmit  = (wdev->channel > 14) ? (&wdev->rate.MCastPhyMode_5G) : (&wdev->rate.MCastPhyMode);
+			if (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode))
+				transmit = &wdev->rate.MCastPhyMode_5G;
+			else
+				transmit = &wdev->rate.MCastPhyMode;
 #else
 			transmit  = &wdev->rate.mcastphymode;
 #endif
@@ -4931,7 +4963,10 @@ VOID MlmeUpdateTxRatesWdev(RTMP_ADAPTER *pAd, BOOLEAN bLinkUp, struct wifi_dev *
 			memset(&tPhyMode, 0, sizeof(HTTRANSMIT_SETTING));
 
 #ifdef MCAST_VENDOR10_CUSTOM_FEATURE
-			transmit  = (wdev->channel > 14) ? (&wdev->rate.MCastPhyMode_5G) : (&wdev->rate.MCastPhyMode);
+			if (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode))
+				transmit = &wdev->rate.MCastPhyMode_5G;
+			else
+				transmit = &wdev->rate.MCastPhyMode;
 #else
 			transmit  = &wdev->rate.mcastphymode;
 #endif
@@ -5765,12 +5800,19 @@ BOOLEAN MlmeEnqueueForRecv(
 #endif /* APCLI_SUPPORT */
 #endif /* CONFIG_AP_SUPPORT */
 	struct wifi_dev *msg_recv_wdev = NULL;
+	struct wifi_dev *orig_wdev = NULL;
+
+#ifdef MAC_REPEATER_SUPPORT
+	REPEATER_CLIENT_ENTRY * rept = NULL;
+#endif
 
 #ifdef CONFIG_6G_SUPPORT
 	UCHAR *Ptr;
 	PEID_STRUCT pEid;
 #endif
-
+#if defined(P2P_SUPPORT) || defined(RT_CFG80211_P2P_SUPPORT) || defined(CFG80211_MULTI_STA) || defined(APCLI_CFG80211_SUPPORT)
+	BOOLEAN isOpModeAP;
+#endif
 #ifdef CONFIG_ATE
 
 	/* Nothing to do in ATE mode */
@@ -5819,11 +5861,18 @@ BOOLEAN MlmeEnqueueForRecv(
 		return FALSE;
 	}
 
+	orig_wdev = wdev;
 	msg_recv_wdev = wdev;
 #ifdef CONFIG_AP_SUPPORT
 #if defined(P2P_SUPPORT) || defined(RT_CFG80211_P2P_SUPPORT) || defined(CFG80211_MULTI_STA) || defined(APCLI_CFG80211_SUPPORT)
-
-	if (OpMode == OPMODE_AP)
+	if (!pAd->CommonCfg.bApcliCfg80211Disabled) {
+		if (OpMode == OPMODE_AP)
+			isOpModeAP = TRUE;
+	} else {
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd)
+			isOpModeAP = TRUE;
+	}
+	if (isOpModeAP)
 #else
 	IF_DEV_CONFIG_OPMODE_ON_AP(pAd)
 #endif /* P2P_SUPPORT || RT_CFG80211_P2P_SUPPORT */
@@ -5856,6 +5905,11 @@ BOOLEAN MlmeEnqueueForRecv(
 			*/
 			for (i = 0; i < pAd->ApCfg.ApCliNum; i++) {
 				if (MAC_ADDR_EQUAL(pAd->StaCfg[i].MlmeAux.Bssid, pFrame->Hdr.Addr2) && pAd->StaCfg[i].wdev.if_up_down_state) {
+					/* For wanted wdev, band idx should be the same
+					as orig wdev */
+					if (HcGetBandByWdev(&pAd->StaCfg[i].wdev) != HcGetBandByWdev(orig_wdev))
+						continue;
+
 					/* APCLI_CONNECTION_TRIAL don't need to seperate the ApCliIdx, otherwise the ApCliIdx will be wrong on apcli DBDC mode. */
 					ApCliIdx = i;
 					bToApCli = TRUE;
@@ -5874,6 +5928,11 @@ BOOLEAN MlmeEnqueueForRecv(
 #endif
 			for (i = 0; i < pAd->ApCfg.ApCliNum; i++) {
 				if (MAC_ADDR_EQUAL(pAd->StaCfg[i].wdev.if_addr, pFrame->Hdr.Addr1)) {
+					/* For wanted wdev, band idx should be the same
+					as orig wdev */
+					if (HcGetBandByWdev(&pAd->StaCfg[i].wdev) != HcGetBandByWdev(orig_wdev))
+						continue;
+
 					ApCliIdx = i;
 					bToApCli = TRUE;
 					ApCliIdx_find = TRUE;
@@ -5884,6 +5943,10 @@ BOOLEAN MlmeEnqueueForRecv(
 				if (SSID_EQUAL(pAd->StaCfg[i].MlmeAux.Ssid, pAd->StaCfg[i].MlmeAux.SsidLen, pEid->Octet, pEid->Len)
 					&& (pFrame->Hdr.FC.SubType == SUBTYPE_PROBE_RSP)
 					&& (pEid->Eid == IE_SSID)) {
+					/* For wanted wdev, band idx should be the same
+					as orig wdev */
+					if (HcGetBandByWdev(&pAd->StaCfg[i].wdev) != HcGetBandByWdev(orig_wdev))
+						continue;
 					ApCliIdx = i;
 					bToApCli = TRUE;
 					ApCliIdx_find = TRUE;
@@ -5896,6 +5959,10 @@ BOOLEAN MlmeEnqueueForRecv(
 			/* check if da is to ap */
 			for (i = 0; i < pAd->ApCfg.BssidNum; i++) {
 				if (MAC_ADDR_EQUAL(pAd->ApCfg.MBSSID[i].wdev.if_addr, pFrame->Hdr.Addr1)) {
+					/* For wanted wdev, band idx should be the same
+					as orig wdev */
+					if (HcGetBandByWdev(&pAd->ApCfg.MBSSID[i].wdev) != HcGetBandByWdev(orig_wdev))
+						continue;
 #if defined(CONFIG_AP_SUPPORT) && defined(MBSS_SUPPORT)
 					MBSSIdx = i;
 					ApBssIdx_find = TRUE;
@@ -5907,8 +5974,7 @@ BOOLEAN MlmeEnqueueForRecv(
 
 #ifdef MAC_REPEATER_SUPPORT
 			if ((pAd->ApCfg.bMACRepeaterEn) && (bToApCli == TRUE) &&
-				(pFrame->Hdr.FC.SubType == SUBTYPE_AUTH)) {
-				REPEATER_CLIENT_ENTRY *rept = NULL;
+				((pFrame->Hdr.FC.SubType == SUBTYPE_AUTH) || (pFrame->Hdr.FC.SubType == SUBTYPE_ASSOC_RSP))) {
 				/* At this moment, for auth rps wcid and wdev will be those of apcli, */
 				/* mac table inserted when assoc. So we need to do sw search for rept */
 				rept = RTMPLookupRepeaterCliEntry(
@@ -5963,7 +6029,7 @@ BOOLEAN MlmeEnqueueForRecv(
 							if (ChBandIdx == WdevBandIdx) {
 								msg_recv_wdev = &pAd->ApCfg.MBSSID[i].wdev;
 								if (msg_recv_wdev->DevInfo.WdevActive)
-								break;
+									break;
 							}
 						}
 					}
@@ -5972,12 +6038,18 @@ BOOLEAN MlmeEnqueueForRecv(
 				break;
 			}
 
-			if ((ApBssIdx_find == FALSE) &&
-				bToApCli) {
-				if (ApCliMsgTypeSubst(pAd, pFrame, &Machine, &MsgType)) {
-					/* apcli and repeater case */
-					break;
+			if ((ApBssIdx_find == FALSE) && bToApCli &&
+				ApCliMsgTypeSubst(pAd, pFrame, &Machine, &MsgType)) {
+				/* apcli and repeater case */
+#ifdef MAC_REPEATER_SUPPORT
+				if ((pAd->ApCfg.bMACRepeaterEn) && (bToApCli == TRUE) &&
+					(Machine == WPA_STATE_MACHINE)) {
+					rept = RTMPLookupRepeaterCliEntry(pAd, FALSE, pFrame->Hdr.Addr1, TRUE);
+					if (rept && rept->wdev.if_up_down_state)
+						msg_recv_wdev = &rept->wdev;
 				}
+#endif /* MAC_REPEATER_SUPPORT */
+				break;
 			}
 #endif /* APCLI_SUPPORT */
 
@@ -5998,7 +6070,10 @@ BOOLEAN MlmeEnqueueForRecv(
 						if (msg_recv_wdev == wdev_temp)
 							continue;
 
-						if (wdev_temp->DevInfo.WdevActive) {
+						/* For wanted wdev, band idx should be the same
+						as orig wdev */
+						if (wdev_temp->DevInfo.WdevActive &&
+							(HcGetBandByWdev(wdev_temp) == HcGetBandByWdev(orig_wdev))) {
 							msg_recv_wdev = wdev_temp;
 							break;
 						}
@@ -6007,7 +6082,7 @@ BOOLEAN MlmeEnqueueForRecv(
 				break;
 			}
 
-			MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
 					 "un-recognized mgmt->subtype=%d, STA-"MACSTR"\n",
 					  pFrame->Hdr.FC.SubType, MAC2STR(pFrame->Hdr.Addr2));
 			return FALSE;
@@ -6023,6 +6098,23 @@ BOOLEAN MlmeEnqueueForRecv(
 			"wdev (%d) not ready\n", msg_recv_wdev->wdev_idx);
 		return FALSE;
 	}
+
+#ifdef DFS_SLAVE_SUPPORT
+	if (SLAVE_BEACON_STOPPED(pAd, HcGetBandByWdev(msg_recv_wdev)) &&
+		msg_recv_wdev->wdev_type == WDEV_TYPE_AP &&
+		pFrame->Hdr.FC.SubType == SUBTYPE_BEACON) {
+		UCHAR i = 0;
+
+		/* BH connection in process, direct beacon to apcli inf */
+		for (i = 0; i < pAd->ApCfg.ApCliNum; i++) {
+			if (HcGetBandByWdev(msg_recv_wdev) == HcGetBandByWdev(&pAd->StaCfg[i].wdev)) {
+				msg_recv_wdev = &pAd->StaCfg[i].wdev;
+				preCheckMsgTypeSubset(pAd, pFrame, &Machine, &MsgType);
+				break;
+			}
+		}
+	}
+#endif /* DFS_SLAVE_SUPPORT */
 
 #ifdef CONFIG_STA_SUPPORT
 #if defined(P2P_SUPPORT) || defined(RT_CFG80211_P2P_SUPPORT) || defined(CFG80211_MULTI_STA)
@@ -6085,7 +6177,12 @@ BOOLEAN MlmeEnqueueForRecv(
 		NdisReleaseSpinLock(&(Queue->Lock));
 		return FALSE;
 	}
-
+	if (HcGetBandByWdev(orig_wdev) != HcGetBandByWdev(msg_recv_wdev)) {
+		MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"orig_wdev(band/channel)=(%d/%d),msg_recv_wdev(band/channel)=(%d/%d)\n",
+			HcGetBandByWdev(orig_wdev), orig_wdev->channel,
+			HcGetBandByWdev(msg_recv_wdev), msg_recv_wdev->channel);
+	}
 	Queue->Tail++;
 	Queue->Num++;
 
@@ -6287,7 +6384,8 @@ VOID MlmeRestartStateMachine(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 #endif /* CONFIG_STA_SUPPORT */
 	/* CFG_TODO for SCAN */
 #ifdef RT_CFG80211_SUPPORT
-	RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
+	if (!pAd->CommonCfg.bcfg80211Disabled)
+		RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
 #endif /* RT_CFG80211_SUPPORT */
 }
 

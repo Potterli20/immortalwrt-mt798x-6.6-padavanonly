@@ -1,6 +1,22 @@
+diff --git a/mt_wifi/embedded/ap/ap_cfg.c b/mt_wifi/embedded/ap/ap_cfg.c
+index e6247eb..c05f8dc 100644
+--- a/mt_wifi/embedded/ap/ap_cfg.c
++++ b/mt_wifi/embedded/ap/ap_cfg.c
+@@ -30308,6 +30308,9 @@ BOOLEAN wdev_down_exec_ioctl(RTMP_IOCTL_INPUT_STRUCT *wrq, USHORT subcmd)
+ 		}
+ 	}
+ 
++	if (cmd == OID_802_11_COUNTRYCODE)
++		retval = TRUE;
++
+ 	if (buf)
+ 		os_free_mem(buf);
+ 
+diff --git a/mt_wifi/os/linux/ap_ioctl.c b/mt_wifi/os/linux/ap_ioctl.c
+index a2510fb..afda1d0 100644
 --- a/mt_wifi/os/linux/ap_ioctl.c
 +++ b/mt_wifi/os/linux/ap_ioctl.c
-@@ -818,8 +818,51 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, v
+@@ -824,8 +824,51 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
  		break;
  	}
  	case SIOCGIWRANGE:	/*Get range of parameters */
@@ -27,7 +43,7 @@
 +
 +				range.we_version_compiled = WIRELESS_EXT;
 +
-+				BandIdx = wlan_operate_get_ch_band(wdev);
++				BandIdx = HcGetBandByWdev(wdev);
 +				pChCtrl = hc_get_channel_ctrl(pAdin->hdev_ctrl, BandIdx);
 +
 +				for (i = 0; i < pChCtrl->ChListNum && i < IW_MAX_FREQUENCIES; i++) {
@@ -53,7 +69,7 @@
  	case SIOCGIWRETRY:	/*get retry limits and lifetime */
  	case SIOCSIWRETRY:	/*set retry limits and lifetime */
  		Status = RTMP_IO_EOPNOTSUPP;
-@@ -832,7 +875,7 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, v
+@@ -838,7 +881,7 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
  		if ((wdev != NULL) && (wdev->if_up_down_state == FALSE)) {
  			if (wdev_down_exec_ioctl(wrq, subcmd) == FALSE) {
  				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -62,15 +78,3 @@
  				return -ENETDOWN;
  			}
  		}
---- a/mt_wifi/embedded/ap/ap_cfg.c
-+++ b/mt_wifi/embedded/ap/ap_cfg.c
-@@ -29622,6 +29622,9 @@ BOOLEAN wdev_down_exec_ioctl(RTMP_IOCTL_
- 		}
- 	}
- 
-+	if (cmd == OID_802_11_COUNTRYCODE)
-+		retval = TRUE;
-+
- 	if (buf)
- 		os_free_mem(buf);
- 

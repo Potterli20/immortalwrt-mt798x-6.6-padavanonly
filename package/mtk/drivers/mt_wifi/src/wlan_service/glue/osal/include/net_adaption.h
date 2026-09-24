@@ -124,7 +124,11 @@
 #define SERV_MAC_ADDR_LEN	6
 
 /* Wcid related */
-#define SERV_WCID_ALL		0xFF
+#if defined(CONFIG_COLGIN_MT6890)
+#define SERV_WCID_ALL    139
+#else
+#define SERV_WCID_ALL    288
+#endif
 
 #ifndef IFNAMELEN
 #define IFNAMELEN 16
@@ -1155,6 +1159,7 @@ struct test_wlan_info {
 	unsigned long long emi_phy_size;
 	/*tx thread idx*/
 	u_char thread_idx;
+	u_int16 wcid[SERV_WCID_ALL];
 };
 
 /* Test control register read/write for service */
@@ -1797,8 +1802,7 @@ s_int32 net_ad_set_wmm_param_by_qid(
 	struct test_configuration *configs);
 s_int32 net_ad_clean_sta_q(
 	struct test_wlan_info *winfos,
-	u_char band_idx,
-	u_char wcid);
+	u_char band_idx);
 s_int32 net_ad_set_auto_resp(
 	struct test_wlan_info *winfos,
 	struct test_operation *ops,

@@ -26,7 +26,7 @@
  */
 
 #include "rt_config.h"
-#include <linux/stdarg.h>
+#include <stdarg.h>
 
 #ifdef IXIA_C50_MODE
 #ifdef MT7986
@@ -267,7 +267,8 @@ VOID APMlmePeriodicExec(
 		}
 #endif /* WDS_SUPPORT */
 #ifdef CLIENT_WDS
-		CliWds_ProxyTabMaintain(pAd);
+		if (!pAd->CommonCfg.bClientWdsDisabled)
+			CliWds_ProxyTabMaintain(pAd);
 #endif /* CLIENT_WDS */
 #ifdef A4_CONN
 		for (mbss_idx = 0; mbss_idx < pAd->ApCfg.BssidNum; mbss_idx++)
@@ -371,7 +372,24 @@ VOID APMlmePeriodicExec(
 			}
 		}
 #endif /* DOT11_N_SUPPORT */
+#ifdef CONFIG_MAP_SUPPORT
+	if (IS_MAP_BS_ENABLE(pAd)) {
+		INT IdBss = 0;
+		BSS_STRUCT *pMbss = NULL;
+		struct wifi_dev *wdev;
 
+		for (IdBss = 0; IdBss < pAd->ApCfg.BssidNum; IdBss++) {
+			pMbss = &pAd->ApCfg.MBSSID[IdBss];
+			wdev = &pMbss->wdev;
+			if ((pMbss == NULL) || (wdev == NULL) || (wdev->pHObj == NULL))
+				continue;
+			if (wdev->map_indicate_channel_change) {
+				wdev->map_indicate_channel_change = 0;
+				wapp_send_ch_change_rsp(pAd, wdev, wdev->channel);
+			}
+		}
+	}
+#endif
 #ifdef A_BAND_SUPPORT
 	if (bSupport5G && (pAd->CommonCfg.bIEEE80211H == 1)) {
 		INT IdBss = 0;
@@ -443,6 +461,7 @@ VOID APMlmePeriodicExec(
 						wapp_send_cac_stop(pAd, RtmpOsGetNetIfIndex(wdev->if_dev), wdev->channel, TRUE);
 					}
 #endif
+					pAd->CommonCfg.DfsParameter.cac_channel = wdev->channel;
 					MlmeEnqueue(pAd, DFS_STATE_MACHINE, DFS_CAC_END, 0, NULL, HcGetBandByWdev(wdev));
 					AsicSetSyncModeAndEnable(pAd, pAd->CommonCfg.BeaconPeriod[DBDC_BAND0],
 						HW_BSSID_0, OPMODE_AP);
@@ -459,10 +478,11 @@ VOID APMlmePeriodicExec(
 #endif
 				pDot11hTest->InServiceMonitorCount++;
 #ifdef DFS_ADJ_BW_ZERO_WAIT
-				if (IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState))
+				if (IS_CH_BETWEEN(wdev->channel, 36, 64) && IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState))
 				{
-					if ((pDot11hTest->RDCount++ > pDot11hTest->cac_time) &&
-						(IsChABand(wdev->PhyMode, wdev->channel))) {
+					if (((pDot11hTest->RDCount++) > pDot11hTest->cac_time) &&
+						(IsChABand(wdev->PhyMode, wdev->channel)) &&
+						(TakeChannelOpCharge(pAd, wdev, CH_OP_OWNER_ZW_DFS, FALSE) == TRUE)) {
 						pDot11hTest->RDCount = 0;
 						MlmeEnqueue(pAd, DFS_STATE_MACHINE, DFS_CAC_END, 0, NULL, HcGetBandByWdev(wdev));
 						AsicSetSyncModeAndEnable(pAd, pAd->CommonCfg.BeaconPeriod[DBDC_BAND0],

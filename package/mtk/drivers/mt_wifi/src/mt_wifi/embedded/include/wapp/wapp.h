@@ -72,10 +72,6 @@ INT wapp_send_wps_config(
 		IN  PWSC_CREDENTIAL pCredential
 );
 #endif
-VOID wext_send_wapp_qry_rsp2(
-	PNET_DEV pNetDev,
-	struct wapp_event2 *event);
-
 
 INT wapp_send_bss_state_change(
 	struct _RTMP_ADAPTER *ad,
@@ -149,6 +145,11 @@ VOID wapp_send_cac_period_event(
 	IN UCHAR channel,
 	IN UCHAR cac_enable,
 	IN USHORT cac_time);
+
+INT wapp_send_chn_list_query_rsp(
+	PRTMP_ADAPTER pAd,
+	struct wapp_req *req);
+
 #endif
 VOID wapp_send_csa_event(
 	IN PRTMP_ADAPTER pAd,
@@ -200,6 +201,9 @@ VOID wapp_send_cac_stop(
 	IN UINT32 ifindex,
 	IN UCHAR channel,
 	IN UCHAR ret);
+VOID wapp_send_Radio_off(
+	IN PRTMP_ADAPTER pAd,
+	IN UINT32 ifindex);
 #endif
 #ifdef MAP_R2
 INT wapp_send_sta_disassoc_stats_event(
@@ -318,8 +322,6 @@ void wext_send_dpp_frame_tx_status(PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
 
 #endif /* DPP_SUPPORT */
 #ifdef MAP_R3
-void wext_send_sta_info(PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
-				MAC_TABLE_ENTRY *pEntry);
 void wext_send_dpp_uri_info(PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
 				PWSC_CTRL pWscControl);
 #endif /* MAP_R3 */

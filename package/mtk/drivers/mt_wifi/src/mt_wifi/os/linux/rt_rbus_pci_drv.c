@@ -28,6 +28,7 @@
 INT RTPCICmdThread(
 	IN ULONG Context)
 {
+
 	RTMP_ADAPTER *pAd;
 	RTMP_OS_TASK *pTask;
 	int status;
@@ -98,6 +99,7 @@ INT RTPCICmdThread(
 	MTWF_DBG(pAd, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_INFO, "<---RTPCICmdThread\n");
 	RtmpOSTaskNotifyToExit(pTask);
 	return 0;
+
 }
 
 

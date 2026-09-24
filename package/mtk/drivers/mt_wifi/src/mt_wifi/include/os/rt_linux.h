@@ -39,6 +39,7 @@
 #include <linux/ctype.h>
 #include <linux/vmalloc.h>
 
+
 #include <linux/wireless.h>
 #include <net/iw_handler.h>
 #if defined(CONFIG_TSO_SUPPORT) || defined(CONFIG_CSO_SUPPORT)
@@ -136,6 +137,8 @@ typedef struct usb_ctrlrequest devctrlrequest;
  ***********************************************************************************/
 
 #define L1_PROFILE_PATH	"/etc/wireless/l1profile.dat"
+
+
 #define L1PROFILE_INDEX_LEN		10
 #define	L1PROFILE_ATTRNAME_LEN	30
 #define	L2PROFILE_PATH_LEN		80
@@ -152,7 +155,7 @@ typedef struct usb_ctrlrequest devctrlrequest;
 #endif
 
 
-#define AP_DRIVER_VERSION			"7.6.6.1"
+#define AP_DRIVER_VERSION			"7.6.7.3"
 
 #ifdef WAPP_SUPPORT
 #define WAPP_SUPPORT_VERSION		"v3.0.2.0"
@@ -365,7 +368,7 @@ typedef struct file *RTMP_OS_FD;
 typedef struct _OS_FS_INFO_ {
 	int				fsuid;
 	int				fsgid;
-	// mm_segment_t	fs;
+	mm_segment_t	fs;
 } OS_FS_INFO;
 
 typedef struct _RTMP_OS_FD {
@@ -722,14 +725,14 @@ typedef struct os_cookie	*POS_COOKIE;
 #if (KERNEL_VERSION(4, 10, 0) > LINUX_VERSION_CODE)
 #define MTWF_PRINT	printk
 #else
-#define  mt_printk(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
+#define  printk(fmt, ...) printk(KERN_CONT fmt, ##__VA_ARGS__)
 #define MTWF_PRINT	pr_cont
 #endif
 #ifdef DBG_ENHANCE
 /* Mapping Wi-Fi driver log to syslog level */
 #define MTWF_PRINT_DBG_LVL_OFF		pr_crit
 #define MTWF_PRINT_DBG_LVL_ERROR	pr_err
-#define MTWF_PRINT_DBG_LVL_WARN		pr_warn
+#define MTWF_PRINT_DBG_LVL_WARN		pr_warning
 #define MTWF_PRINT_DBG_LVL_NOTICE	pr_notice
 #define MTWF_PRINT_DBG_LVL_INFO		pr_info
 #define MTWF_PRINT_DBG_LVL_DEBUG	pr_info
@@ -740,7 +743,7 @@ typedef struct os_cookie	*POS_COOKIE;
 #define ASSERT(x)                                                               \
 	{                                                                               \
 		if (!(x)) {                                                                   \
-			mt_printk(KERN_WARNING __FILE__ ":%d assert " #x "failed\n", __LINE__);    \
+			printk(KERN_WARNING __FILE__ ":%d assert " #x "failed\n", __LINE__);    \
 			dump_stack();\
 			/* panic("Unexpected error occurs!\n");					*/\
 		}                                                                           \
@@ -1664,6 +1667,15 @@ VOID unregister_starv_block(struct starv_dbg_block *bk);
 VOID starv_timeout_log_basic(struct starv_log_entry *entry);
 
 #endif /*DBG_STARVATION*/
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+struct crypto_aead * aead_key_setup_encrypt(const char *alg, const u8 key[], size_t key_len, size_t mic_len);
+void aead_key_free(struct crypto_aead *tfm);
+int aead_encrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len, u8 *data, size_t data_len, u8 *mic);
+int aead_decrypt(struct crypto_aead *tfm, u8 *b_0, u8 *aad, size_t aad_len, u8 *data, size_t data_len, u8 *mic);
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 
 
 #ifdef CONFIG_DBG_QDISC

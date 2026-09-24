@@ -81,11 +81,6 @@ static VOID sync_fsm_enqueue_req(struct wifi_dev *wdev)
 	/* ASSERT(wdev->sys_handle); */
 	pAd = (RTMP_ADAPTER *)wdev->sys_handle;
 
-#ifdef SCAN_RADAR_COEX_SUPPORT
-	if (WMODE_CAP_5G(wdev->PhyMode) && pAd->radar_handling)
-		return;
-#endif
-
 	ScanCtrl = get_scan_ctrl_by_wdev(pAd, wdev);
 	MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			"[%s]====================>[%s]\n",
@@ -216,7 +211,7 @@ static BOOLEAN sta_enqueue_join_probe_request(PRTMP_ADAPTER pAd, struct wifi_dev
 			} else {
 #ifdef CONFIG_MAP_SUPPORT
 				if (IS_MAP_ENABLE(pAd)) {
-					if (IS_MAP_CERT_ENABLE(pAd))
+					if (IS_MAP_CERT_ENABLE(pAd) || WMODE_CAP_6G(wdev->PhyMode))
 						MgtMacHeaderInitExt(pAd, &Hdr80211, SUBTYPE_PROBE_REQ, 0,
 									MlmeAux->Bssid, wdev->if_addr, MlmeAux->Bssid);
 					else
@@ -225,8 +220,12 @@ static BOOLEAN sta_enqueue_join_probe_request(PRTMP_ADAPTER pAd, struct wifi_dev
 				} else {
 #endif
 #if defined(SUPP_SAE_SUPPORT) || defined(SUPP_OWE_SUPPORT)
-					MgtMacHeaderInitExt(pAd, &Hdr80211, SUBTYPE_PROBE_REQ, 0,
+					if (!pAd->CommonCfg.bSuppSAEDisabled)
+						MgtMacHeaderInitExt(pAd, &Hdr80211, SUBTYPE_PROBE_REQ, 0,
 									MlmeAux->Bssid, wdev->if_addr, MlmeAux->Bssid);
+					else
+						MgtMacHeaderInitExt(pAd, &Hdr80211, SUBTYPE_PROBE_REQ, 0,
+									MlmeAux->Bssid, wdev->if_addr, BROADCAST_ADDR);
 #else
 					MgtMacHeaderInitExt(pAd, &Hdr80211, SUBTYPE_PROBE_REQ, 0,
 									MlmeAux->Bssid, wdev->if_addr, BROADCAST_ADDR);
@@ -908,7 +907,8 @@ static VOID sync_fsm_join_req_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM 
 
 		/* Country IE of the AP will be evaluated and will be used. */
 		if ((pStaCfg->IEEE80211dClientMode != Rt802_11_D_None) &&
-			(pBss->bHasCountryIE == TRUE)) {
+			(pBss->bHasCountryIE == TRUE) &&
+			(!pAd->CommonCfg.bExtChListDisabled)) {
 			NdisMoveMemory(&pAd->CommonCfg.CountryCode[0], &pBss->CountryString[0], 2);
 
 			if (pBss->CountryString[2] == 'I')
@@ -1107,7 +1107,12 @@ static VOID sync_fsm_join_timeout_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_E
 	if (isRecvRsp) {
 #ifdef APCLI_AUTO_CONNECT_SUPPORT
 #ifdef APCLI_CFG80211_SUPPORT
-		if (1)
+		if ((!pAd->CommonCfg.bApcliCfg80211Disabled) ||
+			(pApCliEntry->ApCliAutoConnectRunning == TRUE)
+#ifdef BT_APCLI_SUPPORT
+			|| (pAd->ApCfg.ApCliAutoBWBTSupport == TRUE)
+#endif
+			)
 #else
 		/* follow root ap setting while ApCliAutoConnectRunning is active */
 		if ((pApCliEntry->ApCliAutoConnectRunning == TRUE)
@@ -1147,6 +1152,9 @@ static VOID sync_fsm_join_timeout_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_E
 		{
 #ifndef APCLI_CFG80211_SUPPORT
 			isGoingToConnect = TRUE;
+#else
+			if (pAd->CommonCfg.bApcliCfg80211Disabled)
+				isGoingToConnect = TRUE;
 #endif
 		}
 	}
@@ -1384,11 +1392,11 @@ static VOID sync_fsm_scan_timeout_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_E
 static VOID update_channel_list_by_scantable(IN PRTMP_ADAPTER pAd, struct wifi_dev *wdev,
 	IN PRTMP_ADAPTER pAd_temp, struct wifi_dev *wdev_temp)
 {
-	UCHAR i;
+	UINT i;
 	BSS_TABLE *ScanTab = get_scan_tab_by_wdev(pAd_temp, wdev_temp);
 	BSS_ENTRY *bss;
 
-	for (i = 0; i < ScanTab->BssNr; i++) {
+	for (i = 0; (i < ScanTab->BssNr) && (ScanTab->BssNr <= MAX_LEN_OF_BSS_TABLE); i++) {
 		bss = &ScanTab->BssEntry[i];
 		if (bss->rnr_channel != 0)
 			add_non_psc_channel(pAd, wdev, bss->rnr_channel);
@@ -1461,8 +1469,10 @@ static VOID sync_fsm_scan_req_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM 
 
 	if (MlmeScanReqSanity(pAd, Elem->Msg, Elem->MsgLen, &BssType, (PCHAR)Ssid, &SsidLen, &ScanType)) {
 #ifdef SCAN_RADAR_COEX_SUPPORT
-		if (WMODE_CAP_5G(wdev->PhyMode) && pAd->radar_handling)
+		if ((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) && pAd->radar_handling) {
+			Status = MLME_FAIL_NO_RESOURCE;
 			goto cntl_res_err;
+		}
 #endif
 		AsicDisableSync(pAd, HW_BSSID_0);
 #ifdef CONFIG_AP_SUPPORT
@@ -1485,8 +1495,13 @@ static VOID sync_fsm_scan_req_action(struct _RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM 
 #endif /* CONFIG_AP_SUPPORT */
 		wdev = Elem->wdev;
 #ifdef SCAN_RADAR_COEX_SUPPORT
-		if (WMODE_CAP_5G(wdev->PhyMode))
+		if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
+			if (pAd->radar_handling) {
+				Status = MLME_FAIL_NO_RESOURCE;
+				goto cntl_res_err;
+			}
 			pAd->scan_wdev = Elem->wdev;
+		}
 #endif
 		NdisGetSystemUpTime(&ScanInfo->LastScanTime);
 		ScanInfo->ScanChannelCnt = 0;
@@ -1628,41 +1643,15 @@ cntl_res_err:
 #ifdef VENDOR10_CUSTOM_RSSI_FEATURE
 INT RTMPV10AvgRssi(RTMP_ADAPTER *pAd, RSSI_SAMPLE *pRssi, UCHAR channel, UINT32 used_ant)
 {
-	INT Rssi;
-	UINT32 rx_stream;
-	BOOLEAN isDbdc2G = FALSE;
+	INT Rssi = 0;
 	UINT32 antenna;
 
-	rx_stream = pAd->Antenna.field.RxPath;
-
-	/* single chip dbdc only has 2 functional antennae*/
-	if (pAd->CommonCfg.dbdc_mode == TRUE && rx_stream == 4)
-		rx_stream = 2;
-
-	/* Antenna Selection for 2G/5G in DBDC Mode */
-	if (pAd->CommonCfg.dbdc_mode == TRUE && channel <= 14)
-		isDbdc2G = TRUE;
-
-	if (used_ant <= 0 || used_ant >= rx_stream)
-		antenna = rx_stream; //rx_stream equals to the HW CAP.
-	else
-		antenna = used_ant;
+	for (antenna = 0; antenna < used_ant; antenna++)
+		Rssi += pRssi->AvgRssi[antenna];
+	Rssi = Rssi/used_ant;
 
 	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-		"DBDC %d Channel %d RX %d\n", pAd->CommonCfg.dbdc_mode, channel, antenna);
-
-	if (antenna == 4)
-		Rssi = (pRssi->AvgRssi[0] + pRssi->AvgRssi[1] + pRssi->AvgRssi[2] + pRssi->AvgRssi[3]) >> 2;
-	else if (antenna == 3)
-		Rssi = (pRssi->AvgRssi[0] + pRssi->AvgRssi[1] + pRssi->AvgRssi[2]) / 3;
-	else if (antenna == 2 && (isDbdc2G || !(pAd->CommonCfg.dbdc_mode)))
-		/* Normal RX Stream 2 or DBDC 2G */
-		Rssi = (pRssi->AvgRssi[0] + pRssi->AvgRssi[1]) >> 1;
-	else if (antenna == 2 && (!isDbdc2G && pAd->CommonCfg.dbdc_mode))
-		/* DBDC 5G */
-		Rssi = (pRssi->AvgRssi[2] + pRssi->AvgRssi[3]) >> 1;
-	else
-		Rssi = pRssi->AvgRssi[0];
+			"Channel %d, RX %d, Rssi %d\n", channel, used_ant, Rssi);
 
 	return Rssi;
 }
@@ -1678,15 +1667,12 @@ VOID Vendor10RssiUpdate(
 		if (!pEntry || !pEntry->wdev)
 			return;
 
-		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-			"Bcn Mac Address "MACSTR"\n", MAC2STR(pEntry->Addr));
-
 		/* Continuous Averaging */
 		pEntry->CurRssi += RealRssi;
 		pEntry->CurRssi >>= 1;
 	} else {
 		CHAR RSSI[4];
-		INT AvgRssi;
+		CHAR AvgRssi;
 		UINT i;
 		UINT32 Used_Ant;
 
@@ -1696,25 +1682,24 @@ VOID Vendor10RssiUpdate(
 
 			if ((IS_VALID_ENTRY(pEntry)) && (pEntry->wdev->wdev_type == WDEV_TYPE_STA || pEntry->wdev->wdev_type == WDEV_TYPE_REPEATER)
 				&& (pEntry->func_tb_idx < MAX_APCLI_NUM)) {
-				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-					("Mlme Mac Address "MACSTR"\n", MAC2STR(pEntry->Addr)));
 
 				/* RSSI fetch from WTBL */
 				chip_get_rssi(pAd, pEntry->wcid, &RSSI[0]);
-				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "R0 %d R1 %d R2 %d R3 %d\n",
-					RSSI[0], RSSI[1], RSSI[2], RSSI[3]);
-
+				Used_Ant = wlan_operate_get_rx_stream(pEntry->wdev);
 				pEntry->RssiSample.AvgRssi[0] = RSSI[0];
 				pEntry->RssiSample.AvgRssi[1] = RSSI[1];
 				pEntry->RssiSample.AvgRssi[2] = RSSI[2];
 				pEntry->RssiSample.AvgRssi[3] = RSSI[3];
 
-				Used_Ant = (pEntry->MaxHTPhyMode.field.MCS >> 4) + 1;
 				AvgRssi = RTMPV10AvgRssi(pAd, &pEntry->RssiSample, pEntry->wdev->channel, Used_Ant);
-
 				/* Continuous Averaging */
-				pEntry->CurRssi += AvgRssi;
+				pEntry->CurRssi += AvgRssi - 1;
 				pEntry->CurRssi >>= 1;
+
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					       "RSSI: R0 %d R1 %d R2 %d R3 %d, Operating Rx: %d, Current Avg RSSI: %d\n",
+					RSSI[0], RSSI[1], RSSI[2], RSSI[3], Used_Ant, pEntry->CurRssi);
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "AvgRssi: %d\n", AvgRssi);
 			}
 		}
 	}
@@ -1830,7 +1815,8 @@ static VOID sync_fsm_peer_response_scan_action(struct _RTMP_ADAPTER *pAd, MLME_Q
 				 return;
 			}
 			if ((IS_MAP_TURNKEY_ENABLE(pAd)) &&
-			(((pAd->CommonCfg.bIEEE80211H == 1) &&
+			(((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G)
+				&& (pAd->CommonCfg.bIEEE80211H == 1) &&
 				RadarChannelCheck(pAd, ScanCtrl->Channel))) &&
 				(wdev->MAPCfg.FireProbe_on_DFS == FALSE)) {
 					wdev->MAPCfg.FireProbe_on_DFS = TRUE;
@@ -2056,7 +2042,7 @@ static VOID sync_fsm_peer_response_scan_action(struct _RTMP_ADAPTER *pAd, MLME_Q
 		}
 
 #ifdef RT_CFG80211_SUPPORT
-
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 		if (RTMPEqualMemory(ie_list->Ssid, "DIRECT-", 7))
 			MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "P2P_SCANNING: %s [%lu], channel =%d\n",
 					 ie_list->Ssid, Idx, Elem->Channel);
@@ -2068,6 +2054,7 @@ static VOID sync_fsm_peer_response_scan_action(struct _RTMP_ADAPTER *pAd, MLME_Q
 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Update the SSID %s in Kernel Table, Elem->Channel=%u\n",
 				 ie_list->Ssid, Elem->Channel);
 		RT_CFG80211_SCANNING_INFORM(pAd, Idx, Elem->Channel, (UCHAR *)Elem->Msg, Elem->MsgLen, RealRssi);
+	}
 #endif /* RT_CFG80211_SUPPORT */
 #ifdef MWDS
 
@@ -2163,6 +2150,14 @@ static VOID sync_fsm_peer_request_idle_action(struct _RTMP_ADAPTER *pAd, MLME_QU
 		return;
 
 #endif /* P2P_SUPPORT */
+
+#ifdef DFS_SLAVE_SUPPORT
+	if (SLAVE_BEACON_STOPPED(pAd, HcGetBandByWdev(Elem->wdev))) {
+		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"[DFS-SLAVE] beaconing off, don't rsp to probe\n");
+		return;
+	}
+#endif /* DFS_SLAVE_SUPPORT */
 
 	if (PeerProbeReqSanity(pAd, Elem->Msg, Elem->MsgLen, &ProbeReqParam) == FALSE) {
 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "shiang! PeerProbeReqSanity failed!\n");
@@ -2260,6 +2255,9 @@ static VOID sync_fsm_peer_response_idle_action(struct _RTMP_ADAPTER *pAd, MLME_Q
 			return;
 
 		if (!(INFRA_ON(pStaCfg) || ADHOC_ON(pAd)
+#ifdef DFS_SLAVE_SUPPORT
+			|| SLAVE_BEACON_STOPPED(pAd, HcGetBandByWdev(Elem->wdev))
+#endif /* DFS_SLAVE_SUPPORT */
 			 ))
 			return;
 	}
@@ -2494,13 +2492,14 @@ static VOID sync_fsm_peer_response_join_action(struct _RTMP_ADAPTER *pAd, MLME_Q
 	}
 
 #ifdef RT_CFG80211_SUPPORT
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		/* Determine primary channel by IE's DSPS rather than channel of received frame */
+		if (ie_list->Channel != 0)
+			Elem->Channel = ie_list->Channel;
 
-	/* Determine primary channel by IE's DSPS rather than channel of received frame */
-	if (ie_list->Channel != 0)
-		Elem->Channel = ie_list->Channel;
-
-	MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Info: Update the SSID %s in Kernel Table\n", ie_list->Ssid);
-	RT_CFG80211_SCANNING_INFORM(pAd, Bssidx, ie_list->Channel, (UCHAR *)Elem->Msg, Elem->MsgLen, RealRssi);
+		MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Info: Update the SSID %s in Kernel Table\n", ie_list->Ssid);
+		RT_CFG80211_SCANNING_INFORM(pAd, Bssidx, ie_list->Channel, (UCHAR *)Elem->Msg, Elem->MsgLen, RealRssi);
+	}
 #endif /* RT_CFG80211_SUPPORT */
 	fsm_ops = (struct sync_fsm_ops *)wdev->sync_fsm_ops;
 

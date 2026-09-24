@@ -889,6 +889,9 @@ INT PMF_RobustFrameClassify(
 	IN BOOLEAN IsRx)
 {
 	PMAC_TABLE_ENTRY pEntry = (PMAC_TABLE_ENTRY) pData;
+	UINT8 octet_idx = (pHdr->FC.Order ? 4 : 0);
+	UCHAR Category;
+
 
 	if ((pHdr->FC.Type != FC_TYPE_MGMT) || (frame_len <= 0))
 		return NORMAL_FRAME;
@@ -902,7 +905,10 @@ INT PMF_RobustFrameClassify(
 	case SUBTYPE_ACTION: {
 		if  ((IsRx == FALSE)
 			 || (IsRx && (pHdr->FC.Wep == 0))) {
-			UCHAR Category = (UCHAR) (pHdr->Octet[(pHdr->FC.Order ? 4 : 0)]);
+			if (frame_len < (octet_idx + 1))
+				return NORMAL_FRAME;
+
+			Category = (UCHAR) (pHdr->Octet[(pHdr->FC.Order ? 4 : 0)]);
 
 			switch (Category) {
 			/* Refer to IEEE 802.11w Table7-24 */

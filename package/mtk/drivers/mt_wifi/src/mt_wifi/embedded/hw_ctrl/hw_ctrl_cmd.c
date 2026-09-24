@@ -542,6 +542,7 @@ VOID RTMP_MAC_RECOVERY(struct _RTMP_ADAPTER *pAd, UINT32 Status)
 	if (value != pAd->HwCtrl.ser_status) {
 		MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_INFO, "%s::Status(0x%x)\n", __func__, Status);
 		pAd->HwCtrl.ser_status = value;
+		pAd->ErrRecoveryCtl.hostSerStep = 8;
 		RTCMDUp(&pAd->HwCtrl.ser_task);
 	} else {
 		/* TODO: do we may hit this case? */

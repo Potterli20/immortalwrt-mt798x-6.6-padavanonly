@@ -100,7 +100,10 @@ BOOLEAN a4_interface_deinit(
 	PDL_LIST a4_entry_list = NULL;
 	PMAC_TABLE_ENTRY entry = NULL;
 	BOOLEAN delete_inf = FALSE;
-
+#ifdef CONFIG_MAP_3ADDR_SUPPORT
+	PDL_LIST eth_entry_list = NULL;
+	PEth_CONNECT_ENTRY eth_entry = NULL, eth_entryTmp = NULL;
+#endif
 	if (is_ap) {
 		if (!VALID_MBSS(adapter, if_index))
 			return FALSE;
@@ -135,6 +138,20 @@ BOOLEAN a4_interface_deinit(
 			if (!apcli_entry->a4_init)
 				delete_inf = TRUE;
 		}
+#ifdef CONFIG_MAP_3ADDR_SUPPORT
+		if (adapter->MapAccept3Addr && (apcli_entry->eth_list_init == 1)) {
+			eth_entry_list = &apcli_entry->eth_entry_list;
+			RTMP_SEM_LOCK(&apcli_entry->eth_entry_lock);
+			DlListForEachSafe(eth_entry, eth_entryTmp, eth_entry_list, Eth_CONNECT_ENTRY, List) {
+				DlListDel(&eth_entry->List);
+				os_free_mem(eth_entry);
+			}
+			RTMP_SEM_UNLOCK(&apcli_entry->eth_entry_lock);
+			NdisFreeSpinLock(&apcli_entry->eth_entry_lock);
+			apcli_entry->eth_list_init = 0;
+		}
+#endif
+
 	}
 #else
 	else
@@ -1021,7 +1038,7 @@ VOID eth_delete_entry(
 	IN PUCHAR mac_addr
 )
 {
-	PEth_CONNECT_ENTRY eth_entry = NULL;
+	PEth_CONNECT_ENTRY eth_entry = NULL, eth_entryTmp = NULL;
 	PSTA_ADMIN_CONFIG apcli_entry = NULL;
 	PDL_LIST eth_entry_list = NULL;
 
@@ -1035,7 +1052,7 @@ VOID eth_delete_entry(
 
 	eth_entry_list = &apcli_entry->eth_entry_list;
 	RTMP_SEM_LOCK(&apcli_entry->eth_entry_lock);
-	DlListForEach(eth_entry, eth_entry_list, Eth_CONNECT_ENTRY, List) {
+	DlListForEachSafe(eth_entry, eth_entryTmp, eth_entry_list, Eth_CONNECT_ENTRY, List) {
 		if (MAC_ADDR_EQUAL(mac_addr, eth_entry->mac)) {
 			MTWF_DBG(adapter, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_TRACE,
 				"%s deleted "MACSTR" if_index %d in list \n", __func__, MAC2STR(mac_addr), if_index);

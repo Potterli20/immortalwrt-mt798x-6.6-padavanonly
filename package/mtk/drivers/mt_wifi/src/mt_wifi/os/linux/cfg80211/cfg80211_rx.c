@@ -458,7 +458,8 @@ VOID CFG80211_AssocReqHandler(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				 "Disallow new Association\n");
 #ifdef WAPP_SUPPORT
-		wapp_assoc_fail = DISALLOW_NEW_ASSOCI;
+		if (!pAd->CommonCfg.bWappSupportDisabled)
+			wapp_assoc_fail = DISALLOW_NEW_ASSOCI;
 #endif /* WAPP_SUPPORT */
 	/*	goto assoc_check; */
 		return;
@@ -471,7 +472,8 @@ VOID CFG80211_AssocReqHandler(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				 "mem alloc failed\n");
 #ifdef WAPP_SUPPORT
-		wapp_assoc_fail = MLME_NO_RESOURCE;
+		if (!pAd->CommonCfg.bWappSupportDisabled)
+			wapp_assoc_fail = MLME_NO_RESOURCE;
 #endif /* WAPP_SUPPORT */
 	/*	goto assoc_check; */
 		return;
@@ -620,7 +622,8 @@ VOID CFG80211_AssocReqHandler(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 			("%s():MBO not allowed assoc\n", __func__));
 		bMboReject = TRUE;
 #ifdef WAPP_SUPPORT
-		wapp_assoc_fail = MLME_UNABLE_HANDLE_STA;
+		if (!pAd->CommonCfg.bWappSupportDisabled)
+			wapp_assoc_fail = MLME_UNABLE_HANDLE_STA;
 #endif /* WAPP_SUPPORT */
 		/* goto SendAssocResponse; */
 		return;

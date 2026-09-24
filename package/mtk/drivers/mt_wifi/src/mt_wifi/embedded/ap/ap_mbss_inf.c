@@ -128,6 +128,7 @@ Note:
 INT mbss_virtual_if_open(PNET_DEV pDev)
 {
 	VOID *pAd;
+	struct wifi_dev *wdev = NULL;
 
 	pAd = RTMP_OS_NETDEV_GET_PRIV(pDev);
 	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_WARN, " ===> %s\n",
@@ -143,6 +144,11 @@ INT mbss_virtual_if_open(PNET_DEV pDev)
 	RT_MOD_INC_USE_COUNT();
 	RT_MOD_HNAT_REG(pDev);
 	RTMP_OS_NETDEV_START_QUEUE(pDev);
+	wdev = wdev_search_by_netdev(pAd, pDev);
+	if (wdev) {
+		/* Restore channel mismatch bit to initial state */
+		MSDU_FORBID_CLEAR(wdev, MSDU_FORBID_CHANNEL_MISMATCH);
+	}
 	return 0;
 }
 

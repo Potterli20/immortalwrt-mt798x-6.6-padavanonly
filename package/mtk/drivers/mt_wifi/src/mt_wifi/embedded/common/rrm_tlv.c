@@ -1290,11 +1290,9 @@ int EnqueueBeaconRepFrame(RTMP_ADAPTER *pAd,
 
 VOID RRM_EnqueuePeerBeaconRep(
 		IN RTMP_ADAPTER *pAd,
+		IN PBCN_REQ_DATA pBcnReqData,
 		IN PUCHAR pDA,
 		IN PUCHAR pSA,
-		IN UINT8 DialogToken,
-		MEASURE_REQ_INFO MeasureReqInfo,
-		IN RRM_BEACON_REQ_INFO BeaconReq,
 		BSS_ENTRY *pBssEntry)
 {
 	PUCHAR pOutBuffer = NULL;
@@ -1302,9 +1300,15 @@ VOID RRM_EnqueuePeerBeaconRep(
 	ULONG FrameLen = 0;
 	HEADER_802_11 ActHdr;
 	RRM_MEASURE_REP_INFO MeasureRepIE;
-	RRM_BEACON_REP_INFO BcnRep;
+	PRRM_BEACON_REP_INFO pBcnRep;
 	UINT8 TotalLen = 0;
 	UINT32 ptsf = 0;
+	UINT8 DialogToken = pBcnReqData->DialogT;
+	MEASURE_REQ_INFO MeasureReqInfo;
+	RRM_BEACON_REQ_INFO BeaconReq;
+
+	memcpy(&MeasureReqInfo, &pBcnReqData->MeasureReqInfo_scan, sizeof(MEASURE_REQ_INFO));
+	memcpy(&BeaconReq, &pBcnReqData->BcnReqInfo, sizeof(RRM_BEACON_REQ_INFO));
 
 	MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "%s::\n", __func__);
 	/* build action frame header.*/
@@ -1318,6 +1322,7 @@ VOID RRM_EnqueuePeerBeaconRep(
 		return;
 	}
 
+	os_alloc_mem(NULL, (UCHAR **)&pBcnRep, sizeof(RRM_BEACON_REP_INFO));
 	NdisMoveMemory(pOutBuffer, (PCHAR)&ActHdr, sizeof(HEADER_802_11));
 	FrameLen = sizeof(HEADER_802_11);
 	/*
@@ -1353,28 +1358,30 @@ VOID RRM_EnqueuePeerBeaconRep(
 			/* no CCK's definition in spec. */
 		}
 
-		NdisZeroMemory(&BcnRep, sizeof(RRM_BEACON_REP_INFO));
-		if (!pBssEntry->RegulatoryClass)
-			BcnRep.RegulatoryClass = BeaconReq.RegulatoryClass;
-		else
-			BcnRep.RegulatoryClass = pBssEntry->RegulatoryClass;
-		BcnRep.ChNumber =  pBssEntry->Channel;
-		BcnRep.ActualMeasureStartTime = cpu2le64(0);
-		BcnRep.MeasureDuration = cpu2le16(BeaconReq.MeasureDuration);
-		BcnRep.RepFrameInfo = pBssEntry->CondensedPhyType;
-		BcnRep.RCPI = rssi_to_rcpi(pBssEntry->Rssi);
-		BcnRep.RSNI = pBssEntry->RSNI; /* 255 indicates that RSNI is not available */
-		COPY_MAC_ADDR(BcnRep.Bssid, pBssEntry->Bssid);
-		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "%s::RegulatoryClass=%d,ChNumber=%d,RCPI=%d,Rssi=%d\n",
-			__func__, BcnRep.RegulatoryClass, BcnRep.ChNumber, BcnRep.RCPI, pBssEntry->Rssi);
+		NdisZeroMemory(pBcnRep, sizeof(RRM_BEACON_REP_INFO));
 
-		BcnRep.AnntaId = 0; /* unknown */
+		if (!pBssEntry->RegulatoryClass)
+			pBcnRep->RegulatoryClass = BeaconReq.RegulatoryClass;
+		else
+			pBcnRep->RegulatoryClass = pBssEntry->RegulatoryClass;
+		pBcnRep->ChNumber =  pBssEntry->Channel;
+		pBcnRep->ActualMeasureStartTime = cpu2le64(0);
+		pBcnRep->MeasureDuration = cpu2le16(BeaconReq.MeasureDuration);
+		pBcnRep->RepFrameInfo = pBssEntry->CondensedPhyType;
+		pBcnRep->RCPI = rssi_to_rcpi(pBssEntry->Rssi);
+		pBcnRep->RSNI = pBssEntry->RSNI; /* 255 indicates that RSNI is not available */
+		COPY_MAC_ADDR(pBcnRep->Bssid, pBssEntry->Bssid);
+		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO, "%s::RegulatoryClass=%d,ChNumber=%d,RCPI=%d,Rssi=%d\n",
+			__func__, pBcnRep->RegulatoryClass, pBcnRep->ChNumber, pBcnRep->RCPI, pBssEntry->Rssi);
+
+		pBcnRep->AnntaId = 0; /* unknown */
 		ptsf = (UINT32)(pBssEntry->PTSF[3] << 24)
 			+ (UINT32)(pBssEntry->PTSF[2] << 16)
 			+ (UINT32)(pBssEntry->PTSF[1] << 8)
 			+ (UINT32)(pBssEntry->PTSF[0]);
-		BcnRep.ParentTSF = cpu2le32(ptsf);
-		RRM_InsertBcnRepIE(pAd, (pOutBuffer + FrameLen), &FrameLen, (PUCHAR)&BcnRep);
+		pBcnRep->ParentTSF = cpu2le32(ptsf);
+
+		RRM_InsertBcnRepIE(pAd, (pOutBuffer + FrameLen), &FrameLen, (PUCHAR)pBcnRep);
 		TotalLen += sizeof(RRM_BEACON_REP_INFO);
 	}
 
@@ -1387,8 +1394,8 @@ VOID RRM_EnqueuePeerBeaconRep(
 		MeasureRepIE.Token = MeasureReqInfo.Token;
 		MeasureRepIE.ReportMode.word = MeasureReqInfo.ReqMode.word;
 		MeasureRepIE.ReportMode.field.Late = 0;
-		MeasureRepIE.ReportMode.field.Incapable = 0;
-		MeasureRepIE.ReportMode.field.Refused = 0;
+		MeasureRepIE.ReportMode.field.Incapable = pBcnReqData->Incap;
+		MeasureRepIE.ReportMode.field.Refused = pBcnReqData->Ref;
 		MeasureRepIE.ReportMode.field.Rev = 0;
 		MeasureRepIE.ReportType = MeasureReqInfo.ReqType;
 
@@ -1402,6 +1409,10 @@ VOID RRM_EnqueuePeerBeaconRep(
 
 	if (pOutBuffer)
 		MlmeFreeMemory(pOutBuffer);
+
+	if (pBcnRep)
+		MlmeFreeMemory(pBcnRep);
+
 	return;
 
 }

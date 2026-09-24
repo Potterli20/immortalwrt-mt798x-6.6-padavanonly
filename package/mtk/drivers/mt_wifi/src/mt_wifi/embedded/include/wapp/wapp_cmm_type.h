@@ -195,6 +195,7 @@ typedef enum {
 	WAPP_NO_DATA_TRAFFIC_TIMEOUT_EVENT,
 	WAPP_WIFI_UP_EVENT,
 	WAPP_WIFI_DOWN_EVENT,
+	WAPP_RADIO_OFF,
 	WAPP_QOS_ACTION_FRAME_EVENT = 70,
 	WAPP_MSCS_CLASSIFIER_PARAM_EVENT,
 	WAPP_VEND_SPEC_UP_TUPLE_EVENT,
@@ -479,7 +480,7 @@ typedef struct GNU_PACKED _wdev_chn_info {
 	u8		ch_list_num;
 	u8		non_op_chn_num;
 	u16		dl_mcs;
-	struct chnList ch_list[32];
+	struct chnList ch_list[MAX_NUM_OF_CHANNELS + 1];
 	u8		non_op_ch_list[32];
 	u8		AutoChannelSkipListNum;
 	u8		AutoChannelSkipList[MAX_NUM_OF_CHANNELS + 1];
@@ -685,7 +686,11 @@ struct GNU_PACKED map_vendor_ie
 	u8 subtype;
 	u8 root_distance;
 	u8 connectivity_to_controller;
+#ifdef MAP_MLO_UPLINK
+	u32 uplink_rate;
+#else
 	u16 uplink_rate;
+#endif
 	u8 uplink_bssid[MAC_ADDR_LEN];
 	u8 bssid_5g[MAC_ADDR_LEN];
 	u8 bssid_2g[MAC_ADDR_LEN];
@@ -952,7 +957,6 @@ typedef union GNU_PACKED _wapp_event_data {
 	wdev_vht_cap vht_cap;
 	wdev_misc_cap misc_cap;
 	wapp_client_info cli_info;
-	wdev_chn_info chn_list;
 	wdev_op_class_info op_class;
 	wdev_bss_info bss_info;
 	wdev_ap_metric ap_metrics;
@@ -1009,9 +1013,6 @@ typedef union GNU_PACKED _wapp_event_data {
 	struct wapp_mesh_sr_info mesh_sr_info;
 #endif /* MAP_R3 */
 } wapp_event_data;
-struct GNU_PACKED _wapp_event2_data {
-	wapp_client_info cli_info;
-};
 
 typedef struct GNU_PACKED _wapp_req_data {
 	u32	ifindex;
@@ -1042,13 +1043,6 @@ struct GNU_PACKED wapp_event {
 	u32 ifindex;
 	wapp_event_data data;
 };
-struct GNU_PACKED wapp_event2 {
-	u8 len;
-	u8 event_id;
-	u32 ifindex;
-	struct _wapp_event2_data data;
-};
-
 
 typedef struct GNU_PACKED _tbtt_info_set {
 	u8 NrAPTbttOffset;

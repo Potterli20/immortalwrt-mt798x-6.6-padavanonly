@@ -777,6 +777,11 @@ INT32 SetATERxUser(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 INT32 SetATETxPower0(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATETXPOW0", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	struct _ATE_CTRL *ATECtrl = &(pAd->ATECtrl);
@@ -809,6 +814,13 @@ INT32 SetATETxPower1(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	CHAR Power;
 	INT32 Ret = 0;
 
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+
+		return FALSE;
+	}
+
 	MTWF_PRINT("%s: Power1 = %s\n", __func__, Arg);
 	Power = simple_strtol(Arg, 0, 10);
 	ATECtrl->TxPower1 = Power;
@@ -832,6 +844,12 @@ INT32 SetATETxPower2(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	CHAR Power;
 	INT32 Ret = 0;
 
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
+
 	MTWF_PRINT("%s: Power2 = %s\n", __func__, Arg);
 	Power = simple_strtol(Arg, 0, 10);
 	ATECtrl->TxPower2 = Power;
@@ -854,6 +872,12 @@ INT32 SetATETxPower3(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	ATE_TXPOWER TxPower;
 	CHAR Power;
 	INT32 Ret = 0;
+
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 
 	MTWF_PRINT("%s: Power3 = %s\n", __func__, Arg);
 	Power = simple_strtol(Arg, 0, 10);
@@ -953,6 +977,11 @@ INT32 SetATETxPowerEvaluation(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 INT32 SetATETxAntenna(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATETXANT", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	struct _ATE_CTRL *ATECtrl = &(pAd->ATECtrl);
@@ -1029,6 +1058,11 @@ err0:
 INT32 SetATERxAntenna(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATERXANT", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	INT32 Ret = 0;
@@ -1069,6 +1103,12 @@ INT32 SetATETxFreqOffset(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	struct _ATE_CTRL *ATECtrl = &(pAd->ATECtrl);
 	struct _ATE_OPERATION *ATEOp = ATECtrl->ATEOp;
 
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
+
 	MTWF_PRINT("%s: FreqOffset = %s\n", __func__, Arg);
 	FreqOffset = simple_strtol(Arg, 0, 10);
 	Ret = ATEOp->SetTxFreqOffset(pAd, FreqOffset);
@@ -1105,6 +1145,12 @@ INT32 SetATETxLength(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	UCHAR control_band_idx = TESTMODE_GET_BAND_IDX(pAd);
 	UINT32 TxLength;
 
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
+
 	MTWF_PRINT("%s: TxLength = %s, control_band_idx = %d\n", __func__, Arg, control_band_idx);
 
 	TxLength = simple_strtol(Arg, 0, 10);
@@ -1117,6 +1163,12 @@ INT32 SetATETxCount(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 	UCHAR control_band_idx = TESTMODE_GET_BAND_IDX(pAd);
 	UINT32 TxCount = 0;
+
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 
 	MTWF_PRINT("%s: TxCount = %s, control_band_idx = %d\n", __func__, Arg, control_band_idx);
 
@@ -1183,6 +1235,11 @@ INT32 CheckMCSValid(PRTMP_ADAPTER pAd, UCHAR tx_mode, UCHAR Mcs)
 INT32 SetATETxMcs(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_dw("ATETXMCS", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	INT32 Ret = 0;
@@ -1237,6 +1294,12 @@ INT32 SetATETxLdpc(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 	UCHAR control_band_idx = TESTMODE_GET_BAND_IDX(pAd);
 	UCHAR Ldpc;
 
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
+
 	MTWF_PRINT("%s: Ldpc = %s, control_band_idx = %d\n", __func__, Arg, control_band_idx);
 
 	Ldpc = simple_strtol(Arg, 0, 10);
@@ -1279,6 +1342,11 @@ INT32 SetATETxStbc(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 INT32 SetATETxMode(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_dw("ATETXMODE", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	UCHAR control_band_idx = TESTMODE_GET_BAND_IDX(pAd);
@@ -1297,6 +1365,11 @@ INT32 SetATETxMode(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 INT32 SetATETxGi(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_dw("ATETXGI", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	INT32 ret = FALSE;
@@ -1356,6 +1429,11 @@ INT32 set_ate_max_pe(RTMP_ADAPTER *ad, RTMP_STRING *Arg)
 INT32 set_ate_ru_info(RTMP_ADAPTER *ad, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(ad)) {
+		MTWF_DBG(ad, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATERUINFO", &ad->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	INT32 ret = FALSE;
@@ -2033,6 +2111,11 @@ err0:
 INT32 set_ate_control_band_idx(RTMP_ADAPTER *pAd, RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATECTRLBANDIDX", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	struct _ATE_CTRL *ATECtrl = &pAd->ATECtrl;
@@ -6009,6 +6092,16 @@ INT32 SetATE(
 
 
 #if defined(CONFIG_WLAN_SERVICE)
+	if (strcmp(Arg, "ATESTART") != 0) {
+		if (!ATE_ON(pAd)) {
+			MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s command fail , ATE mode not started!!\n",
+					Arg);
+			Ret = -1;
+			goto err1;
+		}
+	}
+
 	Ret = mt_agent_cli_act(Arg, &pAd->serv);
 
 	if (Ret)
@@ -6457,6 +6550,11 @@ INT32 SetATEChannel(
 	RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"ATECHANNEL command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATECHANNEL", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	INT32 Ret = 0;
@@ -6749,6 +6847,11 @@ INT32 SetATETxBw(
 	RTMP_STRING *Arg)
 {
 #if defined(CONFIG_WLAN_SERVICE)
+	if (!ATE_ON(pAd)) {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"RF-Test command fail, ATE mode not started!!\n");
+		return FALSE;
+	}
 	return (mt_agent_cli_set_ext("ATETXBW", &pAd->serv, Arg) == SERV_STATUS_SUCCESS) ? TRUE : FALSE;
 #else
 	struct _ATE_CTRL *ATECtrl = &(pAd->ATECtrl);

@@ -959,35 +959,27 @@ INT32 MtCmdSetTxTdCck(
 	UINT8 u1Enable
 )
 {
-	struct cmd_msg *msg;
-	CMD_PHY_SET_TXTD_CCK_T PhysetTxTd;
-	INT32 ret = 0;
-	struct _CMD_ATTRIBUTE attr = {0};
-
-	msg = AndesAllocCmdMsg(pAd, sizeof(CMD_PHY_SET_TXTD_CCK_T));
-	if (!msg) {
-		ret = NDIS_STATUS_RESOURCES;
-		goto error;
-	}
-	os_zero_mem(&PhysetTxTd, sizeof(CMD_PHY_SET_TXTD_CCK_T));
-	PhysetTxTd.u1PhyStateInfoCatg = CMD_PHY_STATE_TX_TD_CCK;
-	PhysetTxTd.u1Enable = u1Enable;
-	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
-	SET_CMD_ATTR_TYPE(attr, EXT_CID);
-	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_PHY_STAT_INFO);
-	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET);
-	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
-	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, MT_IGNORE_PAYLOAD_LEN_CHECK);
-	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
-	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
-	AndesInitCmdMsg(msg, attr);
-	AndesAppendCmdMsg(msg, (char *)&PhysetTxTd,
-						sizeof(CMD_PHY_SET_TXTD_CCK_T));
-	ret = chip_cmd_tx(pAd, msg);
-error:
-	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-			 "%s:(ret = %d)\n", __func__, ret);
-	return ret;
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D01C), (0x3FDFF7FD));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D020), (0x3FCFF3FB));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D024), (0x3FBFEBFA));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D028), (0x3F9FE7F8));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D02C), (0x3F8FDFF7));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D030), (0x3F7FDBF6));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D034), (0x3F7FDFF8));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D038), (0x3F9FEFFD));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D03C), (0x3FF00805));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D040), (0x00903412));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D044), (0x01807824));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D048), (0x02B0C83A));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D04C), (0x04212C54));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D050), (0x05D19C70));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D054), (0x07A2108E));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D058), (0x097284AA));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D05C), (0x0B32ECC3));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D060), (0x0CA344D7));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D064), (0x0DC380E4));
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, (0x8308D068), (0x0E73A0E9));
+	return 0;
 }
 #endif /* SPECIAL_11B_OBW_FEATURE */
 

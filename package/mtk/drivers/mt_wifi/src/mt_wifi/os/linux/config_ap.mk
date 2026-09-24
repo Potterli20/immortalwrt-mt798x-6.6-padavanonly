@@ -107,6 +107,9 @@ HAS_MICROWAVE_OVEN_SUPPORT=n
 #endif /* MICROWAVE_OVEN_SUPPORT */
 
 
+
+
+
 ################################################################
 # AP Customized Feature Selection
 ################################################################
@@ -370,3 +373,5 @@ WFLAGS += -DVHT_TXBF_2G_EPIGRAM_IE
 endif
 endif
 #endif /* VHT_TXBF_2G_EPIGRAM_IE */
+WFLAGS += -DMLR_SUPPORT
+WFLAGS += -DMAP_MLO_UPLINK

@@ -426,6 +426,14 @@ typedef struct _CMD_ATTRIBUTE {
 	RSP_PARAM       rsp;
 } CMD_ATTRIBUTE, *P_CMD_ATTRIBUTE;
 
+#ifdef ANT_CONFIG_3T2T1T_SUPPORT
+struct CMD_RF_DYNAMIC_CTRL {
+	UINT8 u1AntIdx;
+	UINT8 u1ModeIdx;
+	UINT8 aucReserved[2];
+};
+#endif
+
 /**
  * The cmd_msg is used by Host to communicate with FW.(i.e issue request)
  * The FW may response event or not depend on cmd flags setting.
@@ -688,6 +696,11 @@ enum EXT_CMD_TYPE {
 	EXT_CMD_ID_RDCE_VERIFY = 0x61,
 #endif /* PRE_CAL_TRX_SET1_SUPPORT */
 	EXT_CMD_ID_GET_MIB_INFO = 0x5a,
+
+#ifdef ANT_CONFIG_3T2T1T_SUPPORT
+	EXT_CMD_ID_3T_2T_1T_FEATURE_CTRL = 0x5b,
+#endif
+
 #if defined(RLM_CAL_CACHE_SUPPORT) || defined(PRE_CAL_TRX_SET2_SUPPORT) || defined(PRE_CAL_MT7622_SUPPORT)
 	EXT_CMD_ID_TXLPF_CAL_INFO = 0x62,
 	EXT_CMD_ID_TXIQ_CAL_INFO = 0x63,
@@ -804,6 +817,9 @@ enum EXT_CMD_TYPE {
 #ifdef CFG_SUPPORT_FALCON_SR
 	EXT_CMD_ID_SR_CTRL = 0xA8,
 #endif /* CFG_SUPPORT_FALCON_SR */
+#if defined(RED_SUPPORT) && defined(VOW_SUPPORT)
+	EXT_CMD_ID_MCLI_ENABLE = 0xA9,
+#endif
 #if defined(PRE_CAL_MT7626_SUPPORT) || defined(PRE_CAL_MT7915_SUPPORT) || \
 	defined(PRE_CAL_MT7986_SUPPORT) || defined(PRE_CAL_MT7981_SUPPORT) || \
 	defined(PRE_CAL_MT7916_SUPPORT)
@@ -849,7 +865,11 @@ enum EXT_CMD_TYPE {
 	EXT_CMD_ID_RDD_IPI_SCAN_HIST = 0xC5,
 #endif
 	EXT_CMD_ID_RTS_THEN_CTS = 0xC6,
+#ifdef MLR_SUPPORT
+	EXT_CMD_ID_SET_MLR = 0xC7,
+#endif
 	EXT_CMD_ID_FAST_PATH_CAL_MIC = 0xD5,
+	EXT_CMD_ID_ARP_FLOW_CONTROL = 0xD7,
 #ifdef WIFI_MD_COEX_SUPPORT
 	EXT_CMD_ID_UPDATE_3WIRE_GRP = 0xFA,
 	EXT_CMD_ID_SET_IDC_STATE = 0xFB,
@@ -860,6 +880,10 @@ enum EXT_CMD_TYPE {
 #ifdef SWACI_MECHANISM
 	EXT_CMD_ID_RLM_SWLNA_ACI_CTRL = 0xC0,
 #endif
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	EXT_CMD_ONDEMAND_DPD_CAL = 0xC1,
+#endif
+	EXT_CMD_ID_LPI_CTRL = 0xC8,
 };
 
 typedef enum _LINK_TEST_ACTION_CATEGORY {
@@ -938,6 +962,8 @@ enum WO_CMD_ID {
 	WO_CMD_RXCNT_CTRL = 0x0015,
 	WO_CMD_RXCNT_INFO = 0x0016,
 	WO_CMD_SET_CAP = 0x0017,
+	WO_CMD_CCIF_RING_DUMP = 0x0018,
+	WO_CMD_WTBL_SEC_UPDATE = 0x0019,
 	WO_CMD_WED_END
 };
 
@@ -1923,6 +1949,7 @@ typedef enum _MEC_CTRL_CMD_ACTION {
 	MEC_CTRL_ACTION_AMSDU_PARA_STA,
 	MEC_CTRL_ACTION_AMSDU_ALGO_THRESHOLD,
 	MEC_CTRL_INTF_SPEED,
+	MEC_CTRL_ACTION_AMSDU_MAX_LEN,
 	MEC_CTRL_ACTION_MAX = 8
 } MEC_CTRL_CMD_ACTION;
 
@@ -1983,6 +2010,12 @@ struct GNU_PACKED MEC_INTF_SPEED_T {
 	UINT8 u1Reserved[4];
 };
 
+typedef struct GNU_PACKED _MEC_SET_AMSDU_MAX_SIZE_STA_T {
+	UINT16 u2WlanIdx;
+	UINT8 u1Reserved[2];
+} CMD_MEC_SET_AMSDU_MAX_SIZE_STA_T, *P_CMD_MEC_SET_AMSDU_MAX_SIZE_STA_T;
+
+
 typedef struct GNU_PACKED _CMD_MEC_CTRL_CMD_T {
 	UINT16 u2Action;
 	UINT8 u1Reserved[2];
@@ -1992,6 +2025,7 @@ typedef struct GNU_PACKED _CMD_MEC_CTRL_CMD_T {
 		CMD_MEC_AMSDU_PARA_STA_T mec_amsdu_para_sta_t;
 		CMD_MEC_AMSDU_ALGO_THR_T mec_amsdu_algo_thr;
 		struct MEC_INTF_SPEED_T mec_ifac_speed;
+		CMD_MEC_SET_AMSDU_MAX_SIZE_STA_T mec_set_amsdu_max_size_t;
 	} mecCmdPara;
 } CMD_MEC_CTRL_CMD_T, *P_CMD_MEC_CTRL_CMD_T;
 
@@ -2729,13 +2763,9 @@ typedef struct _MURU_STA_UL_OFDMA {
 	UINT8 u1MuCascading;		/* MAC B22 : MU Cascading Support */
 	UINT8 u1UoRa;				/* MAC B26 : OFDMA RA Support */
 	UINT8 u12x996Tone;			/* MAC B43 : UL 2x996- tone RU Support */
-	UINT8 u1RxTrgFrmBy11ac;	/* MAC B47 : HT And VHT Trigger Frame RX Support  */
-#ifdef WIFI_UNIFIED_COMMAND
-	UINT_8 u1RxCtrlFrmToMBss;   /* MAC B31 : Rx Control Frame To MultiBSS Support  */
-    UINT_8 u1Reserved[2];
-#else  /*WIFI_UNIFIED_COMMAND*/
-	UINT8 u1Reserved[3];
-#endif /*WIFI_UNIFIED_COMMAND*/
+	UINT8 u1RxTrgFrmBy11ac;		/* MAC B47 : HT And VHT Trigger Frame RX Support  */
+	UINT8 u1RxCtrlFrmToMBss;	/* MAC B31 : Rx Control Frame To MultiBSS Support  */
+	UINT8 u1Reserved[2];
 } MURU_STA_UL_OFDMA, *P_MURU_STA_UL_OFDMA;
 
 typedef struct _MURU_STA_DL_MIMO {
@@ -2920,6 +2950,7 @@ enum {
 	BSS_INFO_HIGHPRI_RATE_ARP = 18,
 	BSS_INFO_HIGHPRI_RATE_DHCP = 19,
 	BSS_INFO_HIGHPRI_RATE_EAPOL = 20,
+	BSS_INFO_HIGHPRI_RATE_ICMP = 21,
 #endif
 #ifdef ZERO_LOSS_CSA_SUPPORT
 	BSS_INFO_APCLI_TSF_SYNC = 0x1B,
@@ -2950,6 +2981,7 @@ enum {
 	BSS_INFO_HIGHPRI_ARP_FEATURE = (1 << BSS_INFO_HIGHPRI_RATE_ARP),
 	BSS_INFO_HIGHPRI_DHCP_FEATURE = (1 << BSS_INFO_HIGHPRI_RATE_DHCP),
 	BSS_INFO_HIGHPRI_EAPOL_FEATURE = (1 << BSS_INFO_HIGHPRI_RATE_EAPOL),
+	BSS_INFO_HIGHPRI_ICMP_FEATURE = (1 << BSS_INFO_HIGHPRI_RATE_ICMP),
 #endif
 #ifdef ZERO_LOSS_CSA_SUPPORT
 	BSS_INFO_APCLI_TSF_SYNC_FEATURE = (1 << BSS_INFO_APCLI_TSF_SYNC),
@@ -4213,9 +4245,8 @@ typedef struct _EXT_CMD_GET_ALL_STA_STAT_T {
 	UINT_8 aucReserved[3];
 } EXT_CMD_GET_ALL_STA_STAT_T, *P_EXT_CMD_GET_ALL_STA_STAT_T;
 
-#ifdef EAP_STATS_SUPPORT
 #define TX_RATE_NUM_PER_EVENT                       75
-#endif
+
 #ifdef CONFIG_MAP_SUPPORT
 #define TX_STAT_NUM_PER_EVENT                       75
 #endif
@@ -4224,7 +4255,6 @@ typedef struct _EXT_CMD_GET_ALL_STA_STAT_T {
 #define DATA_TX_RETRY_COUNT_NUM_PER_EVENT           300
 #define GI_MODE_NUM_PER_EVENT                       375
 
-#ifdef EAP_STATS_SUPPORT
 typedef struct _EXT_EVENT_ONE_TX_STAT_T {
     UINT_16 u2WlanIdx;
     UINT_32 u4TotalTxCount;
@@ -4238,6 +4268,7 @@ typedef struct _EXT_EVENT_TX_STAT_RESULT_T {
 	EXT_EVENT_ONE_TX_STAT_T rTxStatResult[TX_RATE_NUM_PER_EVENT];
 } EXT_EVENT_TX_STAT_RESULT_T, *P_EXT_EVENT_TX_STAT_RESULT_T;
 
+#ifdef EAP_STATS_SUPPORT
 typedef struct _EXT_EVENT_RX_STAT_T {
     UINT_16 u2PhyRxPdCck;
     UINT_16 u2PhyRxPdOfdm;
@@ -6844,8 +6875,10 @@ typedef struct _EXT_EVENT_RDD_IPI_HIST {
 #define RDM_NF_MAX_WF_IDX 8
 
 typedef struct _EXT_CMD_RDD_IPI_SCAN_T {
-    UINT_8 u1mode;
-    UINT_8 aucReserve[2];
+	UINT_8 u1mode;
+	UINT_8 u1pdSetting;
+	UINT_8 u1Band;
+	UINT_8 aucReserve;
 } EXT_CMD_RDD_IPI_SCAN_T, *P_EXT_CMD_RDD_IPI_SCAN_T;
 
 typedef struct _EXT_EVENT_RDD_IPI_SCAN {
@@ -8173,7 +8206,7 @@ typedef struct GNU_PACKED _EXT_CMD_CFG_POWER_BACKOFF_T {
 typedef struct GNU_PACKED _EXT_CMD_CFG_SET_ACK_CTS_T {
 	UINT16	u2Tag;
 	UINT16	u2Length;
-	UINT32	u4TimeoutValue; /* unit: 1us */
+	UINT32	u4TimeoutValue; /* High 16bit - CCA_TOUT, Low 16bit - MDRDY_TOUT, unit: 1us */
 	UINT8	u1Type;
 	/* 0: CCK DCF Timeout, 1: OFDM DCF Timeout, 2: OFDMA-MU DCF Timeout */
 	UINT8	aucReserved[3];
@@ -8357,6 +8390,11 @@ typedef struct GNU_PACKED _EXT_EVENT_TMR_CALCU_INFO_T {
 	UINT8 aucResv[1];
 	UINT32 u4TOAECalibrationResult;
 } EXT_EVENT_TMR_CALCU_INFO_T, *P_EXT_EVENT_TMR_CALCU_INFO_T;
+
+typedef struct GNU_PACKED _EXT_CMD_ID_ARP_FLOW_CONTROL {
+	UINT8 ucEnable;
+	UINT16 threshold;
+} EXT_CMD_ID_ARP_FLOW_CONTROL_T, *P_EXT_CMD_ID_ARP_FLOW_CONTROL_T;
 
 typedef struct GNU_PACKED _EXT_CMD_ID_MCAST_CLONE {
 	UINT8 ucMcastCloneEnable; /* 0: Disable, 1: Enable */
@@ -9124,10 +9162,6 @@ typedef struct GNU_PACKED _EXT_EVENT_RED_TX_RPT_T {
 typedef struct GNU_PACKED _RED_TX_RPT_T {
 	UINT32                     u4TCPCnt;
 	UINT32                     u4TCPAckCnt;
-	UINT16  u2MsduInQueShortTimes;
-	UINT16  u2MsduInQueLongTimes;
-	UINT8	u1TCPMask;
-	UINT8   u1Reserved[3];
 } RED_TX_RPT_T, *P_RED_TX_RPT_T;
 
 #define MPDU_TIME_FORMAT_VER                       (2)
@@ -9527,6 +9561,10 @@ INT32 CmdAccessRegRead(struct _RTMP_ADAPTER *pAd, UINT32 address, UINT32 *data);
 
 INT32 MtCmdRFRegAccessWrite(struct _RTMP_ADAPTER *pAd, UINT32 RFIdx, UINT32 Offset, UINT32 Value);
 
+#ifdef ANT_CONFIG_3T2T1T_SUPPORT
+INT32 MtCmdRFSetWf(struct _RTMP_ADAPTER *pAd, UINT8 wf_id, UINT8 is_standby);
+#endif
+
 INT32 MtCmdRFRegAccessRead(struct _RTMP_ADAPTER *pAd, UINT32 RFIdx, UINT32 Offset, UINT32 *Value);
 INT32 MtCmdRadioOnOffCtrl(struct _RTMP_ADAPTER *pAd, UINT8 On);
 
@@ -9614,6 +9652,9 @@ INT32 MtCmdRfTestSetTTGOnOff(struct _RTMP_ADAPTER *pAd, UINT8 TTGEnable, UINT8 D
 
 INT32 MtCmdDoCalibration(struct _RTMP_ADAPTER *pAd, UINT32 func_idx, UINT32 CalItem, UINT32 band_idx);
 
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+INT32 MtCmdOndemandCalibration(struct _RTMP_ADAPTER *pAd, UINT32 CalItem, UINT32 band_idx);
+#endif
 INT32 MtCmdTxContinous(struct _RTMP_ADAPTER *pAd, UINT32 PhyMode, UINT32 BW, UINT32 PriCh, UINT32 Central_Ch, UINT32 Mcs, UINT32 WFSel, UINT32 Txfd, UINT8 Band, UINT8 onoff);
 
 INT32 MtCmdTxTone(struct _RTMP_ADAPTER *pAd, UINT8 BandIdx, UINT8 Control, UINT8 AntIndex, UINT8 ToneType,
@@ -10370,8 +10411,12 @@ typedef enum _ENUM_ZERO_PKT_LOSS_VARIABLE {
 
 INT32 MtCmdSetChkPeerLink(struct _RTMP_ADAPTER *pAd, UINT8 WcidCount, UINT8 *wcidlist);
 INT32 MtCmdSetZeroPktLossVariable(struct _RTMP_ADAPTER *pAd, ENUM_ZERO_PKT_LOSS_VARIABLE eVariable, UINT8 Value);
-INT32 MtCmdSetMacTxEnable(struct _RTMP_ADAPTER *pAd, UINT8 enable);
 #endif /*ZERO_LOSS_CSA_SUPPORT*/
+
+#if defined(ZERO_LOSS_CSA_SUPPORT) || (defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX))
+INT32 MtCmdSetMacTxEnable(struct _RTMP_ADAPTER *pAd, UINT8 enable);
+#endif /*ZERO_LOSS_CSA_SUPPORT && CONFIG_6G_SUPPORT */
+		/*&& CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 INT32 CmdRxHdrTransUpdate(struct _RTMP_ADAPTER *pAd, BOOLEAN En, BOOLEAN ChkBssid, BOOLEAN InSVlan, BOOLEAN RmVlan, BOOLEAN SwPcP);
 INT32 CmdRxHdrTransBLUpdate(struct _RTMP_ADAPTER *pAd, UINT8 Index, UINT8 En, UINT16 EthType);
@@ -10392,6 +10437,9 @@ INT32 MtCmdSetStaCnt(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, UINT32 cnt);
 #ifdef GN_MIXMODE_SUPPORT
 INT32 MtCmdSetGNMixModeEnable(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, UINT32 en);
 #endif /* GN_MIXMODE_SUPPORT */
+#if defined(RED_SUPPORT) && defined(VOW_SUPPORT)
+INT32 MtCmdSetMcliScheduleEnable(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, BOOLEAN enable);
+#endif
 #ifdef RED_SUPPORT
 INT32 MtCmdSetRedShowSta(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, UINT32 Num);
 INT32 MtCmdSetRedEnable(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, UINT32 en);
@@ -10419,6 +10467,7 @@ INT32 MtCmdBgndScanNotify(struct _RTMP_ADAPTER *pAd, struct _MT_BGND_SCAN_NOTIFY
 #endif /* BACKGROUND_SCAN_SUPPORT */
 
 INT32 CmdExtGeneralTestAPPWS(struct _RTMP_ADAPTER *pAd, UINT action);
+INT32 CmdArpFlowControlEnable(struct _RTMP_ADAPTER *pAd, UCHAR Enable, UINT16 threshold);
 #ifdef IGMP_SNOOP_SUPPORT
 INT32 CmdMcastCloneEnable(struct _RTMP_ADAPTER *pAd, BOOLEAN Enable, UINT8 band_idx, UINT8 omac_idx);
 INT32 CmdMcastAllowNonMemberEnable(struct _RTMP_ADAPTER *pAd, UINT8 Msg_type, BOOLEAN Enable);
@@ -10525,6 +10574,10 @@ INT32 CmdExtCmdCfgRead(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UINT8 T
 
 INT32 CmdExtRtsThenCtsRetryCnt(struct _RTMP_ADAPTER *pAd, UINT16 u2WlanIdx, UINT_8 u1Ac, UINT_8 u1RtsFailThenCtsRetryCnt);
 
+#ifdef MLR_SUPPORT
+INT32 CmdExtSetMlrThr(struct _RTMP_ADAPTER *pAd, INT8 EnableCts2SelfRssiThr, INT8 DisableCts2SelfRssiThr);
+#endif
+
 
 #ifdef DSCP_PRI_SUPPORT
 INT32 MtCmdSetDscpPri(struct _RTMP_ADAPTER *pAd, UINT8 bss_idx);
@@ -10619,6 +10672,9 @@ INT32 MtCmdSetA4Enable(struct _RTMP_ADAPTER *pAd, UINT8 McuDest, UINT8 Enable);
 
 INT SetHeraOptionDyncBW_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 INT SetHeraOptionFrequecyDup_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT SetHeraOptionFastRateDown_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT SetHeraOptionUBACtrl_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT SetHeraOptionHRC_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 INT SetHeraIara_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 INT ShowHeraRuRaInfoProc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 INT ShowHeraMuRaInfoProc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
@@ -10663,7 +10719,7 @@ INT32 mt_cmd_get_rdd_ipi_hist(struct _RTMP_ADAPTER *pAd, UINT8 rdd_ipi_hist_idx,
 
 #ifdef IPI_SCAN_SUPPORT
 INT32 mt_cmd_set_rdd_ipi_scan(struct _RTMP_ADAPTER *pAd, P_EXT_CMD_RDD_IPI_SCAN_T p_cmd_rdd_ipi_scan);
-INT32 mt_cmd_get_rdd_ipi_scan(struct _RTMP_ADAPTER *pAd, P_EXT_EVENT_RDD_IPI_SCAN p_rdd_ipi_hist_rlt);
+INT32 mt_cmd_get_rdd_ipi_scan(struct _RTMP_ADAPTER *pAd, P_EXT_CMD_RDD_IPI_SCAN_T p_cmd_rdd_ipi_scan, P_EXT_EVENT_RDD_IPI_SCAN p_rdd_ipi_hist_rlt);
 #endif
 INT32 MtCmdPhyShapingFilterDisable(struct _RTMP_ADAPTER *pAd);
 INT32 mt_cmd_get_rx_stat(struct _RTMP_ADAPTER *pAd, UCHAR band_idx, P_TESTMODE_STATISTIC_INFO p_rx_stat_rlt);
@@ -10674,6 +10730,8 @@ INT32 mt_cmd_get_rx_stat_band(struct _RTMP_ADAPTER *pAd, UCHAR band_idx, TESTMOD
 INT32 mt_cmd_get_rx_stat_path(struct _RTMP_ADAPTER *pAd, UCHAR path_idx, UCHAR band_idx, TESTMODE_STATISTIC_INFO_PATH *rx_stat_path);
 INT32 mt_cmd_get_rx_stat_user(struct _RTMP_ADAPTER *pAd, UCHAR user_idx, TESTMODE_STATISTIC_INFO_USER *rx_stat_user);
 INT32 mt_cmd_get_rx_stat_comm(struct _RTMP_ADAPTER *pAd, TESTMODE_STATISTIC_INFO_COMM *rx_stat_comm);
+
+INT32 MtCmdLpiCtrl(struct _RTMP_ADAPTER *pAd, UINT8 LpiEnable, UINT8 PSDLimit);
 
 /*NOTE: the definition need to sync with bora code.*/
 
@@ -10855,4 +10913,17 @@ struct EXT_CMD_SET_RTS_THEN_CTS_RETRY {
 	UINT_8   u1Ac;
 	UINT_8   u1RtsFailThenCtsRetryCnt;
 };
+
+struct EXT_CMD_SET_MLR_THRESHOLD {
+	INT_8   EnableCts2SelfRssi;
+	INT_8   DisableCts2SelfRssi;
+	UINT_8  au1Rev[3];
+};
+
+struct EXT_CMD_ID_LPI_CTRL_T {
+	UINT8 ucLpiEnable;
+	UINT8 ucPSDLimit;
+	UINT8 aucReserve[2];
+};
+
 #endif /* __MT_CMD_H__ */

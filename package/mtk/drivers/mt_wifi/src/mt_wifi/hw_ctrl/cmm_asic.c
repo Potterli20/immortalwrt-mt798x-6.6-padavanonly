@@ -328,8 +328,47 @@ VOID AsicSwitchChannel(RTMP_ADAPTER *pAd, UCHAR band_idx, struct freq_oper *oper
 #ifdef MT_MAC
 	RTMP_ARCH_OP *arch_ops = hc_get_arch_ops(pAd->hdev_ctrl);
 
+	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s::bandIdx:%u ch_band:%u htbw:%u vht_bw:%u bw:%u extcha:%u\n",
+				__func__, band_idx, oper->ch_band, oper->ht_bw, oper->vht_bw,
+				oper->bw, oper->ext_cha);
+
+	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s::primch:%u cench1:%u cench2:%u rxstream:%u ap_bw:%u apCenCh:%u Scan:%u\n",
+				__func__, oper->prim_ch, oper->cen_ch_1, oper->cen_ch_2, oper->rx_stream,
+				oper->ap_bw, oper->ap_cen_ch, bScan);
+
 	if (IS_HIF_TYPE(pAd, HIF_MT)) {
 		MT_SWITCH_CHANNEL_CFG SwChCfg;
+
+
+#ifdef CONFIG_6G_SUPPORT
+		struct wifi_dev *wdev = NULL;
+		UINT8 PsdLimit = CheckPSDLimitType(pAd);
+		int index;
+
+		for (index = 0; index < MAX_MBSSID_NUM(pAd); index++) {
+			if (WMODE_CAP_6G(pAd->ApCfg.MBSSID[index].wdev.PhyMode))
+				wdev = &pAd->ApCfg.MBSSID[index].wdev;
+		}
+
+		if (wdev && WMODE_CAP_6G(wdev->PhyMode)
+			&& band_idx == HcGetBandByWdev(wdev)) {
+			if (!pAd->CommonCfg.LpiEn
+#ifdef CONFIG_6G_AFC_SUPPORT
+				|| is_afc_in_run_state(pAd)
+#endif /*CONFIG_6G_AFC_SUPPORT*/
+				)
+				PsdLimit = 0;
+
+			MtCmdLpiCtrl(pAd, 0, PsdLimit);
+		}
+#endif /*CONFIG_6G_SUPPORT */
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+		afc_save_switch_channel_params(pAd, band_idx, oper, bScan);
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 		os_zero_mem(&SwChCfg, sizeof(MT_SWITCH_CHANNEL_CFG));
 		SwChCfg.bScan = bScan;
@@ -502,6 +541,24 @@ INT asic_rts_on_off_detail(struct _RTMP_ADAPTER *ad, UCHAR band_idx, UINT32 rts_
 
 	AsicNotSupportFunc(ad, __func__);
 	return FALSE;
+}
+
+BOOLEAN asic_update_11v_mbssid_info(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
+{
+	struct _BSS_INFO_ARGUMENT_T bss;
+	BSS_STRUCT *pMbss = wdev->func_dev;
+	UINT8 DbdcIdx = HcGetBandByWdev(wdev);
+
+	MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+		"update bss(%d) 11v mbssid info\n", pMbss->mbss_grp_idx);
+	memcpy(&bss, &wdev->bss_info_argument, sizeof(bss));
+	bss.u4BssInfoFeature = BSS_INFO_11V_MBSSID_FEATURE;
+	bss.max_bssid_indicator = pAd->ApCfg.dot11v_max_bssid_indicator[DbdcIdx];
+	bss.mbssid_index = pMbss->mbss_grp_idx;
+	AsicBssInfoUpdate(pAd, &bss);
+
+	return TRUE;
+
 }
 
 BOOLEAN AsicUpdateBeacon(struct _RTMP_ADAPTER *pAd, VOID *wdev, BOOLEAN BcnSntReq, UCHAR UpdateReason)
@@ -1474,7 +1531,9 @@ VOID AsicUpdateRxWCIDTable(RTMP_ADAPTER *pAd, USHORT WCID, UCHAR *pAddr, BOOLEAN
 #endif /* DOT11R_FT_SUPPORT */
 
 #if defined(MBSS_AS_WDS_AP_SUPPORT) || defined(APCLI_AS_WDS_STA_SUPPORT)
-	if (mac_entry->wdev->wds_enable)
+	if (mac_entry->wdev->wds_enable &&
+		(!pAd->CommonCfg.bMBSSASWDSAPDisabled ||
+		!pAd->CommonCfg.bApcliASWDSSTADisabled))
 		WtblInfo.a4_enable = mac_entry->bEnable4Addr;
 #endif
 
@@ -2244,6 +2303,11 @@ INT32 AsicStaRecUpdate(
 		StaCfg.u2SwWlanIdx = SwWlanIdx;
 #endif /* SW_CONNECT_SUPPORT */
 		StaCfg.pEntry = pEntry;
+#ifdef CONFIG_6G_SUPPORT
+		if ((sta_rec_ctrl->update_ra == TRUE)
+			&& !VALID_UCAST_ENTRY_WCID(pAd, SwWlanIdx))
+			StaCfg.pEntry = &pAd->MacTab.Content[WlanIdx];
+#endif /* CONFIG_6G_SUPPORT */
 		StaCfg.IsNewSTARec = sta_rec_ctrl->IsNewSTARec;
 		os_move_mem(&StaCfg.asic_sec_info, &sta_rec_ctrl->asic_sec_info, sizeof(ASIC_SEC_INFO));
 		ret = arch_ops->archSetStaRec(pAd, &StaCfg);
@@ -3128,10 +3192,7 @@ UINT32 rtmp_get_snr(RTMP_ADAPTER *pAd, UINT16 Wcid, CHAR *snr, UINT8 snr_len)
 	if (!entry_found)
 		return 1;
 
-
-	/* AP */
-	if (IS_ENTRY_CLIENT(pEntry))
-		NdisMoveMemory(snr, pEntry->RssiSample.AckSnr, sizeof(CHAR) * snr_len);
+	NdisMoveMemory(snr, pEntry->RssiSample.AckSnr, sizeof(CHAR) * snr_len);
 
 	return 0;
 }
@@ -4619,12 +4680,13 @@ VOID asic_write_last_tx_resource(struct _RTMP_ADAPTER *pAd, UCHAR resource_idx)
 
 
 VOID asic_write_tmac_info_fixed_rate(struct _RTMP_ADAPTER *pAd,
+	struct wifi_dev *wdev,
 	UCHAR *tmac_info, MAC_TX_INFO *info, HTTRANSMIT_SETTING *pTransmit)
 {
 	RTMP_ARCH_OP *arch_ops = hc_get_arch_ops(pAd->hdev_ctrl);
 
 	if (arch_ops->write_tmac_info_fixed_rate)
-		arch_ops->write_tmac_info_fixed_rate(pAd, tmac_info, info, pTransmit);
+		arch_ops->write_tmac_info_fixed_rate(pAd, wdev, tmac_info, info, pTransmit);
 	else
 		AsicNotSupportFunc(pAd, __func__);
 

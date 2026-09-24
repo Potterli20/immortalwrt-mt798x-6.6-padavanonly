@@ -41,7 +41,8 @@ VOID StaSiteSurvey(
 		 */
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE, "StaSiteSurvey:: Scanning now\n");
 #ifdef APCLI_CFG80211_SUPPORT
-		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning == TRUE) {
+		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning == TRUE &&
+			!pAd->CommonCfg.bApcliCfg80211Disabled) {
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "scan Already running abort new scan\n");
 			CFG80211OS_ScanEnd(pAd->pCfg80211_CB, TRUE);
 			pAd->cfg80211_ctrl.FlgCfg80211Scanning = FALSE;
@@ -64,7 +65,8 @@ VOID StaSiteSurvey(
 	if (!TakeChannelOpCharge(pAd, wdev, CH_OP_OWNER_SCAN, FALSE)) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE, "TakeChannelOpCharge fail for SCAN!!\n");
 #ifdef APCLI_CFG80211_SUPPORT
-		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning == TRUE) {
+		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning == TRUE &&
+			!pAd->CommonCfg.bApcliCfg80211Disabled) {
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "scan owenership failed abort new scan\n");
 			CFG80211OS_ScanEnd(pAd->pCfg80211_CB, TRUE);
 			pAd->cfg80211_ctrl.FlgCfg80211Scanning = FALSE;
@@ -109,6 +111,8 @@ VOID ApSiteSurvey_by_wdev(
 			"wdev = NULL!\n");
 		return;
 	}
+	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE,
+			"%s,caller:%pS\n", __func__, OS_TRACE);
 
 	ScanCtrl = get_scan_ctrl_by_wdev(pAd, wdev);
 	ScanTab = get_scan_tab_by_wdev(pAd, wdev);
@@ -213,6 +217,8 @@ INT ApSiteSurveyNew_by_wdev(
 		return FALSE;
 	}
 #endif
+	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE,
+				"%s,caller:%pS\n", __func__, OS_TRACE);
 
 	RTMPZeroMemory(&ScanReq, sizeof(ScanReq));;
 	AsicDisableSync(pAd, HW_BSSID_0);
@@ -230,8 +236,9 @@ INT ApSiteSurveyNew_by_wdev(
 		ScanCtrl->ScanTime[0] = timeout;
 		ScanCtrl->ScanGivenChannel[0] = channel;
 	}
-
+#ifndef DFS_VENDOR10_CUSTOM_FEATURE
 	pAd->ApCfg.bAutoChannelAtBootup[BandIdx] = ChannelSel;
+#endif
 	pAd->ChannelInfo.bandidx = BandIdx;
 	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE,
 			"bandidx :%d!! \n", pAd->ChannelInfo.bandidx);
@@ -341,7 +348,7 @@ BOOLEAN build_trigger_event_table(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem, BCN_
 				If this channel is effected channel for the 20/40 coex operation. Check the related IEs.
 			*/
 			if (pChCtrl->ChList[chListIdx].bEffectedChannel == TRUE) {
-				UCHAR RegClass;
+				UCHAR RegClass = 0;
 				OVERLAP_BSS_SCAN_IE BssScan;
 				/* Read Beacon's Reg Class IE if any. */
 				PeerBeaconAndProbeRspSanity2(pAd, Elem->Msg, Elem->MsgLen, &BssScan, ie_list, &RegClass);

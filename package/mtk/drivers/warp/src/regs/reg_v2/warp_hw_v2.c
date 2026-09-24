@@ -2126,13 +2126,11 @@ warp_eint_clr_dybm_stat_hw(struct wed_entry *wed)
 	warp_io_read32(wed, WED_EX_INT_STA, &state);
 
 #if defined(WED_DYNAMIC_TXBM_SUPPORT)
-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM)) {
-		if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH))
-			mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH);
+	if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH))
+		mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_HTH);
 
-		if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH))
+	if (state & (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH))
 		mask |= (0x1 << WED_EX_INT_STA_FLD_TX_BM_LTH);
-	}
 #endif	/* WED_DYNAMIC_TXBM_SUPPORT */
 
 #if defined(WED_DYNAMIC_RXBM_SUPPORT)
@@ -4128,7 +4126,7 @@ warp_eint_work_hw(struct wed_entry *wed, u32 status)
 //				warp_dbg(WARP_DBG_ERR, "%s(): DYBM high threshold INT but BM will exceed capability. dismissed!\n", __func__);
 //			}
 		} else
-#endif /* WED_DYNAMIC_RXBM_SUPPORT */
+#endif /* WED_DYNAMIC_TXBM_SUPPORT */
 			warp_dbg(WARP_DBG_ERR, "%s(): DYRXBM low threshold INT w/o enabled!\n", __func__);
 	}
 

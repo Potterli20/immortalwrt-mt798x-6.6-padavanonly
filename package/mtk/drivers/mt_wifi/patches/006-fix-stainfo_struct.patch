@@ -1,6 +1,8 @@
---- a/mt_wifi/embedded/common/cmm_info.c	2023-08-25 01:02:11.348135475 +0800
-+++ b/mt_wifi/embedded/common/cmm_info.c	2023-08-25 01:05:43.760179658 +0800
-@@ -6980,21 +6980,104 @@ USHORT RTMPGetLastTxRate(PRTMP_ADAPTER p
+diff --git a/mt_wifi/embedded/common/cmm_info.c b/mt_wifi/embedded/common/cmm_info.c
+index 017b383..285b55b 100644
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -7158,21 +7158,104 @@ USHORT RTMPGetLastTxRate(PRTMP_ADAPTER pAd, MAC_TABLE_ENTRY *pEntry)
  		lastTxRate.field.MCS = getLegacyOFDMMCSIndex(rTxStatResult.rEntryTxRate.MCS) & 0x0000003F;
  	else
  		lastTxRate.field.MCS = rTxStatResult.rEntryTxRate.MCS;
@@ -9,7 +11,7 @@
 +#endif /* RACTRL_FW_OFFLOAD_SUPPORT */
 +	return lastTxRate.word;
 +}
-+
+ 
 +// fix AvgRssi3 and HTTRANSMIT_SETTING.MODE
 +
 +typedef union _HTTRANSMIT_SETTING_FIX {
@@ -38,7 +40,7 @@
 +#endif
 +	UINT32 word;
 +} HTTRANSMIT_SETTING_FIX, *PHTTRANSMIT_SETTING_FIX;
- 
++
 +typedef struct _RT_802_11_MAC_ENTRY_FIX {
 +	UCHAR ApIdx;
 +	UCHAR Addr[MAC_ADDR_LEN];
@@ -108,7 +110,7 @@
  
  #ifdef RACTRL_FW_OFFLOAD_SUPPORT
  	MtCmdPhyGetRxRate(pAd, CMD_PHY_STATE_CONTENTION_RX_PHYRATE, ucBand, pEntry->wcid, &rRxStatResult);
-@@ -7022,11 +7105,11 @@ VOID RTMPIoctlGetMacTableStaInfo(
+@@ -7200,11 +7283,11 @@ VOID RTMPIoctlGetMacTableStaInfo(
  {
  	INT i;
  	BOOLEAN need_send = FALSE;
@@ -123,7 +125,7 @@
  	CHAR rssi[4] = {-127, -127, -127, -127};
  
  	if (pMacTab == NULL) {
-@@ -7034,7 +7117,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
+@@ -7212,7 +7295,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
  		return;
  	}
  
@@ -132,11 +134,8 @@
  
  	for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
  		pEntry = &(pAd->MacTab.Content[i]);
-@@ -7060,10 +7143,11 @@ VOID RTMPIoctlGetMacTableStaInfo(
- 			pDst->AvgRssi0 = rssi[0];
- 			pDst->AvgRssi1 = rssi[1];
- 			pDst->AvgRssi2 = rssi[2];
-+			pDst->AvgRssi3 = rssi[3];
+@@ -7241,8 +7324,8 @@ VOID RTMPIoctlGetMacTableStaInfo(
+ 			pDst->AvgRssi3 = rssi[3];
  			/* the connected time per entry*/
  			pDst->ConnectedTime = pEntry->StaConnectTime;
 -			pDst->TxRate.word = RTMPGetLastTxRate(pAd, pEntry);
@@ -146,7 +145,7 @@
  			pMacTab->Num += 1;
  			/* Add to avoid Array cross board */
  			if (pMacTab->Num >= MAX_LEN_OF_MAC_TABLE)
-@@ -7072,7 +7156,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
+@@ -7251,7 +7334,7 @@ VOID RTMPIoctlGetMacTableStaInfo(
  		}
  	}
  

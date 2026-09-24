@@ -194,7 +194,10 @@ INT32 HcAcquireRadioForWdev(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	}
 
 #ifdef EXT_BUILD_CHANNEL_LIST
-	BuildChannelListEx(pAd, wdev);
+	if (!pAd->CommonCfg.bExtChListDisabled)
+		BuildChannelListEx(pAd, wdev);
+	else
+		BuildChannelList(pAd, wdev);
 #else
 	BuildChannelList(pAd, wdev);
 #endif
@@ -239,9 +242,14 @@ INT32 HcReleaseRadioForWdev(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 UCHAR HcGetBandByWdev(struct wifi_dev *wdev)
 {
 	UCHAR BandIdx = 0;
-	struct hdev_obj *obj = wdev->pHObj;
-	struct _RTMP_ADAPTER *ad = (struct _RTMP_ADAPTER *)wdev->sys_handle;
+	struct hdev_obj *obj;
+	struct _RTMP_ADAPTER *ad;
 
+	if (wdev == NULL)
+		return BandIdx;
+
+	obj = wdev->pHObj;
+	ad = (struct _RTMP_ADAPTER *)wdev->sys_handle;
 	if (hdev_obj_state_ready(obj)) {
 		if (obj->rdev)
 			BandIdx = RcGetBandIdx(obj->rdev);
@@ -250,7 +258,7 @@ UCHAR HcGetBandByWdev(struct wifi_dev *wdev)
 	}
 	else {
 		if ((ad) && (ad->CommonCfg.dbdc_mode)) {
-			if (WMODE_CAP_5G(wdev->PhyMode))
+			if (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode))
 				BandIdx = DBDC_BAND1;
 			else
 				BandIdx = DBDC_BAND0;
@@ -349,14 +357,14 @@ BOOLEAN IsHcRadioCurStatOffByWdev(struct wifi_dev *wdev)
 	struct hdev_obj *obj = wdev->pHObj;
 
 	if (!hdev_obj_state_ready(obj)) {
-		MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+		MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			"%s(): wdev_idx %d obj is not ready, return TRUE !!!\n",
 			__func__, wdev->wdev_idx);
 		return TRUE;
 	}
 
 	if (!obj->rdev) {
-		MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+		MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			"%s(): no hdev parking on wdev_idx:%d!!!\n",
 			__func__, wdev->wdev_idx);
 		return TRUE;
@@ -1595,6 +1603,140 @@ INT32 HcUpdateMSDUTxAllow(struct radio_dev *rdev)
 #endif
 	return ret;
 }
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+void afcTxStop(IN struct wifi_dev *wdev)
+{
+	struct _RTMP_ADAPTER *ad = NULL;
+	struct hdev_obj *obj = NULL;
+	struct radio_dev  *rdev = NULL;
+	struct hdev_ctrl *ctrl = NULL;
+	UCHAR Band = 0, enable;
+
+	if (wdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: wdev is NULL\n", __func__);
+		return;
+	}
+
+	obj = wdev->pHObj;
+
+	if (obj == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: obj is NULL\n", __func__);
+		return;
+	}
+
+	rdev =  obj->rdev;
+
+	if (rdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: rdev is NULL\n", __func__);
+		return;
+	}
+
+	ctrl = rdev->priv;
+
+	if (ctrl == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: ctrl is NULL\n", __func__);
+		return;
+	}
+
+	ad = ctrl->priv;
+
+	if (ad == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: ad is NULL\n", __func__);
+		return;
+	}
+
+	/*update all of wdev*/
+	DlListForEach(obj, &rdev->DevObjList, struct hdev_obj, list) {
+		wdev = ad->wdev_list[obj->Idx];
+
+		if (wdev == NULL) {
+			MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"%s:: idx:%d wdev is NULL\n", __func__, obj->Idx);
+			return;
+		}
+
+		RTMPSuspendMsduTransmission(wdev->sys_handle, wdev);
+	}
+
+	Band = RcGetBandIdx(rdev);
+	enable = (Band<<4)|0;
+	MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"():set Mac Tx disable Band = %d\n", Band);
+	MtCmdSetMacTxEnable(ad, enable);
+
+}
+void afcTxStart(IN struct wifi_dev *wdev)
+{
+	struct _RTMP_ADAPTER *ad = NULL;
+	struct hdev_obj *obj = NULL;
+	struct radio_dev  *rdev = NULL;
+	struct hdev_ctrl *ctrl = NULL;
+	UCHAR Band = 0, enable;
+
+	if (wdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: wdev is NULL\n", __func__);
+		return;
+	}
+
+	obj = wdev->pHObj;
+
+	if (obj == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: obj is NULL\n", __func__);
+		return;
+	}
+
+	rdev =	obj->rdev;
+
+	if (rdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: rdev is NULL\n", __func__);
+		return;
+	}
+
+	ctrl = rdev->priv;
+
+	if (ctrl == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: ctrl is NULL\n", __func__);
+		return;
+	}
+
+	ad = ctrl->priv;
+
+	if (ad == NULL) {
+		MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"%s:: ad is NULL\n", __func__);
+		return;
+	}
+
+	/*update all of wdev*/
+	DlListForEach(obj, &rdev->DevObjList, struct hdev_obj, list) {
+		wdev = ad->wdev_list[obj->Idx];
+
+		if (wdev == NULL) {
+			MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"%s:: idx:%d wdev is NULL\n", __func__, obj->Idx);
+			return;
+		}
+
+		RTMPResumeMsduTransmission(wdev->sys_handle, wdev);
+	}
+
+	Band = RcGetBandIdx(rdev);
+	enable = (Band << 4) | 1;
+	MTWF_DBG(ad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"():set Mac Tx Enable Band = %d\n", Band);
+	MtCmdSetMacTxEnable(ad, enable);
+}
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 /*
 *
@@ -2019,8 +2161,17 @@ UCHAR hc_init_ChCtrl(RTMP_ADAPTER *pAd)
 {
 	UCHAR BandIdx;
 	CHANNEL_CTRL *pChCtrl;
+	USHORT Phymode = 0;
 	for (BandIdx = 0; BandIdx < DBDC_BAND_NUM; BandIdx++) {
 		pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, BandIdx);
+		Phymode = HcGetRadioPhyModeByBandIdx(pAd, BandIdx);
+		if (pAd->CommonCfg.DfsParameter.CERegCacEn &&
+			hc_check_ChCtrlChListStat(pChCtrl, CH_LIST_STATE_DONE) &&
+			WMODE_CAP_5G(Phymode)) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Skip Clear ChCtrl Band[%d] (caller:%pS)\n", BandIdx, OS_TRACE);
+			continue;
+		}
 		os_zero_mem(pChCtrl, sizeof(CHANNEL_CTRL));
 	}
 	return HC_STATUS_OK;

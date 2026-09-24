@@ -75,7 +75,8 @@ VOID BcnCheck(RTMP_ADAPTER *pAd);
 #ifdef CONFIG_AP_SUPPORT
 INT BcnTimUpdate(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR *ptr);
 #endif
-VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UCHAR *pBeaconFrame);
+VOID ComposeBcnPktTail(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen,
+	UCHAR *pBeaconFrame, BOOLEAN bcn);
 
 UINT16 MakeBeacon(
 	RTMP_ADAPTER *pAd,
@@ -163,5 +164,7 @@ VOID make_multiple_bssid_ie(
 	BOOLEAN isProbeRsp);
 #endif
 #endif /* CONFIG_AP_SUPPORT */
+VOID MakeChSwitchAnnounceIEandExtend(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, ULONG *pFrameLen, UCHAR *pBeaconFrame, BOOLEAN bcn);
+
 
 #endif  /* __BCN_H__ */

@@ -165,7 +165,7 @@ static INT32 fp_check_tx_resource(RTMP_ADAPTER *pAd,
 	return ret;
 }
 
-static NDIS_PACKET *fp_first_tx_element(RTMP_ADAPTER *pAd, UINT8 idx, BOOLEAN *from_mgmt)
+static NDIS_PACKET *fp_first_tx_element(RTMP_ADAPTER *pAd, UINT8 idx)
 {
 	PQUEUE_ENTRY q_entry;
 	NDIS_PACKET *pkt = NULL;
@@ -175,10 +175,8 @@ static NDIS_PACKET *fp_first_tx_element(RTMP_ADAPTER *pAd, UINT8 idx, BOOLEAN *f
 	q_entry = pAd->mgmt_post_que[idx].Head;
 	OS_SPIN_UNLOCK_BH(&pAd->mgmt_post_que_lock[idx]);
 
-	if (q_entry) {
-		*from_mgmt = TRUE;
+	if (q_entry)
 		return QUEUE_ENTRY_TO_PACKET(q_entry);
-	}
 
 	OS_SPIN_LOCK_BH(&pAd->fp_post_que_lock[idx]);
 	q_entry = pAd->fp_post_que[idx].Head;
@@ -406,8 +404,6 @@ VOID fp_tx_pkt_deq_func(RTMP_ADAPTER *pAd, UINT8 idx)
 #else /* SW_CONNECT_SUPPORT */
 	UINT16 wtbl_max_num = WTBL_MAX_NUM(pAd);
 #endif /* !SW_CONNECT_SUPPORT */
-	BOOLEAN deq_from_mgmt = FALSE;
-	BOOLEAN reschedule_by_no_resource = FALSE;
 
 	if (RTMP_TEST_FLAG(pAd, TX_FLAG_STOP_DEQUEUE)) {
 		return;
@@ -429,7 +425,7 @@ VOID fp_tx_pkt_deq_func(RTMP_ADAPTER *pAd, UINT8 idx)
 		NdisZeroMemory((UCHAR *)&blk, sizeof(TX_BLK));
 		tx_blk = &blk;
 
-		pkt = fp_first_tx_element(pAd, idx, &deq_from_mgmt);
+		pkt = fp_first_tx_element(pAd, idx);
 
 		if (!pkt) {
 			break;
@@ -444,11 +440,8 @@ VOID fp_tx_pkt_deq_func(RTMP_ADAPTER *pAd, UINT8 idx)
 
 			ret = fp_check_tx_resource(pAd, wdev, tx_blk->resource_idx);
 
-			if (ret == ERROR_NO_TX_RESOURCE) {
-				if (deq_from_mgmt)
-					reschedule_by_no_resource = TRUE;
+			if (ret == ERROR_NO_TX_RESOURCE)
 				break;
-			}
 
 			pkt = fp_get_tx_element(pAd, idx);
 			if (!pkt)
@@ -599,11 +592,6 @@ VOID fp_tx_pkt_deq_func(RTMP_ADAPTER *pAd, UINT8 idx)
 	if ((pAd->fp_que[idx].Number + pAd->fp_post_que[idx].Number)
 			< (qm->max_data_que_num  - 100)) {
 		fp_tx_flow_block(pAd, NULL, 0, FALSE, idx);
-		if (reschedule_by_no_resource)
-			tm_ops->schedule_task(pAd, TX_DEQ_TASK, idx);
-	} else {
-		if (test_bit(0, &pAd->fp_tx_flow_ctl.TxFlowBlockState[idx]))
-			tm_ops->schedule_task(pAd, TX_DEQ_TASK, idx);
 	}
 	OS_SPIN_UNLOCK_BH(&pAd->fp_que_lock[idx]);
 }
@@ -1017,8 +1005,14 @@ static INT fp_qm_exit(RTMP_ADAPTER *pAd)
 		OS_SPIN_UNLOCK_BH(&pAd->fp_que_lock[idx]);
 	}
 
+	for (idx = 0; idx < 2; idx++)
+		OS_SPIN_LOCK_BH(&pAd->fp_que_lock[idx]);
+
 	os_free_mem(flow_ctl->TxFlowBlockState);
 	os_free_mem(flow_ctl->TxBlockDevList);
+
+	for (idx = 0; idx < 2; idx++)
+		OS_SPIN_UNLOCK_BH(&pAd->fp_que_lock[idx]);
 
 	for (idx = 0; idx < 2; idx++)
 		NdisFreeSpinLock(&pAd->fp_que_lock[idx]);
@@ -1145,6 +1139,133 @@ static INT fp_bss_clean_queue(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev)
 	return NDIS_STATUS_SUCCESS;
 }
 
+VOID fp_qm_sta_leave_queue_pkt(struct _STA_TR_ENTRY *tr_entry, struct _QUEUE_HEADER *queue,
+						struct _QUEUE_HEADER *post_queue,
+						NDIS_SPIN_LOCK *lock, NDIS_SPIN_LOCK *post_lock)
+{
+	struct _RTMP_ADAPTER *ad = tr_entry->wdev->sys_handle;
+	struct _QUEUE_HEADER local_q;
+	struct _QUEUE_ENTRY *q_entry;
+	NDIS_PACKET *pkt;
+
+	InitializeQueueHeader(&local_q);
+	RTMP_SEM_LOCK(lock);
+
+	/*remove entry owned by tr_entry*/
+	do {
+		q_entry = RemoveHeadQueue(queue);
+
+		if (!q_entry)
+			break;
+
+		pkt = QUEUE_ENTRY_TO_PACKET(q_entry);
+
+		if (RTMP_GET_PACKET_WCID(pkt) == tr_entry->wcid)
+			RELEASE_NDIS_PACKET(ad, pkt, NDIS_STATUS_SUCCESS);
+		else
+			InsertTailQueue(&local_q, q_entry);
+	} while (1);
+
+	/*re-enqueue other entries*/
+	do {
+		q_entry = RemoveHeadQueue(&local_q);
+
+		if (!q_entry)
+			break;
+
+		InsertTailQueue(queue, q_entry);
+	} while (1);
+
+	RTMP_SEM_LOCK(post_lock);
+	/*remove entry owned by tr_entry*/
+	do {
+		q_entry = RemoveHeadQueue(post_queue);
+
+		if (!q_entry)
+			break;
+
+		pkt = QUEUE_ENTRY_TO_PACKET(q_entry);
+
+		if (RTMP_GET_PACKET_WCID(pkt) == tr_entry->wcid)
+			RELEASE_NDIS_PACKET(ad, pkt, NDIS_STATUS_SUCCESS);
+		else
+			InsertTailQueue(&local_q, q_entry);
+	} while (1);
+
+	/*re-enqueue other entries*/
+	do {
+		q_entry = RemoveHeadQueue(&local_q);
+
+		if (!q_entry)
+			break;
+
+		InsertTailQueue(post_queue, q_entry);
+	} while (1);
+
+	RTMP_SEM_UNLOCK(post_lock);
+
+	RTMP_SEM_UNLOCK(lock);
+}
+
+static INT fp_sta_clean_queue(struct _RTMP_ADAPTER *ad, UINT16 wcid)
+{
+	UINT8 idx;
+	struct _STA_TR_ENTRY *tr_entry = NULL;
+	struct tx_rx_ctl *tr_ctl = &ad->tr_ctl;
+	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(ad->hdev_ctrl);
+
+	if (!IS_TR_WCID_VALID(ad, wcid)) {
+		MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_ERROR,
+			"%s(): invalid wcid = %d\n", __func__, wcid);
+		return NDIS_STATUS_INVALID_DATA;
+	}
+
+	tr_entry = &tr_ctl->tr_entry[wcid];
+
+	if (tr_entry->wdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_ERROR, "%s, null tr_entry!\n", __func__);
+		return NDIS_STATUS_INVALID_DATA;
+	}
+
+	if (IS_ENTRY_NONE(tr_entry)) {
+		MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_ERROR,
+			"%s(): invalid tr_entry->EntryType = %08x\n", __func__, tr_entry->EntryType);
+		return NDIS_STATUS_INVALID_DATA;
+	}
+
+	if (tr_entry->wdev == NULL) {
+		MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_ERROR, "%s, null wdev!\n", __func__);
+		return NDIS_STATUS_INVALID_DATA;
+	}
+
+	if (cap->multi_token_ques_per_band)
+		idx = HcGetBandByWdev(tr_entry->wdev);
+	else
+		idx = 0;
+
+	MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_INFO,
+		"%s(): wdev(%s),ucBssIndex=%d,ucBandIdx=%d, wcid = %d\n",
+		__func__, RTMP_OS_NETDEV_GET_DEVNAME(tr_entry->wdev->if_dev),
+		tr_entry->wdev->bss_info_argument.ucBssIndex,
+		tr_entry->wdev->bss_info_argument.ucBandIdx, wcid);
+	MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_INFO,
+		"try clean: mgmt_que=[%d], mgmt_post_que=[%d], fp_que=[%d], fp_post_que=[%d]\n",
+		ad->mgmt_que[idx].Number, ad->mgmt_post_que[idx].Number,
+		ad->fp_que[idx].Number, ad->fp_post_que[idx].Number);
+
+	fp_qm_sta_leave_queue_pkt(tr_entry, &ad->mgmt_que[idx], &ad->mgmt_post_que[idx],
+				  &ad->mgmt_que_lock[idx], &ad->mgmt_post_que_lock[idx]);
+	fp_qm_sta_leave_queue_pkt(tr_entry, &ad->fp_que[idx], &ad->fp_post_que[idx],
+				  &ad->fp_que_lock[idx], &ad->fp_post_que_lock[idx]);
+
+	MTWF_DBG(ad, DBG_CAT_AP, CATAP_MBSS, DBG_LVL_INFO,
+		"clean done: mgmt_que=[%d], mgmt_post_que=[%d], fp_que=[%d], fp_post_que=[%d]\n",
+		ad->mgmt_que[idx].Number, ad->mgmt_post_que[idx].Number,
+		ad->fp_que[idx].Number, ad->fp_post_que[idx].Number);
+
+	return NDIS_STATUS_SUCCESS;
+}
+
 static INT32 fp_dump_all_sw_queue(RTMP_ADAPTER *pAd)
 {
 	UINT8 idx;
@@ -1186,6 +1307,7 @@ struct qm_ops fp_qm_ops = {
 	.schedule_tx_que = fp_schedule_tx_que,
 	.schedule_tx_que_on = fp_schedule_tx_que_on,
 	.bss_clean_queue = fp_bss_clean_queue,
+	.sta_clean_queue = fp_sta_clean_queue,
 	.enq_rx_dataq_pkt = ge_rx_enq_dataq_pkt,
 #ifdef CONFIG_TX_DELAY
 	.tx_delay_init = fp_tx_delay_init,

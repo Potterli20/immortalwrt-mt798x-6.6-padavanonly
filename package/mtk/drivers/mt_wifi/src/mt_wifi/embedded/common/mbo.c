@@ -263,13 +263,19 @@ VOID MakeMboOceIE(
 BOOLEAN MboParseApMboIE(PRTMP_ADAPTER pAd, UCHAR *pAddr, UCHAR *buf, UCHAR len)
 {
 	UCHAR *pos = NULL;
-	UCHAR ParsedLen = 0;
+	USHORT ParsedLen = 0;
 	PEID_STRUCT eid_ptr;
 	BOOLEAN bMboAPAssocDisallow = FALSE;
 
 	if (!pAddr) {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"pAddr is NULL!!!\n");
+		return bMboAPAssocDisallow;
+	}
+
+	if (len <= 0) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"len <= 0!!!\n");
 		return bMboAPAssocDisallow;
 	}
 
@@ -908,15 +914,22 @@ VOID MboParseStaNPCElement(
 	MBO_FRAME_TYPE MboFrameType)
 {
 	/* PktContent starts at Operating Class Field */
-	INT8 NpclListLen = 0;
+	INT32 NpclListLen = 0;
 	BOOLEAN bEmptyNPC = FALSE;
 
 	if (MboFrameType == MBO_FRAME_TYPE_WNM_REQ) {
 		bEmptyNPC = (ElementLen <= 4)?TRUE:FALSE; /* contains only OUI == EmptyNPC */
 		NpclListLen = (ElementLen > 7)?ElementLen - 7:0; /* OUI 4 bytes , Operating Class 1 byte, Pref 1 byte, Reason Code 1 byte */
+
+		if (!NpclListLen)
+			bEmptyNPC = TRUE;
+
 	} else if (MboFrameType == MBO_FRAME_TYPE_ASSOC_REQ) {
 		bEmptyNPC = (ElementLen == 0)?TRUE:FALSE; /* no op class == EmptyNPC */
 		NpclListLen = (ElementLen > 3)?ElementLen - 3:0; /* Operating Class 1 byte, Pref 1 byte, Reason Code 1 byte */
+
+		if (!NpclListLen)
+			bEmptyNPC = TRUE;
 	} else {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"UNKNOWN Frame Type %d , quit.\n", MboFrameType);
@@ -934,8 +947,8 @@ VOID MboParseStaNPCElement(
 	} else {
 		UINT8 OperatingClass = *PktContent;
 		UCHAR *ChListStart = PktContent + 1;
-		UINT8 Preference = *(ChListStart + NpclListLen);
-		UINT8 ReasonCode = *(ChListStart + NpclListLen + 1);
+		UINT8 Preference;
+		UINT8 ReasonCode;
 		UCHAR *OpChList = get_channelset_by_reg_class(pAd, OperatingClass, pWdev->PhyMode);
 		UCHAR OpChListLen = get_channel_set_num(OpChList);
 		UINT8 NpcList[MAX_NOT_PREFER_CH_NUM] = {0};
@@ -945,8 +958,16 @@ VOID MboParseStaNPCElement(
 		if (NpclListLen > MAX_NOT_PREFER_CH_NUM)
 			NpclListLen = MAX_NOT_PREFER_CH_NUM;
 
+		if ((NpclListLen + 1) >= ElementLen) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"NpclListLen is in invalid range!\n");
+			return;
+		}
+		Preference = *(ChListStart + NpclListLen);
+		ReasonCode = *(ChListStart + NpclListLen + 1);
+
 		/* to prevent pMboStaCHInfo->npc stack overflow  */
-		if (pMboStaCHInfo->npc_num + NpclListLen >= MBO_NPC_MAX_LEN) {
+		if ((UINT16)(pMboStaCHInfo->npc_num) + NpclListLen >= MBO_NPC_MAX_LEN) {
 			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				"cur_npc_num %d, OpChListLen %d >= MBO_NPC_MAX_LEN %d, return due to overflow.\n",
 				pMboStaCHInfo->npc_num, OpChListLen, MBO_NPC_MAX_LEN);
@@ -1000,7 +1021,7 @@ VOID MboParseStaNPCElement(
 VOID MboParseStaMboIE(PRTMP_ADAPTER pAd, struct wifi_dev *pWdev, struct _MAC_TABLE_ENTRY *pEntry, UCHAR *buf, UCHAR len, MBO_FRAME_TYPE MboFrameType)
 {
 	UCHAR *pos = NULL;
-	UCHAR ParsedLen = 0;
+	UINT ParsedLen = 0;
 	MBO_STA_CH_PREF_CDC_INFO *pMboStaInfoNPC = NULL;
 	MBO_STA_CH_PREF_CDC_INFO *pMboStaInfoCDC = NULL;
 	PEID_STRUCT eid_ptr;
@@ -1042,6 +1063,13 @@ VOID MboParseStaMboIE(PRTMP_ADAPTER pAd, struct wifi_dev *pWdev, struct _MAC_TAB
 		switch (eid_ptr->Eid) {
 		case MBO_ATTR_STA_CDC:
 				COPY_MAC_ADDR(pMboStaInfoCDC->mac_addr, pEntry->Addr);
+
+				if (ParsedLen + 3 > len) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"ignored MBO_ATTR [%d]\n", eid_ptr->Eid);
+					return;
+				}
+
 				pMboStaInfoCDC->cdc = eid_ptr->Octet[0];
 				pMboStaInfoCDC->npc_num = 0;
 				pEntry->bIndicateCDC = TRUE;
@@ -1049,6 +1077,12 @@ VOID MboParseStaMboIE(PRTMP_ADAPTER pAd, struct wifi_dev *pWdev, struct _MAC_TAB
 				break;
 		case MBO_ATTR_STA_NOT_PREFER_CH_REP:
 				COPY_MAC_ADDR(pMboStaInfoNPC->mac_addr, pEntry->Addr);
+				/* eid->Len cannot bigger than remain buf len*/
+				if ((ParsedLen + 3 > len) || (2 + eid_ptr->Len + ParsedLen) >= len) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"ignored MBO_ATTR [%d]\n", eid_ptr->Eid);
+					return;
+				}
 				MboParseStaNPCElement(pAd, pWdev, &eid_ptr->Octet[0], eid_ptr->Len, pMboStaInfoNPC, MboFrameType);
 				pEntry->bIndicateNPC = TRUE;
 				pEntry->bindicate_NPC_event= TRUE;

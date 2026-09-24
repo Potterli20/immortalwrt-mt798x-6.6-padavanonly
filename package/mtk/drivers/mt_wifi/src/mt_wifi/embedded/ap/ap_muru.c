@@ -5473,7 +5473,7 @@ INT SetMuOfdmaDlEnableProc(
 		return FALSE;
 
 	u1BandBssSelect = MURU_SET_DLUL_BY_BSS;
-	u1Index = IfIdx;
+	u1Index = wdev->bss_info_argument.ucBssIndex;
 	DlUlUpdList = 1 << MURU_CFG_DL_OFDMA_BIT;
 
 	Enable = os_str_toul(arg, 0, 10);
@@ -5513,7 +5513,7 @@ INT SetMuOfdmaUlEnableProc(
 		return FALSE;
 
 	u1BandBssSelect = MURU_SET_DLUL_BY_BSS;
-	u1Index = IfIdx;
+	u1Index = wdev->bss_info_argument.ucBssIndex;
 	DlUlUpdList = 1 << MURU_CFG_UL_OFDMA_BIT;
 
 	Enable = os_str_toul(arg, 0, 10);
@@ -5553,7 +5553,7 @@ INT SetMuMimoDlEnableProc(
 		return FALSE;
 
 	u1BandBssSelect = MURU_SET_DLUL_BY_BSS;
-	u1Index = IfIdx;
+	u1Index = wdev->bss_info_argument.ucBssIndex;
 	DlUlUpdList = 1 << MURU_CFG_DL_MIMO_BIT;
 
 	Enable = os_str_toul(arg, 0, 10);
@@ -5595,7 +5595,7 @@ INT SetMuMimoUlEnableProc(
 		return FALSE;
 
 	u1BandBssSelect = MURU_SET_DLUL_BY_BSS;
-	u1Index = IfIdx;
+	u1Index = wdev->bss_info_argument.ucBssIndex;
 	DlUlUpdList = 1 << MURU_CFG_UL_MIMO_BIT;
 
 	Enable = os_str_toul(arg, 0, 10);

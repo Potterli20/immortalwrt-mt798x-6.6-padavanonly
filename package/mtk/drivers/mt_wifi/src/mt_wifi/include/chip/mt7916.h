@@ -26,7 +26,7 @@ struct _RTMP_CHIP_DBG;
 #endif /* WIFI_TWT_SUPPORT */
 #endif /* DOT11_HE_AX */
 
-#ifdef SKU_AX7800
+#if defined(SKU_AX7800) || defined(SKU_AX5400)
 #define MT7916_EEPROM_DEFAULT_FILE_PATH "/lib/firmware/MT7916_ePAeLNA_EEPROM_AX7800.bin"
 #else
 #define MT7916_EEPROM_DEFAULT_FILE_PATH                     "/lib/firmware/MT7916_EEPROM.bin"

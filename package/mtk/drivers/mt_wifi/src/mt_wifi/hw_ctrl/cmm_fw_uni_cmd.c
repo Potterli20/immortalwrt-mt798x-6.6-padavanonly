@@ -1738,7 +1738,8 @@ static INT32 UniCmdStaRecWTBL(
 		}
 #endif
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-		if ((wdev->wdev_type == WDEV_TYPE_STA) && (wdev->wds_enable) && pEntry->bEnable4Addr) {
+		if ((wdev->wdev_type == WDEV_TYPE_STA) && (wdev->wds_enable) && pEntry->bEnable4Addr
+			&& !pAd->CommonCfg.bApcliASWDSSTADisabled) {
 			rWtblHdrTrans.ucFd = 1;
 			rWtblHdrTrans.ucTd = 1;
 		}

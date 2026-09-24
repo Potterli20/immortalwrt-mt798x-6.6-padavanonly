@@ -1285,7 +1285,8 @@ INT wifi_sys_linkup(struct wifi_dev *wdev, struct _MAC_TABLE_ENTRY *entry)
 			starec_security_decision(wdev, NULL, &state);
 
 #ifdef MBSS_AS_WDS_AP_SUPPORT
-			if (wdev->wds_enable) {
+			if (wdev->wds_enable &&
+				!ad->CommonCfg.bMBSSASWDSAPDisabled) {
 				MTWF_DBG(ad, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "WDS Enable setting 4 address mode for %d entry \n",
 					bss->bmc_wlan_idx);
 				HW_SET_ASIC_WCID_4ADDR_HDR_TRANS(ad, bss->bmc_wlan_idx, TRUE);
@@ -1497,7 +1498,7 @@ VOID WifiSysUpdatePortSecur(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, ASIC_SEC
 		CheckBMCPortSecured(pAd, pEntry, TRUE);
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-	if (IS_ENTRY_PEER_AP(pEntry)) {
+	if (IS_ENTRY_PEER_AP(pEntry) && !pAd->CommonCfg.bApcliASWDSSTADisabled) {
 		pEntry->bEnable4Addr = TRUE;
 			if (wdev->wds_enable)
 				HW_SET_ASIC_WCID_4ADDR_HDR_TRANS(pAd, pEntry->wcid, TRUE);
@@ -1505,7 +1506,7 @@ VOID WifiSysUpdatePortSecur(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, ASIC_SEC
 #endif /* APCLI_AS_WDS_STA_SUPPORT */
 
 #ifdef MBSS_AS_WDS_AP_SUPPORT
-	if (IS_ENTRY_CLIENT(pEntry)) {
+	if (IS_ENTRY_CLIENT(pEntry) && !pAd->CommonCfg.bMBSSASWDSAPDisabled) {
 		pEntry->bEnable4Addr = TRUE;
 		if (wdev->wds_enable)
 			HW_SET_ASIC_WCID_4ADDR_HDR_TRANS(pAd, pEntry->wcid, TRUE);
@@ -1514,7 +1515,8 @@ VOID WifiSysUpdatePortSecur(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, ASIC_SEC
 		}
 #endif
 #ifdef HOSTAPD_MAP_SUPPORT
-		if (IS_ENTRY_CLIENT(pEntry)) {
+		if (IS_ENTRY_CLIENT(pEntry) &&
+			!pAd->CommonCfg.bHostapdMapDisabled) {
 			BOOLEAN map_a4_peer_en = FALSE;
 #if defined(MWDS) || defined(CONFIG_MAP_SUPPORT) || defined(WAPP_SUPPORT)
 #ifdef MWDS
@@ -1528,7 +1530,8 @@ VOID WifiSysUpdatePortSecur(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, ASIC_SEC
 			/*comment:map_send_bh_sta_wps_done_event(pAd, pEntry, TRUE);*/
 #endif /* CONFIG_MAP_SUPPORT */
 #ifdef WAPP_SUPPORT
-			wapp_send_cli_join_event(pAd, pEntry);
+			if (!pAd->CommonCfg.bWappSupportDisabled)
+				wapp_send_cli_join_event(pAd, pEntry);
 #endif /* WAPP_SUPPORT */
 #endif /* defined(MWDS) || defined(CONFIG_MAP_SUPPORT) || defined(WAPP_SUPPORT) */
 		}

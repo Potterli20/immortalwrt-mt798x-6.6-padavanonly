@@ -2753,6 +2753,9 @@ VOID twt_acquire_btwt_node(
 			MTWF_DBG(ad, DBG_CAT_PROTO, CATPROTO_TWT, DBG_LVL_INFO,
 				"%s:Success.Done added btwt element\n", __func__);
 			twt_node->band = btwt_ctrl_para->band;
+			twt_node->own_mac_idx = wdev->OmacIdx;
+			twt_node->flow_id = 0;
+			twt_node->bss_idx = wdev->bss_info_argument.ucBssIndex;
 			SET_BTWT_ID(twt_node, btwt_ctrl_para->btwt_id);
 			twt_node->agrt_sp_duration = btwt_ctrl_para->agrt_sp_duration;
 			twt_node->agrt_sp_wake_intvl_mantissa = btwt_ctrl_para->agrt_sp_wake_intvl_mantissa;

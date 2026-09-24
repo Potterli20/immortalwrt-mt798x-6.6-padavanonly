@@ -4567,7 +4567,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 	RTMP_STRING *msg;
 	UCHAR fileName[64];
 	struct file *file_w;
-	// mm_segment_t orig_fs;
+	mm_segment_t orig_fs;
 	UINT32 addr = 0;
 	UINT32 end_addr = 0;
 	UINT32 macVal = 0;
@@ -4580,8 +4580,8 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 
 	NdisZeroMemory(msg, 4);
 
-	// orig_fs = get_fs();
-	// set_fs(KERNEL_DS);
+	orig_fs = get_fs();
+	set_fs(KERNEL_DS);
 
 	while (COREDUMP_QUEUE_INFO[i].Name != NULL) {
 		snprintf(fileName, sizeof(fileName), "/etc/%s.bin", COREDUMP_QUEUE_INFO[i].Name);
@@ -4626,7 +4626,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
 	}
 
 done:
-	// set_fs(orig_fs);
+	set_fs(orig_fs);
 	os_free_mem(msg);
 
 	return TRUE;

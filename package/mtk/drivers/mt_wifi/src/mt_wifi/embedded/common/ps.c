@@ -62,7 +62,8 @@ NDIS_STATUS RtmpInsertPsQueue(
 #endif /* defined(DOT11Z_TDLS_SUPPORT) */
 #ifdef RT_CFG80211_SUPPORT
 #ifdef CFG_TDLS_SUPPORT
-		cfg_tdls_send_PeerTrafficIndication(pAd, pMacEntry->Addr);
+		if (!pAd->CommonCfg.bcfg80211Disabled)
+			cfg_tdls_send_PeerTrafficIndication(pAd, pMacEntry->Addr);
 #endif /* CFG_TDLS_SUPPORT */
 #endif /* RT_CFG80211_SUPPORT */
 	} else

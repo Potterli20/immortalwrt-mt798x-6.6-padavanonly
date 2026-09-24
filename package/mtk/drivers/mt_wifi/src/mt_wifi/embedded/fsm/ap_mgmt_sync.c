@@ -27,7 +27,7 @@
 
 
 #include "rt_config.h"
-
+#include "bcn.h"
 #ifdef CONFIG_AP_SUPPORT
 #ifdef DISABLE_HOSTAPD_PROBE_RESP
 INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR *buf)
@@ -40,7 +40,8 @@ static INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHA
 
 	/* add Country IE and power-related IE */
 	if (pAd->CommonCfg.bCountryFlag ||
-		(WMODE_CAP_5G(wdev->PhyMode) && pAd->CommonCfg.bIEEE80211H == TRUE)
+		((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G)
+		&& pAd->CommonCfg.bIEEE80211H)
 #ifdef DOT11K_RRM_SUPPORT
 		|| IS_RRM_ENABLE(wdev)
 #endif /* DOT11K_RRM_SUPPORT */
@@ -55,18 +56,38 @@ static INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHA
 		ULONG TmpLen = 0;
 		UCHAR op_ht_bw = wlan_config_get_ht_bw(wdev);
 
-		if (WMODE_CAP_5G(wdev->PhyMode)) {
+		if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
 			if (pAd->CommonCfg.pChDesc5G != NULL)
 				pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc5G;
 			else
 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 						 "pChDesc5G is NULL !!!\n");
-		} else if (WMODE_CAP_2G(wdev->PhyMode)) {
+		} else if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G) {
 			if (pAd->CommonCfg.pChDesc2G != NULL)
 				pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc2G;
 			else
 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 						 "pChDesc2G is NULL !!!\n");
+		}
+#else
+		PCH_DESC pChDesc = NULL;
+		ULONG TmpLen = 0;
+		UCHAR op_ht_bw = wlan_config_get_ht_bw(wdev);
+
+		if (pAd->CommonCfg.bExtChListDisabled) {
+			if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
+				if (pAd->CommonCfg.pChDesc5G != NULL)
+					pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc5G;
+				else
+					MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "pChDesc5G is NULL !!!\n");
+			} else if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G) {
+				if (pAd->CommonCfg.pChDesc2G != NULL)
+					pChDesc = (PCH_DESC)pAd->CommonCfg.pChDesc2G;
+				else
+					MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "pChDesc2G is NULL !!!\n");
+			}
 		}
 #endif
 		/*
@@ -76,7 +97,7 @@ static INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHA
 			the VHT Transmit Power Envelope element (IE=195)
 			in beacon frames and probe response frames
 		*/
-		if ((WMODE_CAP_5G(wdev->PhyMode) && pAd->CommonCfg.bIEEE80211H == TRUE)
+		if (((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) && pAd->CommonCfg.bIEEE80211H == TRUE)
 #ifdef DOT11K_RRM_SUPPORT
 			|| IS_RRM_ENABLE(wdev)
 #endif /* DOT11K_RRM_SUPPORT */
@@ -100,6 +121,20 @@ static INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHA
 					MAKE_IE_TO_BUF(buf, &ie_len, 1, len);
 					MAKE_IE_TO_BUF(buf, &txpwr_env, ie_len, len);
 				}
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT)
+				if (is_afc_in_run_state(pAd) && WMODE_CAP_AX_6G(wdev->PhyMode)) {
+					const UINT8 he_txpwr_env_ie = IE_VHT_TXPWR_ENV;
+					UINT8 ie_len;
+					HE_TXPWR_ENV_IE txpwr_env;
+
+					ie_len = build_he_txpwr_envelope_eirp(wdev, (UCHAR *)&txpwr_env);
+					if (ie_len) {
+						MAKE_IE_TO_BUF(buf, &he_txpwr_env_ie, 1, len);
+						MAKE_IE_TO_BUF(buf, &ie_len, 1, len);
+						MAKE_IE_TO_BUF(buf, &txpwr_env, ie_len, len);
+					}
+				}
+#endif
 			} else if (WMODE_CAP_AC(wdev->PhyMode)) {
 				const UINT8 vht_txpwr_env_ie = IE_VHT_TXPWR_ENV;
 				UINT8 ie_len;
@@ -135,7 +170,26 @@ static INT build_country_power_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHA
 
 		NdisZeroMemory(TmpFrame, sizeof(TmpFrame));
 #ifdef EXT_BUILD_CHANNEL_LIST
-		BuildBeaconChList(pAd, wdev, TmpFrame, &TmpLen2);
+		if (!pAd->CommonCfg.bExtChListDisabled)
+			BuildBeaconChList(pAd, wdev, TmpFrame, &TmpLen2);
+		else {
+			UINT i = 0;
+			UCHAR MaxTxPower = GetCuntryMaxTxPwr(pAd, wdev->PhyMode, wdev, op_ht_bw);
+
+			/* force max power to be 30 dBm */
+			MaxTxPower = 30;
+
+			if (pChDesc) {
+				for (i = 0; pChDesc[i].FirstChannel != 0; i++) {
+					MakeOutgoingFrame(TmpFrame + TmpLen2, &TmpLen,
+									  1, &pChDesc[i].FirstChannel,
+									  1, &pChDesc[i].NumOfCh,
+									  1, &MaxTxPower,
+									  END_OF_ARGS);
+					TmpLen2 += TmpLen;
+				}
+			}
+		}
 #else
 		{
 			UINT i = 0;
@@ -205,8 +259,7 @@ static INT build_ch_switch_announcement_ie(RTMP_ADAPTER *pAd, struct wifi_dev *w
 	if (pDot11h == NULL)
 		return 0;
 
-	if (WMODE_CAP_5G(wdev->PhyMode)
-		&& (pAd->CommonCfg.bIEEE80211H == 1)
+	if ((pAd->CommonCfg.bIEEE80211H == 1)
 		&& (pDot11h->RDMode == RD_SWITCHING_MODE)) {
 		UCHAR CSAIe = IE_CHANNEL_SWITCH_ANNOUNCEMENT;
 		UCHAR CSALen = 3;
@@ -334,6 +387,8 @@ static BOOLEAN ap_rx_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 	UCHAR MaxSupportedRate = 0;
 	UCHAR ChIndex = 0;
 	struct legacy_rate *legacy_rate = &ie_list->cmm_ies.rate;
+	BOOL APrecorded = FALSE;
+	int macidx = 0;
 #if defined(MWDS) || defined(DOT11K_RRM_SUPPORT)
 	int BssIdx = 0;
 	BSS_TABLE *ScanTab = get_scan_tab_by_wdev(pAd, wdev);
@@ -508,8 +563,17 @@ static BOOLEAN ap_rx_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 	}
 
 #endif /* WDS_SUPPORT */
-	if ((WorkChannel <= 14) && (WorkChannel != wdev->channel))
-		bss_coex_insert_effected_ch_list(pAd, WorkChannel, ie_list, wdev);
+
+	if (WMODE_CAP_2G(wdev->PhyMode) && (WorkChannel != wdev->channel)) {
+		for (macidx = 0; macidx < pAd->CommonCfg.BssCoexApCnt; macidx++) {
+			if (MAC_ADDR_EQUAL(pAd->CommonCfg.BssCoexApMac[macidx], ie_list->Addr2)) {
+				APrecorded = TRUE;
+				break;
+			}
+		}
+		if (!APrecorded && (pAd->CommonCfg.BssCoexApCnt < AP_MAC_CNT))
+			bss_coex_insert_effected_ch_list(pAd, WorkChannel, ie_list, wdev);
+	}
 
 #ifdef MWDS
 		BssIdx = BssTableSearch(ScanTab, ie_list->Bssid, ie_list->Channel);
@@ -598,6 +662,9 @@ static BOOLEAN ap_probe_response_allowed(struct _RTMP_ADAPTER *pAd,
 
 	hc_radio_query_by_channel(pAd, wdev->channel, &oper);
 	if ((Elem->Channel != oper.prim_ch) && (Elem->Channel != oper.cen_ch_1) && !WMODE_CAP_6G(wdev->PhyMode))
+		return FALSE;
+
+	if (HcGetBandByWdev(Elem->wdev) != HcGetBandByWdev(wdev))
 		return FALSE;
 
 
@@ -778,7 +845,7 @@ static BOOLEAN ap_probe_response_xmit(struct _RTMP_ADAPTER *pAd,
 		(ProbeReqParam->report_param.vendor_ie.len > 0)) {
 		struct probe_req_report pProbeReqReportTemp;
 		memset(&pProbeReqReportTemp, 0, sizeof(struct probe_req_report));
-		pProbeReqReportTemp.band = (WMODE_CAP_2G(wdev->PhyMode)) ? 0 : 1;
+		pProbeReqReportTemp.band = wlan_config_get_ch_band(wdev);
 		COPY_MAC_ADDR(pProbeReqReportTemp.sta_mac, ProbeReqParam->Addr2);
 		pProbeReqReportTemp.vendor_ie.element_id = ProbeReqParam->report_param.vendor_ie.element_id;
 		pProbeReqReportTemp.vendor_ie.len = ProbeReqParam->report_param.vendor_ie.len;
@@ -1119,6 +1186,16 @@ static BOOLEAN ap_probe_response_xmit(struct _RTMP_ADAPTER *pAd,
 #endif
 		FrameLen +=  build_rsnxe_ie(&wdev->SecConfig,
 				    (UCHAR *)pOutBuffer + FrameLen);
+#else
+if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef MAP_R3
+	if ((IS_MAP_ENABLE(pAd) && !IS_MAP_CERT_ENABLE(pAd))
+		|| !IS_MAP_ENABLE(pAd))
+#endif
+		FrameLen +=  build_rsnxe_ie(wdev, &wdev->SecConfig,
+				    (UCHAR *)pOutBuffer + FrameLen);
+}
+
 #endif /* HOSTAPD_WPA3_SUPPORT*/
 
 #ifdef CUSTOMER_VENDOR_IE_SUPPORT

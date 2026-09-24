@@ -346,7 +346,7 @@ VOID BssInfoArgumentLink(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, struct
 			bssinfo->bmc_wlan_idx = wdev->hw_bmc_wcid;
 #endif /* SW_CONNECT_SUPPORT */
 		TRTableInsertMcastEntry(ad, bssinfo->bmc_wlan_idx, wdev);
-		MgmtTableSetMcastEntry(ad, bssinfo->bmc_wlan_idx);
+		MgmtTableSetMcastEntry(ad, bssinfo->bmc_wlan_idx, wdev);
 		break;
 
 	case WDEV_TYPE_GC:
@@ -369,7 +369,7 @@ VOID BssInfoArgumentLink(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, struct
 			bssinfo->bmc_wlan_idx = wdev->hw_bmc_wcid;
 #endif /* SW_CONNECT_SUPPORT */
 		TRTableInsertMcastEntry(ad, wdev->tr_tb_idx, wdev);
-		MgmtTableSetMcastEntry(ad, wdev->tr_tb_idx);
+		MgmtTableSetMcastEntry(ad, wdev->tr_tb_idx, wdev);
 		bssinfo->NetworkType = NETWORK_INFRA;
 		bssinfo->u4ConnectionType = CONNECTION_INFRA_AP;
 #ifdef CONFIG_AP_SUPPORT
@@ -419,14 +419,27 @@ VOID BssInfoArgumentLink(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, struct
 #ifdef MCAST_RATE_SPECIFIC
 	if (wdev->wdev_type == WDEV_TYPE_AP) {
 #ifdef MCAST_VENDOR10_CUSTOM_FEATURE
-		bssinfo->McTransmit = (wdev->channel > 14) ? (wdev->rate.MCastPhyMode_5G) : (wdev->rate.MCastPhyMode);
-		bssinfo->BcTransmit = (wdev->channel > 14) ? (wdev->rate.MCastPhyMode_5G) : (wdev->rate.MCastPhyMode);
+		if (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode)) {
+			bssinfo->McTransmit = wdev->rate.MCastPhyMode_5G;
+			bssinfo->BcTransmit = wdev->rate.MCastPhyMode_5G;
+		} else if (WMODE_CAP(wdev->PhyMode, WMODE_B)) {
+			bssinfo->McTransmit = HTPhyMode;
+			bssinfo->BcTransmit = HTPhyMode;
+		} else {
+			bssinfo->McTransmit = wdev->rate.MCastPhyMode;
+			bssinfo->BcTransmit = wdev->rate.MCastPhyMode;
+		}
 #else
-		bssinfo->McTransmit = wdev->rate.mcastphymode;
-		bssinfo->BcTransmit = wdev->rate.mcastphymode;
+		if (WMODE_CAP(wdev->PhyMode, WMODE_B)) {
+			bssinfo->McTransmit = HTPhyMode;
+			bssinfo->BcTransmit = HTPhyMode;
+		} else {
+			bssinfo->McTransmit = wdev->rate.mcastphymode;
+			bssinfo->BcTransmit = wdev->rate.mcastphymode;
+		}
 #endif
 
-		if ((wdev->channel > 14)
+		if ((WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode))
 #ifdef MCAST_VENDOR10_CUSTOM_FEATURE
 		&& (wdev->rate.MCastPhyMode_5G.field.MODE == MODE_CCK)
 #else
@@ -450,7 +463,8 @@ VOID BssInfoArgumentLink(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, struct
 			bssinfo->HighPriTransmit[frame_type] = (wdev->channel > 14) ?
 											(wdev->rate.HighPriPhyMode_5G[frame_type]) :
 											(wdev->rate.HighPriPhyMode[frame_type]);
-			if ((wdev->channel > 14) && (wdev->rate.HighPriPhyMode_5G[frame_type].field.MODE == MODE_CCK))
+			if (((wdev->channel > 14) && (wdev->rate.HighPriPhyMode_5G[frame_type].field.MODE == MODE_CCK)) ||
+				(WMODE_CAP(wdev->PhyMode, WMODE_B)))
 				bssinfo->HighPriTransmit[frame_type] = HTPhyMode;
 		}
 	} else {
@@ -609,7 +623,8 @@ INT32 wdev_attr_update(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 				 __func__, wdev->wdev_idx, MAC2STR(wdev->if_addr)));
 
 		if (wdev->if_dev) {
-			dev_addr_set(wdev->if_dev,wdev->if_addr);
+			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev),
+						   wdev->if_addr, MAC_ADDR_LEN);
 		}
 
 		COPY_MAC_ADDR(wdev->bssid, wdev->if_addr);
@@ -622,7 +637,7 @@ INT32 wdev_attr_update(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 				__func__, wdev->wdev_idx, MAC2STR(wdev->if_addr)));
 
 		if (wdev->if_dev)
-			dev_addr_set(wdev->if_dev, wdev->if_addr);
+			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev), wdev->if_addr, MAC_ADDR_LEN);
 		break;
 #endif
 	default:
@@ -941,6 +956,12 @@ void update_att_from_wdev(struct wifi_dev *dev1, struct wifi_dev *dev2)
 	rx_stream = wlan_config_get_rx_stream(dev2);
 	wlan_config_set_rx_stream(dev1, rx_stream);
 
+	/* HE stream */
+	tx_stream = wlan_config_get_he_tx_nss(dev2);
+	wlan_config_set_he_tx_nss(dev1, tx_stream);
+	rx_stream = wlan_config_get_he_rx_nss(dev2);
+	wlan_config_set_he_rx_nss(dev1, rx_stream);
+
 	/* HT_BAWinSize */
 	wlan_config_set_ba_txrx_wsize(dev1,
 		wlan_config_get_ba_tx_wsize(dev2),
@@ -972,7 +993,7 @@ void update_att_from_wdev(struct wifi_dev *dev1, struct wifi_dev *dev2)
 	/* temporary soluation due to WDS interface acutally reference */
 	if (dev1->wdev_type == WDEV_TYPE_WDS) {
 #ifdef MCAST_VENDOR10_CUSTOM_FEATURE
-		if (dev1->channel > 14)
+		if (WMODE_CAP_5G(dev1->PhyMode) || WMODE_CAP_6G(dev1->PhyMode))
 			dev1->rate.MCastPhyMode_5G = dev2->rate.MCastPhyMode_5G;
 		else
 			dev1->rate.MCastPhyMode = dev2->rate.MCastPhyMode;
@@ -997,8 +1018,7 @@ void wdev_sync_prim_ch(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev)
 			tdev->channel = wdev->channel;
 		else if ((wdev->wdev_type == WDEV_TYPE_AP) &&
 				(tdev != NULL) &&
-				(band_idx == HcGetBandByWdev(tdev)) &&
-				(tdev->PhyMode == wdev->PhyMode))
+				(band_idx == HcGetBandByWdev(tdev)))
 			tdev->channel = wdev->channel;
 
 		/* Fix for Apcli linkdown issue when AP interface brinup happens after linkup */
@@ -1006,7 +1026,7 @@ void wdev_sync_prim_ch(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev)
 				(tdev != NULL) &&
 				(tdev->wdev_type == WDEV_TYPE_AP) &&
 				(tdev->if_up_down_state == 0) &&
-				(tdev->PhyMode == wdev->PhyMode))
+				(band_idx == HcGetBandByWdev(tdev)))
 			tdev->channel = wdev->channel;
 		if (tdev && ((tdev->wdev_type == WDEV_TYPE_AP) || (tdev->wdev_type == WDEV_TYPE_STA))
 			&& ((wdev->wdev_type == WDEV_TYPE_AP) || (wdev->wdev_type == WDEV_TYPE_STA))) {
@@ -1068,9 +1088,6 @@ void wdev_sync_vht_bw(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR bw
 
 	MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO,
 		"[%s] Entry bw %d ch %d==> \n", __func__, bw, channel);
-
-	if (bw >= VHT_BW_160)
-		adjustBw = FALSE;
 
 	/*Moving all same band Soft AP interfaces to new BW proposed by RootAP */
 	for (mbss_idx = 0; mbss_idx < pAd->ApCfg.BssidNum; mbss_idx++) {

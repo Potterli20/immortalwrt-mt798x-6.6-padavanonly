@@ -165,7 +165,7 @@ struct wifi_dev *get_2G_wdev_by_bssmnger(void)
 		devinfo = &bmgentry->devinfo;
 		if (radioinfo == NULL || devinfo == NULL)
 			continue;
-		if (WMODE_CAP_6G(radioinfo->phymode) &&
+		if (!WMODE_CAP_6G(radioinfo->phymode) &&
 			radioinfo->channel <= 14) {
 			wdev = get_wdev_by_devinfo(devinfo);
 			break;
@@ -466,7 +466,7 @@ static struct bmg_entry *get_bmgentry_by_ifindex(UINT32 ifindex)
 			continue;
 		}
 		curr_devinfo = &bmgentry->devinfo;
-		if (curr_devinfo->ifindex == ifindex)
+		if (REPT_MOD(curr_devinfo->ifindex) == ifindex)
 			return bmgentry;
 	}
 
@@ -1163,9 +1163,9 @@ NDIS_STATUS bssmnger_update_reported_bss_list(
 			/* RNR to neighbor */
 			nbor_bmap_backup = nbor_oobinfo->repting_bmap;
 			if (is_oob_discovery_required(curr_bmgentry, nbor_bmgentry))
-				nbor_oobinfo->repting_bmap |= ((UINT64)1 << curr_devinfo->ifindex);
+				nbor_oobinfo->repting_bmap |= ((UINT64)1 << REPT_MOD(curr_devinfo->ifindex));
 			else
-				nbor_oobinfo->repting_bmap &= ~((UINT64)1 << curr_devinfo->ifindex);
+				nbor_oobinfo->repting_bmap &= ~((UINT64)1 << REPT_MOD(curr_devinfo->ifindex));
 
 			MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				"<- RNR2N: nbor_oobinfo->repting_bmap:0x%llx (orig: bitmap:0x%llx)\n",
@@ -1175,8 +1175,8 @@ NDIS_STATUS bssmnger_update_reported_bss_list(
 			if ((nbor_oobinfo->repting_bmap != nbor_bmap_backup) || rule_option) {
 				MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"\tChange: N[%02d] %s RNR_S[%02d], bitmap = 0x%llx -> 0x%llx\n",
-					nbor_devinfo->ifindex,
-					(nbor_oobinfo->repting_bmap & ((UINT64)1 << curr_devinfo->ifindex)) ? "+" : "-",
+					REPT_MOD(nbor_devinfo->ifindex),
+					(nbor_oobinfo->repting_bmap & ((UINT64)1 << REPT_MOD(curr_devinfo->ifindex))) ? "+" : "-",
 					curr_devinfo->ifindex, nbor_bmap_backup, nbor_oobinfo->repting_bmap);
 				bssmnger_build_reported_bss_list(nbor_bmgentry);
 			}
@@ -1184,16 +1184,16 @@ NDIS_STATUS bssmnger_update_reported_bss_list(
 			/* RNR to self */
 			curr_bmap_tmp = curr_oobinfo->repting_bmap;
 			if (is_oob_discovery_required(nbor_bmgentry, curr_bmgentry))
-				curr_oobinfo->repting_bmap |= ((UINT64)1 << nbor_devinfo->ifindex);
+				curr_oobinfo->repting_bmap |= ((UINT64)1 << REPT_MOD(nbor_devinfo->ifindex));
 			else
-				curr_oobinfo->repting_bmap &= ~((UINT64)1 << nbor_devinfo->ifindex);
+				curr_oobinfo->repting_bmap &= ~((UINT64)1 << REPT_MOD(nbor_devinfo->ifindex));
 
 			if (curr_oobinfo->repting_bmap != curr_bmap_tmp) {
 				MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"\tS[%02d] %s RNR_N[%02d], bitmap = 0x%llx -> 0x%llx\n",
-					curr_devinfo->ifindex,
-					(curr_oobinfo->repting_bmap & ((UINT64)1 << nbor_devinfo->ifindex)) ? "+" : "-",
-					nbor_devinfo->ifindex, curr_bmap_tmp, curr_oobinfo->repting_bmap);
+					REPT_MOD(curr_devinfo->ifindex),
+					(curr_oobinfo->repting_bmap & ((UINT64)1 << REPT_MOD(nbor_devinfo->ifindex))) ? "+" : "-",
+					REPT_MOD(nbor_devinfo->ifindex), curr_bmap_tmp, curr_oobinfo->repting_bmap);
 			}
 
 			MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
@@ -1810,7 +1810,7 @@ void bssmnger_show_bsslist_info(void)
 		secinfo = &reginfo->secinfo;
 
 		MTWF_PRINT(" - [%02d] %s [mt%x] (%s)\n",
-			devinfo->ifindex, devinfo->ifname,
+			REPT_MOD(devinfo->ifindex), devinfo->ifname,
 			modinfo->chip_id,
 			bmgentry->valid ? "valid" : "invalid");
 
@@ -1900,7 +1900,7 @@ ULONG ap_6g_build_unsol_bc_probe_rsp(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, U
 	}
 #endif /* CONFIG_HOTSPOT_R2 */
 
-	ComposeBcnPktTail(pAd, wdev, &frame_len, f_buf);
+	ComposeBcnPktTail(pAd, wdev, &frame_len, f_buf, FALSE);
 
 	MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 		"%s, Build BC_PROBE_RSP, Len = %ld\n", __func__, frame_len);
@@ -1981,14 +1981,17 @@ NDIS_STATUS ap_6g_build_discovery_frame(RTMP_ADAPTER *pAd, struct wifi_dev *wdev
 	if (frame_len) {
 		/* fixed-rate option */
 		if (iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP) {
-			TransmitSet.field.BW = BW_80;
+#ifdef CONFIG_6G_AFC_SUPPORT
+			if (is_afc_in_run_state(pAd))
+				TransmitSet.field.BW = BW_20; /* for STD Power*/
+			else
+#endif /*CONFIG_6G_AFC_SUPPORT*/
+				TransmitSet.field.BW = BW_80; /* for LPI Power*/
 			TransmitSet.field.MODE = MODE_OFDM;
 			TransmitSet.field.MCS = MCS_RATE_6;
-		/* HWITS00026034(B): temporary disable HE mode (HE-PE issue) */
-		// } else if (iob_mode == UNSOLICIT_TXMODE_HE_SU) {
-		//	TransmitSet.field.MODE	= MODE_HE;	/* temporarily */
-		//	TransmitSet.field.MCS	= MCS_0;
-		/* HWITS00026034(E): temporary disable HE mode (HE-PE issue) */
+		} else if (iob_mode == UNSOLICIT_TXMODE_HE_SU) {
+			TransmitSet.field.MODE	= MODE_HE;
+			TransmitSet.field.MCS	= MCS_0;
 		} else {
 			TransmitSet.field.BW = BW_20;
 			TransmitSet.field.MODE = MODE_OFDM;

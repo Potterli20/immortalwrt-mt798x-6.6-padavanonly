@@ -21,7 +21,7 @@
 #ifdef CONFIG_6G_SUPPORT
 
 #define MAX_NET_IF_CNT 64
-
+#define REPT_MOD(_ifindex) (_ifindex % MAX_NET_IF_CNT)
 struct sec_info {
 	UINT32 auth_mode;
 	UINT32 PairwiseCipher;

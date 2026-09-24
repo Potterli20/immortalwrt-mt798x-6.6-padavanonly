@@ -470,11 +470,21 @@ BOOLEAN CFG80211DRV_P2pClientConnect(VOID *pAdOrg, VOID *pData)
 		if (!pConnInfo->FlgIs8021x == TRUE) {
 			MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "APCLI WPA2PSK\n");
 			Set_ApCli_AuthMode_Proc(pAd, "WPA2PSK");
+		} else {
+			if (pConnInfo->FlgIs8021x == TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "WPA2\n");
+				Set_ApCli_AuthMode_Proc(pAd, "WPA2");
+			}
 		}
 	} else if (pConnInfo->WpaVer == 1) {
 		if (!pConnInfo->FlgIs8021x) {
 			MTWF_DBG(pAd, DBG_CAT_P2P, DBG_SUBCAT_ALL, DBG_LVL_INFO, "APCLI WPAPSK\n");
 			Set_ApCli_AuthMode_Proc(pAd, "WPAPSK");
+		} else {
+			if (pConnInfo->FlgIs8021x == TRUE) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "WPA\n");
+				Set_ApCli_AuthMode_Proc(pAd, "WPA");
+			}
 		}
 	} else
 		Set_ApCli_AuthMode_Proc(pAd, "OPEN");

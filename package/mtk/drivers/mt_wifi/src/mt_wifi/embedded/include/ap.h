@@ -235,12 +235,6 @@ VOID  APCls3errAction(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk);
 
 #if defined(HOSTAPD_11R_SUPPORT) || defined(HOSTAPD_WPA3_SUPPORT)
 /*for ap_assoc in cfg mode*/
-BOOLEAN PeerAssocReqCmmSanity(
-	RTMP_ADAPTER *pAd,
-	BOOLEAN isReassoc,
-	VOID *Msg,
-	INT MsgLen,
-	IE_LISTS * ie_lists);
 
 USHORT APBuildAssociation(
 	IN RTMP_ADAPTER *pAd,
@@ -250,6 +244,12 @@ USHORT APBuildAssociation(
 	OUT USHORT *pAid,
 	IN BOOLEAN isReassoc);
 #endif
+BOOLEAN PeerAssocReqCmmSanity(
+	RTMP_ADAPTER *pAd,
+	BOOLEAN isReassoc,
+	VOID *Msg,
+	INT MsgLen,
+	IE_LISTS * ie_lists);
 
 /* ap_auth.c */
 
@@ -323,6 +323,8 @@ INT ApSiteSurveyNew_by_wdev(
 
 #ifdef DOT11_N_SUPPORT
 VOID APUpdateOperationMode(RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
+void ap_sync_bssinfo_to_fw(RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
+void ap_update_rf_ch_for_mbss(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, struct freq_oper *OperCh);
 
 #ifdef DOT11N_DRAFT3
 VOID APOverlappingBSSScan(RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
@@ -458,5 +460,27 @@ void ApSendConnFailMsg(
 	UCHAR *StaAddr,
 	USHORT ReasonCode);
 #endif
+#ifdef CONFIG_RA_CEILING_SUPPORT
+void ra_update_rate_ceiling_entry(
+	IN PRTMP_ADAPTER pAd,
+	IN struct _MAC_TABLE_ENTRY *pEntry,
+	IN int index,
+	IN int connect);
+#endif
+#ifdef DFS_SLAVE_SUPPORT
+enum ch_flag_op {
+	flag_reset = 0,
+	flag_set,
+	flag_check,
+};
+BOOLEAN slave_rdd_op(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, enum ch_flag_op op);
+INT set_dfs_slave_en_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT set_slave_sta_disc_skip_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT show_slave_info_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+void slave_bcn_ctrl(PRTMP_ADAPTER pAd, UCHAR band_idx, UCHAR en);
+void slave_bh_event(PRTMP_ADAPTER pAd, struct wifi_dev *wdev, UCHAR bh_status);
+#define SLAVE_MODE_EN(_pAd, _idx) ((_pAd)->slave_ctrl[_idx].enable)
+#define SLAVE_BEACON_STOPPED(_pAd, _idx) ((_pAd)->slave_ctrl[_idx].disable_beacon)
+#endif /* DFS_SLAVE_SUPPORT */
 #endif  /* __AP_H__ */
 

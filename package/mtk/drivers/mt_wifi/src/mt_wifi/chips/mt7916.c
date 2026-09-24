@@ -567,8 +567,10 @@ void mt7916_apply_dpd_flatness_data(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwC
 	if ((((doCal1 & (1 << DPD5G_PRECAL_INDN_BIT)) != 0) ||
 		((doCal1 & (1 << DPD6G_PRECAL_INDN_BIT)) != 0)) &&
 		((doCal1 & (1 << DPD2G_PRECAL_INDN_BIT)) != 0)) {
+#ifndef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"%s: DPD Pre-Cal finished, load DPD Pre-Cal data\n", __func__);
+#endif
 		if (SwChCfg.CentralChannel == 14) {
 			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					 "CH 14 don't need DPD , return!!!\n");
@@ -672,6 +674,24 @@ void mt7916_apply_dpd_flatness_data(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwC
 		return;
 	}
 
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	if (Band == GBAND)      {/* 2G */
+		if (pAd->OndemandDPDPreCal2G[i] == 0)
+			return;
+	} else {
+		if (SwChCfg.Channel_Band == 1) {
+			if (pAd->OndemandDPDPreCal5G[i] == 0)
+				return;
+		} else {/* 6G */
+			if (pAd->OndemandDPDPreCal6G[i] == 0)
+				return;
+		}
+
+	}
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"%s: DPD Pre-Cal finished, load DPD Pre-Cal data Freq = %d\n",
+			__func__, CentralFreq);
+#endif
 	sendNum = cap->prek_ee_info.per_ch_cal_size / PRE_CAL_SET_MAX_LENGTH;
 	while (ofst < sendNum) {
 		MtCmdSetDpdFlatnessCal_7916(pAd, i * sendNum + ofst, PRE_CAL_SET_MAX_LENGTH, eeprom_ofst);
@@ -3297,6 +3317,13 @@ INT32 mt7916_ate_group_prek(RTMP_ADAPTER *pAd, UINT8 op)
 			rtmp_ee_flash_write(pAd, PRECAL_INDICATION_BYTE, doCal1);
 		}
 #endif
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+		if (pAd->E2pAccessMode == E2P_BIN_MODE) {
+			if (rtmp_group_prek_write_to_bin(pAd) != NDIS_STATUS_SUCCESS)
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+						"ERROR!!!Group Prek write to BIN failed\n");
+		}
+#endif
 	} else {
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				"Should not be here !\n");
@@ -3768,12 +3795,12 @@ UCHAR *mt7916_get_default_bin_image(RTMP_ADAPTER *ad)
 		return MT7916_E2PImage_ePAiLNA;
 #else
 		MTWF_PRINT("Use the default iPAiLNA bin image!\n");
+
 		chip_cap->EEPROM_DEFAULT_BIN_SIZE = sizeof(MT7916_E2PImage_iPAiLNA);
 		chip_cap->EFUSE_BUFFER_CONTENT_SIZE = sizeof(MT7916_E2PImage_iPAiLNA);
 		return MT7916_E2PImage_iPAiLNA;
 #endif
 	}
-
 	return NULL;
 }
 
@@ -5739,6 +5766,7 @@ static VOID mt7906_isr(struct pci_hif_chip *hif_chip)
 	if (IntSource & MT_INT_MCU2HOST_SW_INT_STS) {
 		sched_ops->schedule_sw_int(task_group);
 		hif_chip->IntPending |= MT_INT_MCU2HOST_SW_INT_STS;
+		pAd->ErrRecoveryCtl.hostSerStep = 1;
 	}
 
 	HIF_IO_WRITE32(pAd->hdev_ctrl, MT_INT_SOURCE_CSR, IntSource);
@@ -6548,6 +6576,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	struct pci_task_group *task_group = &hif_chip->task_group;
 	struct pci_schedule_task_ops *sched_ops = hif_chip->schedule_task_ops;
 
+	ad->ErrRecoveryCtl.hostSerStep = 3;
 	/* traverse each pci_hif_chip */
 	for (i = 0; i < pci_hif->pci_hif_chip_num; i++) {
 		hif_chip = pci_hif->pci_hif_chip[i];
@@ -6562,9 +6591,11 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	if (!bFound)
 		return;
 
+	ad->ErrRecoveryCtl.hostSerStep = 4;
+
 #ifdef RTMP_MAC_PCI
 	RTMP_IO_READ32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, &int_source);
-
+	ad->ErrRecoveryCtl.mcuToHostState = int_source;
 #ifdef CONFIG_FWOWN_SUPPORT
 	if (int_source & MT_SW_INT_DRV_OWN) {
 		RTMP_IO_WRITE32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, MT_SW_INT_DRV_OWN);
@@ -6586,6 +6617,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 
 #ifdef ERR_RECOVERY
 	if (int_source & MT7663_ERROR_DETECT_MASK) {
+		ad->ErrRecoveryCtl.hostSerStep = 5;
 		/* updated ErrRecovery Status. */
 		ad->ErrRecoveryCtl.status = int_source;
 
@@ -6745,6 +6777,8 @@ static VOID mt7916_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 		UINT32 reg;
 	} cr_list[] = {
 		{"SER_STATUS       ", WF_SW_DEF_CR_SER_STATUS_ADDR},
+		{"SER_WA_STEP      ", WF_MCU_WA_SW_DEF_CR_SER_ADDR},
+		{"SER_WM_STEP      ", WF_SW_DEF_CR_SER_STEPS_ADDR},
 		{"SER_PLE_ERR      ", WF_SW_DEF_CR_PLE_STATUS_ADDR},
 		{"SER_PLE_ERR_1    ", WF_SW_DEF_CR_PLE1_STATUS_ADDR},
 		{"SER_PLE_ERR_AMSDU", WF_SW_DEF_CR_PLE_AMSDU_STATUS_ADDR},
@@ -6782,6 +6816,12 @@ static VOID mt7916_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 			}
 		}
 	}
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STEP     = 0x%08X\n", pAd->ErrRecoveryCtl.hostSerStep);
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STAGE    = 0x%08X\n", ErrRecoveryCurStage(&pAd->ErrRecoveryCtl));
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_MCU_TO_HOST   = 0x%08X\n", pAd->ErrRecoveryCtl.mcuToHostState);
 
 	if (dump_lvl >= DBG_LVL_INFO) {
 		/* dump HWITS workaround info */
@@ -12080,7 +12120,7 @@ static VOID mt7916_chipCap_init(struct _RTMP_ADAPTER *pAd, RTMP_CHIP_CAP *chip_c
 	chip_cap->tkn_info.band0_token_cnt = 4096;
 	chip_cap->tkn_info.low_water_mark = 5;
 	chip_cap->tkn_info.hw_tx_token_cnt = 8192;
-#ifdef SKU_AX7800
+#if defined(SKU_AX7800) || defined(SKU_AX5400)
 	chip_cap->tkn_info.token_rx_cnt = 15360;
 #else
 	chip_cap->tkn_info.token_rx_cnt = 7168;
@@ -13026,3 +13066,301 @@ VOID mt790A_hif_ctrl_chip_pcie1_init(VOID *hif_chip)
 	set_rid_value(hif, hif_id + 1);
 }
 
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+INT MT7916DPDRecal(RTMP_ADAPTER *pAd, UINT32 band_idx, UINT32 Channel)
+{
+	UINT32 i = 0;
+	UINT32 CentralFreq = 0;
+	INT status = FALSE, ret;
+	UINT8 Band = ABAND;
+	MT_SWITCH_CHANNEL_CFG ch_cfg;
+	USHORT			doCal1 = 0;
+	UINT16			upper_bound = 0;
+	RTMP_CHIP_OP *chip_ops = NULL;
+	RTMP_CHIP_CAP *chip_cap = NULL;
+
+	chip_cap = hc_get_chip_cap(pAd->hdev_ctrl);
+	chip_ops = hc_get_chip_ops(pAd->hdev_ctrl);
+
+	if (pAd->E2pAccessMode != E2P_FLASH_MODE && pAd->E2pAccessMode != E2P_BIN_MODE) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				 "%s: Currently not in FLASH or BIN MODE,return.\n", __func__);
+		return status;
+	}
+
+	chip_ops->eeread(pAd, PRECAL_INDICATION_BYTE, &doCal1);
+
+	if ((((doCal1 & (1 << DPD5G_PRECAL_INDN_BIT)) == 0) ||
+				((doCal1 & (1 << DPD6G_PRECAL_INDN_BIT)) == 0)) &&
+			((doCal1 & (1 << DPD2G_PRECAL_INDN_BIT)) == 0)) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s : DPD Calibration data is not cached!! Please Check!!!\n", __func__);
+		return status;
+	}
+
+	if (band_idx == 1) {
+		Band = ABAND;
+		CentralFreq = Channel * 5 + 5000;
+		upper_bound = MT7916_PER_CH_A5_BW20_BW160_FREQ_SIZE;
+		for (i = 0; i < upper_bound; i++) {
+			if (MT7916_PER_CH_A5_BW20_BW160_FREQ[i] == CentralFreq) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+						"%d is in DPD-Flatness cal table, index = %d\n",
+						CentralFreq, i);
+				break;
+			}
+		}
+		if (i == upper_bound) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Unexpected freq (%d)\n", CentralFreq);
+			return status;
+		}
+
+		pAd->bPreCalMode = TRUE;
+		pAd->TxDPDOfst = 0;
+		NdisZeroMemory(&ch_cfg, sizeof(ch_cfg));
+
+		pAd->OndemandDPDPreCal5G[i] = 1;
+		pAd->TxDPDOfst = i * chip_cap->prek_ee_info.per_ch_cal_size;
+		if (i < MT7916_PER_CH_A5_BW20_SIZE) {
+			ch_cfg.Bw = BW_20;
+			ch_cfg.CentralChannel = MT7916_PER_CH_A5_BW20[i];
+			ch_cfg.ControlChannel = MT7916_PER_CH_A5_BW20[i];
+		} else {
+			ch_cfg.Bw = BW_160;
+			ch_cfg.CentralChannel = MT7916_PER_CH_A5_BW160[i - MT7916_PER_CH_A5_BW20_SIZE];
+			ch_cfg.ControlChannel = MT7916_PER_CH_A5_BW160[i - MT7916_PER_CH_A5_BW20_SIZE];
+		}
+		ch_cfg.ControlChannel2 = 0;
+		ch_cfg.BandIdx = 1;
+		ch_cfg.bScan = 1;
+		ch_cfg.Channel_Band = 1;
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+		MtCmdChannelSwitch(pAd, ch_cfg);
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+		MtCmdSetTxRxPath(pAd, ch_cfg);
+
+		if (IS_ATE_DBDC(pAd))
+			ret = MtCmdOndemandCalibration(pAd, TX_DPD_FLATNESS_CAL_A5, 1);
+		else
+			ret = MtCmdOndemandCalibration(pAd, TX_DPD_FLATNESS_CAL_A5, 0);
+	} else if (band_idx == 2) {
+		Band = ABAND;
+		CentralFreq = Channel * 5 + 5950;
+		upper_bound = MT7916_PER_CH_A6_BW20_BW160_FREQ_SIZE;
+		for (i = 0; i < upper_bound; i++) {
+			if (MT7916_PER_CH_A6_BW20_BW160_FREQ[i] == CentralFreq) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+						"%d is in DPD-Flatness cal table, index = %d\n",
+						CentralFreq, i);
+				break;
+			}
+		}
+		if (i == upper_bound) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Unexpected freq (%d)\n", CentralFreq);
+			return status;
+		}
+		pAd->bPreCalMode = TRUE;
+		pAd->TxDPDOfst = 0;
+		NdisZeroMemory(&ch_cfg, sizeof(ch_cfg));
+
+		pAd->OndemandDPDPreCal6G[i] = 1;
+		pAd->TxDPDOfst = i * chip_cap->prek_ee_info.per_ch_cal_size;
+		if (i < MT7916_PER_CH_A6_BW20_SIZE) {
+			ch_cfg.Bw = BW_20;
+			ch_cfg.CentralChannel = MT7916_PER_CH_A6_BW20[i];
+			ch_cfg.ControlChannel = MT7916_PER_CH_A6_BW20[i];
+		} else {
+			ch_cfg.Bw = BW_160;
+			ch_cfg.CentralChannel = MT7916_PER_CH_A6_BW160[i - MT7916_PER_CH_A6_BW20_SIZE];
+			ch_cfg.ControlChannel = MT7916_PER_CH_A6_BW160[i - MT7916_PER_CH_A6_BW20_SIZE];
+		}
+		ch_cfg.ControlChannel2 = 0;
+		ch_cfg.BandIdx = 1;
+		ch_cfg.bScan = 1;
+		ch_cfg.Channel_Band = 2;
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+		MtCmdChannelSwitch(pAd, ch_cfg);
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+		MtCmdSetTxRxPath(pAd, ch_cfg);
+
+		if (IS_ATE_DBDC(pAd))
+			ret = MtCmdOndemandCalibration(pAd, TX_DPD_FLATNESS_CAL_A6, 1);
+		else
+			ret = MtCmdOndemandCalibration(pAd, TX_DPD_FLATNESS_CAL_A6, 0);
+	} else if (band_idx == 0) {
+		Band = GBAND;
+		if (Channel >= 1 && Channel <= 4)
+			CentralFreq = 2422;
+		else if (Channel >= 5 && Channel <= 9)
+			CentralFreq = 2442;
+		else if (Channel >= 10 && Channel <= 13)
+			CentralFreq = 2462;
+		else
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"%s: can't find cent freq for CH %d , should not happen!!!\n",
+				__func__, Channel);
+
+		upper_bound = MT7916_PER_CH_G_BW20_FREQ_SIZE;
+		for (i = 0; i < upper_bound; i++) {
+			if (MT7916_PER_CH_G_BW20_FREQ[i] == CentralFreq) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+						"%d is in DPD-Flatness cal table, index = %d\n",
+						CentralFreq, i);
+				break;
+			}
+		}
+		if (i == upper_bound) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Unexpected freq (%d)\n", CentralFreq);
+			return status;
+		}
+		pAd->bPreCalMode = TRUE;
+		pAd->TxDPDOfst = 0;
+		NdisZeroMemory(&ch_cfg, sizeof(ch_cfg));
+
+		pAd->OndemandDPDPreCal2G[i] = 1;
+		pAd->TxDPDOfst = i * chip_cap->prek_ee_info.per_ch_cal_size;
+		ch_cfg.Bw = BW_20;
+		ch_cfg.CentralChannel = MT7916_PER_CH_G_BW20[i];
+		ch_cfg.ControlChannel = MT7916_PER_CH_G_BW20[i];
+		ch_cfg.ControlChannel2 = 0;
+		ch_cfg.BandIdx = 0;
+		ch_cfg.bScan = 1;
+		ch_cfg.Channel_Band = 0;
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+
+		MtCmdChannelSwitch(pAd, ch_cfg);
+
+		ch_cfg.RxStream = pAd->Antenna.field.RxPath;
+		ch_cfg.TxStream = pAd->Antenna.field.TxPath;
+#ifdef DBDC_MODE
+		if (pAd->CommonCfg.dbdc_mode) {
+			if (ch_cfg.BandIdx == DBDC_BAND0) {
+				ch_cfg.RxStream = pAd->dbdc_band0_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band0_tx_path;
+			} else {
+				ch_cfg.RxStream = pAd->dbdc_band1_rx_path;
+				ch_cfg.TxStream = pAd->dbdc_band1_tx_path;
+			}
+		}
+#endif
+#ifdef ANTENNA_CONTROL_SUPPORT
+		if (pAd->bAntennaSetAPEnable[BandIdx]) {
+			ch_cfg.TxStream = pAd->TxStream[BandIdx];
+			ch_cfg.RxStream = pAd->RxStream[BandIdx];
+		}
+#endif /* ANTENNA_CONTROL_SUPPORT */
+
+		MtCmdSetTxRxPath(pAd, ch_cfg);
+
+		ret = MtCmdOndemandCalibration(pAd, TX_DPD_FLATNESS_CAL, 0);
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s : Unknown band_idx:%d\n", __func__, band_idx);
+		return status;
+	}
+
+	pAd->bPreCalMode = FALSE;
+	if (ret == STATUS_SUCCESS)
+		status = TRUE;
+
+	return status;
+}
+#endif

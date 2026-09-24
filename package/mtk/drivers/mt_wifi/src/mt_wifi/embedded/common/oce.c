@@ -469,7 +469,7 @@ VOID OceParseStaOceIE(
 	)
 {
 	UCHAR *pos = NULL;
-	UCHAR ParsedLen = 0;
+	UINT ParsedLen = 0;
 	UCHAR Bssid_offset = 0;
 	UCHAR apidx = MAIN_MBSSID;
 	PEID_STRUCT eid_ptr;
@@ -482,9 +482,21 @@ VOID OceParseStaOceIE(
 	pos += 4;
 	ParsedLen += 4;
 
+	if (4 + sizeof(PEID_STRUCT) > len) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_INFO,
+			"Invalid format of IE len ! (eid_ptr slab over bounds)\n");
+		return;
+	}
+
 	eid_ptr = (PEID_STRUCT)pos;
 
-	while (ParsedLen <= len) {
+	while (ParsedLen + 2 <= len) {
+		if ((eid_ptr->Len + 2) > (len - ParsedLen)) {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_INFO,
+				"Malformity IE Len!\n");
+			return;
+		}
+
 		switch (eid_ptr->Eid) {
 		case OCE_ATTR_CAP_INDCATION:
 			ProbeReqParam->IsOceCapability = TRUE;
@@ -559,6 +571,11 @@ VOID OceParseStaAssoc(
 	/* skip OUI 4 bytes */
 	pos += 4;
 	ParsedLen += 4;
+	if (4 + sizeof(PEID_STRUCT) > len) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_INFO,
+			"Invalid format of IE len ! (eid_ptr slab over bounds)\n");
+		return;
+	}
 
 	eid_ptr = (PEID_STRUCT)pos;
 
@@ -621,7 +638,8 @@ INT OceApAutoChSelection2G(
 {
 	INT ChIdx, ChListNum = 0;
 
-	for (ChIdx = 0; ChIdx < pAutoChCtrl->AutoChSelCtrl.ChListNum; ChIdx++) {
+	for (ChIdx = 0; (ChIdx < pAutoChCtrl->AutoChSelCtrl.ChListNum) &&
+		(ChListNum <= MAX_NUM_OF_CHANNELS); ChIdx++) {
 		if (pACSChList[ChIdx].Channel != 1 && pACSChList[ChIdx].Channel != 6 &&
 			pACSChList[ChIdx].Channel != 11)
 			continue;

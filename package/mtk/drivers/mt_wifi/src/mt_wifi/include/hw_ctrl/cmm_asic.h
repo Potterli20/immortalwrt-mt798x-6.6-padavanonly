@@ -234,6 +234,9 @@ VOID AsicAddRemoveKeyTab(struct _RTMP_ADAPTER *pAd, struct _ASIC_SEC_INFO *pInfo
 
 #ifdef CONFIG_AP_SUPPORT
 VOID AsicSetWdevIfAddr(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev, INT opmode);
+#ifdef DOT11V_MBSSID_SUPPORT
+BOOLEAN asic_update_11v_mbssid_info(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
+#endif /* DOT11V_MBSSID_SUPPORT */
 #endif /* CONFIG_AP_SUPPORT */
 
 BOOLEAN AsicDisableBeacon(struct _RTMP_ADAPTER *pAd, VOID *wdev);
@@ -659,7 +662,7 @@ typedef struct _RTMP_ARCH_OP {
 #ifdef CONFIG_ATE
 	INT32 (*ate_hw_tx)(struct _RTMP_ADAPTER *pAd, struct _TMAC_INFO *info, struct _TX_BLK *tx_blk);
 #endif
-	VOID (*write_tmac_info_fixed_rate)(struct _RTMP_ADAPTER *pAd, UCHAR *tmac_info, MAC_TX_INFO *info, HTTRANSMIT_SETTING *pTransmit);
+	VOID (*write_tmac_info_fixed_rate)(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR *tmac_info, MAC_TX_INFO *info, HTTRANSMIT_SETTING *pTransmit);
 	VOID (*dump_tmac_info)(struct _RTMP_ADAPTER *pAd, UCHAR *tmac_info);
 	VOID (*fill_cmd_header)(struct _RTMP_ADAPTER *pAd, struct cmd_msg *msg, VOID *net_pkt);
 #ifdef WIFI_UNIFIED_COMMAND
@@ -931,6 +934,7 @@ USHORT asic_write_tx_resource(struct _RTMP_ADAPTER *pAd,
 VOID asic_write_last_tx_resource(struct _RTMP_ADAPTER *pAd, UCHAR resource_idx);
 #endif
 VOID asic_write_tmac_info_fixed_rate(struct _RTMP_ADAPTER *pAd,
+	struct wifi_dev *wdev,
 	UCHAR *tmac_info, MAC_TX_INFO *info, HTTRANSMIT_SETTING *pTransmit);
 INT32 asic_write_txp_info(struct _RTMP_ADAPTER *pAd, UCHAR *buf, struct _TX_BLK *pTxBlk);
 INT asic_check_hw_resource(struct _RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR resource_idx);

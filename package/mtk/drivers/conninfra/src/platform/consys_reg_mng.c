@@ -107,7 +107,7 @@ int consys_reg_mng_reg_read(unsigned long addr, unsigned int *value, unsigned in
 {
 	void __iomem *vir_addr = NULL;
 
-	vir_addr = ioremap(addr, 0x100);
+	vir_addr = ioremap_nocache(addr, 0x100);
 	if (!vir_addr) {
 		pr_err("ioremap fail\n");
 		return -1;
@@ -125,7 +125,7 @@ int consys_reg_mng_reg_write(unsigned long addr, unsigned int value, unsigned in
 {
 	void __iomem *vir_addr = NULL;
 
-	vir_addr = ioremap(addr, 0x100);
+	vir_addr = ioremap_nocache(addr, 0x100);
 	if (!vir_addr) {
 		pr_err("ioremap fail\n");
 		return -1;

@@ -45,9 +45,10 @@ CH_FREQ_MAP CH_HZ_ID_MAP[] = {
 	{169, 5845},
 	{171, 5855},
 	{173, 5865},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{175, 5875},
 	{177, 5885},
-
+#endif
 	/* HiperLAN2 */
 	{100, 5500},
 	{102, 5510},
@@ -323,6 +324,7 @@ CH_DESC Country_Region24_ChDesc_5GHZ[] = {
 	{}
 };
 
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 CH_DESC Country_Region25_ChDesc_5GHZ[] = {
 	{36, 8, CHANNEL_DEFAULT_PROP},
 	{100, 5, CHANNEL_DEFAULT_PROP},
@@ -337,6 +339,7 @@ CH_DESC Country_Region26_ChDesc_5GHZ[] = {
 	{149, 8, CHANNEL_DEFAULT_PROP},
 	{}
 };
+#endif
 
 
 COUNTRY_REGION_CH_DESC Country_Region_ChDesc_5GHZ[] = {
@@ -365,33 +368,35 @@ COUNTRY_REGION_CH_DESC Country_Region_ChDesc_5GHZ[] = {
 	{REGION_22_A_BAND, Country_Region22_ChDesc_5GHZ},
 	{REGION_23_A_BAND, Country_Region23_ChDesc_5GHZ},
 	{REGION_24_A_BAND, Country_Region24_ChDesc_5GHZ},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{REGION_25_A_BAND, Country_Region25_ChDesc_5GHZ},
 	{REGION_26_A_BAND, Country_Region26_ChDesc_5GHZ},
+#endif
 	{}
 };
 
 UINT16 const Country_Region_GroupNum_5GHZ = sizeof(Country_Region_ChDesc_5GHZ) / sizeof(COUNTRY_REGION_CH_DESC);
 
 CH_DESC Country_Region0_ChDesc_6GHZ[] = {
-	{1, 25, CHANNEL_DEFAULT_PROP},
-	{101, 5, CHANNEL_DEFAULT_PROP},
-	{121, 17, CHANNEL_DEFAULT_PROP},
+	{1, 24, CHANNEL_DEFAULT_PROP},
+	{97, 5, CHANNEL_DEFAULT_PROP},
+	{117, 18, CHANNEL_DEFAULT_PROP},
 	{189, 12, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
 CH_DESC Country_Region1_ChDesc_6GHZ[] = {
-	{1, 25, CHANNEL_DEFAULT_PROP},
+	{1, 24, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
 CH_DESC Country_Region2_ChDesc_6GHZ[] = {
-	{101, 5, CHANNEL_DEFAULT_PROP},
+	{97, 5, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
 CH_DESC Country_Region3_ChDesc_6GHZ[] = {
-	{121, 17, CHANNEL_DEFAULT_PROP},
+	{117, 18, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
@@ -401,18 +406,18 @@ CH_DESC Country_Region4_ChDesc_6GHZ[] = {
 };
 
 CH_DESC Country_Region5_ChDesc_6GHZ[] = {
-	{1, 25, CHANNEL_DEFAULT_PROP},
+	{1, 24, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
 CH_DESC Country_Region6_ChDesc_6GHZ[] = {
-	{1, 25, CHANNEL_DEFAULT_PROP},
+	{1, 24, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
 CH_DESC Country_Region7_ChDesc_6GHZ[] = {
-	{1, 25, CHANNEL_DEFAULT_PROP},
-	{101, 3, CHANNEL_DEFAULT_PROP},
+	{1, 24, CHANNEL_DEFAULT_PROP},
+	{97, 5, CHANNEL_DEFAULT_PROP},
 	{}
 };
 
@@ -1891,7 +1896,12 @@ CH_DESP Country_US_ChDesp[] = {
 	{ 36,   4, 36, BOTH, FALSE},	/*5170~5250MHz, Ch 36~48, Max BW: 40 */
 	{ 52,   4, 30, BOTH, TRUE},	/*5250~5330MHz, Ch 52~64, Max BW: 40 */
 	{ 100, 12, 30, BOTH, TRUE},	/*5490~5730MHz, Ch 100~144, Max BW: 40 */
-	{ 149,  8, 30, BOTH, FALSE},	/*5735~5885MHz, Ch 149~177, Max BW: 40 */
+#ifdef IAP_VENDOR1_FEATURE_SUPPORT
+	{ 149,  5, 36, BOTH, FALSE},	/*5735~5835MHz, Ch 149~165, Max BW: 40 */
+#else
+	{ 149,  8, 30, BOTH,
+	FALSE},	/*5735~5885MHz, Ch 149~177, Max BW: 40 */
+#endif
 	{ 0},			/* end*/
 };
 /*Uruguay*/
@@ -2354,14 +2364,16 @@ static UCHAR FillChList(
 		pChCtrl->ChList[j].RegulatoryDomain = regulatoryDomain;
 
 #ifdef RT_CFG80211_SUPPORT
-		CFG80211OS_ChanInfoInit(
-			pAd->pCfg80211_CB,
-			j,
-			pChCtrl->ChList[j].Channel,
-			pChCtrl->ChList[j].MaxTxPwr,
-			WMODE_CAP_N(PhyMode),
-			(bw == BW_20),
-			PhyMode);
+		if (!pAd->CommonCfg.bcfg80211Disabled) {
+			CFG80211OS_ChanInfoInit(
+				pAd->pCfg80211_CB,
+				j,
+				pChCtrl->ChList[j].Channel,
+				pChCtrl->ChList[j].MaxTxPwr,
+				WMODE_CAP_N(PhyMode),
+				(bw == BW_20),
+				PhyMode);
+		}
 #endif /* RT_CFG80211_SUPPORT */
 		j++;
 	}
@@ -2432,6 +2444,7 @@ static UCHAR CeateChListByRf(RTMP_ADAPTER *pAd, UCHAR RfIC, PCH_REGION pChRegion
 			}
 		}
 #ifdef RT_CFG80211_SUPPORT
+			if (!pAd->CommonCfg.bcfg80211Disabled) {
 				if (ChType == BAND_6G) {
 					if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, NULL,  NULL, pChDesp) != 0)
 						MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR, "Update RegRule 6G failed!\n");
@@ -2442,6 +2455,7 @@ static UCHAR CeateChListByRf(RTMP_ADAPTER *pAd, UCHAR RfIC, PCH_REGION pChRegion
 					if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, pChDesp, NULL, NULL) != 0)
 						MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR, "Update RegRule 2.4G failed!\n");
 				}
+			}
 #endif /*RT_CFG80211_SUPPORT*/
 	}
 
@@ -2607,7 +2621,7 @@ UCHAR GetCountryRegionFromCountryCode(
 }
 
 #ifdef DOT11_N_SUPPORT
-static BOOLEAN IsValidChannel(
+BOOLEAN IsValidChannel(
 	IN PRTMP_ADAPTER pAd,
 	IN UCHAR channel,
 	IN struct wifi_dev *wdev)
@@ -2627,7 +2641,7 @@ static BOOLEAN IsValidChannel(
 		return TRUE;
 }
 
-static UCHAR GetExtCh(
+UCHAR GetExtCh(
 	IN UCHAR Channel,
 	IN UCHAR Direction)
 {
@@ -2715,8 +2729,10 @@ static const UCHAR wfa_ht_ch_ext[] = {
 	140, EXTCHA_ABOVE, 144, EXTCHA_BELOW,
 	149, EXTCHA_ABOVE, 153, EXTCHA_BELOW,
 	157, EXTCHA_ABOVE, 161, EXTCHA_BELOW,
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	165, EXTCHA_ABOVE, 169, EXTCHA_BELOW,
 	173, EXTCHA_ABOVE, 177, EXTCHA_BELOW,
+#endif
 	0, 0
 };
 

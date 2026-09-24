@@ -239,9 +239,9 @@ BOOLEAN RRM_PeerBeaconReqSanity(
 		NdisMoveMemory(&pBeaconReq->RegulatoryClass, ptr, 1);
 		NdisMoveMemory(&pBeaconReq->ChNumber, ptr+1, 1);
 		NdisMoveMemory(&RandomInterval, ptr+2, 2);
-		pBeaconReq->RandomInterval = SWAP16(RandomInterval);
+		pBeaconReq->RandomInterval = le2cpu16(RandomInterval);
 		NdisMoveMemory(&MeasureDuration, ptr + 4, 2);
-		pBeaconReq->MeasureDuration = SWAP16(MeasureDuration);
+		pBeaconReq->MeasureDuration = le2cpu16(MeasureDuration);
 		NdisMoveMemory(&pBeaconReq->MeasureMode, ptr + 6, 1);
 		if (pBeaconReq->MeasureMode != RRM_BCN_REQ_MODE_PASSIVE &&
 				pBeaconReq->MeasureMode != RRM_BCN_REQ_MODE_ACTIVE &&

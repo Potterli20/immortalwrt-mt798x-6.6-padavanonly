@@ -2230,6 +2230,29 @@ static VOID read_sae_parma_from_file(
 			}
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+			UCHAR pwe_method = 0;
+
+			sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO, "I/F(%s%d) ==> ",
+					 INF_MBSSID_DEV_NAME, i);
+			if (macptr)
+				pwe_method = os_str_tol(macptr, 0, 10);
+
+			if (pwe_method > MAX_PWE_METHOD) {
+				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR,
+					"pwe method should not be %d",
+					 pwe_method);
+			}
+						sec_cfg->sae_cap.gen_pwe_method = pwe_method;
+		}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 
 #ifdef CONFIG_STA_SUPPORT
@@ -2258,6 +2281,16 @@ static VOID read_sae_parma_from_file(
 					pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.gen_pwe_method = PWE_MIXED;
 			}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+		if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+			IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+				i = 0;
+				while (i < MAX_MBSSID_NUM(pAd))
+					pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.gen_pwe_method = PWE_MIXED;
+			}
+#endif /* CONFIG_AP_SUPPORT */
+		}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 
 #ifdef CONFIG_STA_SUPPORT
@@ -2284,6 +2317,23 @@ static VOID read_sae_parma_from_file(
 			}
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+		if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+			IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+				UCHAR pwd_id_only = 0;
+
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO,
+					"I/F(%s%d) ==> ", INF_MBSSID_DEV_NAME, i);
+				if (macptr)
+					pwd_id_only = os_str_tol(macptr, 0, 10);
+				sec_cfg->sae_cap.pwd_id_only = (pwd_id_only) ? TRUE : FALSE;
+			}
+			}
+#endif /* CONFIG_AP_SUPPORT */
+		}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 #ifdef CONFIG_STA_SUPPORT
 		IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
@@ -2307,6 +2357,16 @@ static VOID read_sae_parma_from_file(
 					pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.pwd_id_only = FALSE;
 			}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			i = 0;
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.pwd_id_only = FALSE;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 #ifdef CONFIG_STA_SUPPORT
 			IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
@@ -2343,6 +2403,35 @@ static VOID read_sae_parma_from_file(
 		}
 	}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		RTMP_STRING *macptr2;
+		RTMP_STRING tok_str[16];
+
+		for (i = 0; i < pAd->ApCfg.BssidNum; i++) {
+			ret = snprintf(tok_str, sizeof(tok_str), "PWDID%d", i + 1);
+			if (os_snprintf_error(sizeof(tok_str), ret))
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"tok_str11 snprintf error!\n");
+
+			if (RTMPGetKeyParameter(tok_str, tmpbuf, MAX_PARAMETER_LEN, pBuffer, FALSE)) {
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+				DlListInit(&sec_cfg->pwd_id_list_head.list);
+				macptr = tmpbuf;
+				do {
+					macptr = rstrtok(macptr, ";");
+					macptr2 = rstrtok(NULL, "\0");
+
+					insert_pwd_id(sec_cfg, &sec_cfg->pwd_id_list_head, macptr);
+					macptr = macptr2;
+				} while (macptr);
+			}
+		}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 
 	if (RTMPGetKeyParameter("SAEPK", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
@@ -2367,6 +2456,29 @@ static VOID read_sae_parma_from_file(
 			}
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+			UCHAR sae_pk_en = 0;
+
+			sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO, "I/F(%s%d) ==> ",
+					 INF_MBSSID_DEV_NAME, i);
+			if (macptr)
+				sae_pk_en = os_str_tol(macptr, 0, 10);
+
+			if (sae_pk_en >= MAX_SAE_PK_EN) {
+				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR,
+					"sae_pk_en should not be %d",
+					 sae_pk_en);
+			}
+						sec_cfg->sae_cap.sae_pk_en = sae_pk_en;
+		}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 #ifdef CONFIG_STA_SUPPORT
 		IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
@@ -2394,6 +2506,16 @@ static VOID read_sae_parma_from_file(
 				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.sae_pk_en = SAE_PK_DISABLE;
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		i = 0;
+		while (i < MAX_MBSSID_NUM(pAd))
+			pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.sae_pk_en = SAE_PK_DISABLE;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 #ifdef CONFIG_STA_SUPPORT
 		IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
@@ -2426,6 +2548,29 @@ static VOID read_sae_parma_from_file(
 			}
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+			UCHAR key_input_mode = 0;
+
+			sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO, "I/F(%s%d) ==> ",
+					 INF_MBSSID_DEV_NAME, i);
+			if (macptr)
+				key_input_mode = os_str_tol(macptr, 0, 10);
+
+			if (key_input_mode >= MAX_SAE_PK_KEY_INPUT_MODE) {
+				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR,
+					"key_input_mode should not be %d",
+					 key_input_mode);
+			}
+			sec_cfg->sae_cap.key_input_mode = key_input_mode;
+		}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 	} else {
 #ifndef HOSTAPD_WPA3_SUPPORT
@@ -2436,6 +2581,16 @@ static VOID read_sae_parma_from_file(
 				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.key_input_mode = SAE_PK_KEY_INPUT_MODE_HEX;
 		}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+	if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		i = 0;
+		while (i < MAX_MBSSID_NUM(pAd))
+			pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_cap.key_input_mode = SAE_PK_KEY_INPUT_MODE_HEX;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 	}
 
@@ -2658,6 +2813,228 @@ static VOID read_sae_parma_from_file(
 				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_pk.sae_pk_test_ctrl = 0;
 		}
 #endif /* CONFIG_AP_SUPPORT */
+	}
+#else
+if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_AP_SUPPORT
+	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		RTMP_STRING tok_str[19];
+		RTMP_STRING head_str[] = "-----BEGIN EC PRIVATE KEY-----";
+		RTMP_STRING tail_str[] = "-----END EC PRIVATE KEY-----";
+
+		for (i = 0; i < pAd->ApCfg.BssidNum; i++) {
+			ret = snprintf(tok_str, sizeof(tok_str), "SAEPKKeyFilePath%d", i + 1);
+			if (os_snprintf_error(sizeof(tok_str), ret))
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"tok_str12 snprintf error!\n");
+
+		if (RTMPGetKeyParameter(tok_str, tmpbuf, MAX_PARAMETER_LEN, pBuffer, FALSE)) {
+			RTMP_OS_FD_EXT srcf;
+			INT retval;
+			ULONG buf_size = 500;
+			RTMP_STRING *buffer = NULL;
+			RTMP_STRING *ptr = NULL;
+			UCHAR is_found = FALSE;
+			UCHAR out[130] = {0};
+			UINT32 out_len;
+
+			sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+
+			if (sec_cfg->sae_cap.key_input_mode != SAE_PK_KEY_INPUT_MODE_FILE_EC_PRIVATE)
+				continue;
+
+			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO, "Open file \"%s\"\n", tmpbuf);
+
+			os_alloc_mem(pAd, (UCHAR **)&buffer, buf_size);
+
+			if (!buffer)
+				continue;
+
+			srcf = os_file_open(tmpbuf, O_RDONLY, 0);
+
+			if (srcf.Status)
+				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR, "Open file \"%s\" failed!\n", tmpbuf);
+			else {
+				retval = os_file_read(srcf, buffer, buf_size - 1);
+
+				if (retval > 0) {
+					ptr = rtstrstr(buffer, tail_str);
+
+					if (NdisEqualMemory(buffer, head_str, strlen(head_str)) &&
+						ptr != NULL) {
+						ptr[0] = '\0';
+						ptr = buffer + strlen(head_str);
+						rm_new_line(ptr);
+						is_found = TRUE;
+					}
+
+					if (is_found && !sae_pk_pem_decode(&sec_cfg->sae_pk, ptr, out, &out_len))
+						sec_cfg->sae_cap.key_input_mode = SAE_PK_KEY_INPUT_MODE_HEX;
+
+					retval = NDIS_STATUS_SUCCESS;
+				} else {
+					sec_cfg->sae_cap.key_input_mode = SAE_PK_KEY_INPUT_MODE_HEX;
+					MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR, "Read file \"%s\" failed(errCode=%d)!\n", tmpbuf, retval);
+				}
+
+				if (os_file_close(srcf) != 0) {
+					retval = NDIS_STATUS_FAILURE;
+					MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_ERROR, "Close file \"%s\" failed(errCode=%d)!\n", tmpbuf, retval);
+				}
+			}
+
+			os_free_mem(buffer);
+		}
+	}
+	}
+#endif /* CONFIG_AP_SUPPORT */
+
+#ifdef CONFIG_AP_SUPPORT
+	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		RTMP_STRING tok_str[16];
+
+		for (i = 0; i < pAd->ApCfg.BssidNum; i++) {
+			ret = snprintf(tok_str, sizeof(tok_str), "SAEPKKey%d", i + 1);
+			if (os_snprintf_error(sizeof(tok_str), ret))
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"tok_str13 snprintf error!\n");
+
+			if (RTMPGetKeyParameter(tok_str, tmpbuf, MAX_PARAMETER_LEN, pBuffer, FALSE)) {
+				UCHAR pri_key_bin[68];
+				UINT32 pri_key_len = sizeof(pri_key_bin);
+
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+
+				if (sec_cfg->sae_cap.key_input_mode != SAE_PK_KEY_INPUT_MODE_HEX)
+					continue;
+
+				str_to_bin(tmpbuf, pri_key_bin, &pri_key_len);
+
+				if (pri_key_len != 0) {
+					os_alloc_mem(NULL, (UCHAR **) &sec_cfg->sae_pk.fixed_pri_key, pri_key_len);
+					os_move_mem(sec_cfg->sae_pk.fixed_pri_key, pri_key_bin, pri_key_len);
+					sec_cfg->sae_pk.fixed_pri_key_len = pri_key_len;
+				}
+
+				hex_dump_with_cat_and_lvl("SAEPKKey", pri_key_bin, pri_key_len, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO);
+			}
+		}
+	}
+#endif /* CONFIG_AP_SUPPORT */
+
+
+#ifdef CONFIG_AP_SUPPORT
+	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+		RTMP_STRING tok_str[16];
+
+		for (i = 0; i < pAd->ApCfg.BssidNum; i++) {
+			ret = snprintf(tok_str, sizeof(tok_str), "SAEPKStartM%d", i + 1);
+			if (os_snprintf_error(sizeof(tok_str), ret))
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"tok_str14 snprintf error!\n");
+
+			if (RTMPGetKeyParameter(tok_str, tmpbuf, MAX_PARAMETER_LEN, pBuffer, FALSE)) {
+				UCHAR modifier[SAE_PK_MODIFIER_BYTES_LEN];
+				UINT32 modifier_len = SAE_PK_MODIFIER_BYTES_LEN;
+
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+
+				str_to_bin(tmpbuf, modifier, &modifier_len);
+
+				if (modifier_len == SAE_PK_MODIFIER_BYTES_LEN) {
+					os_alloc_mem(NULL, (UCHAR **) &sec_cfg->sae_pk.fixed_start_modifier, SAE_PK_MODIFIER_BYTES_LEN);
+					os_move_mem(sec_cfg->sae_pk.fixed_start_modifier, modifier, SAE_PK_MODIFIER_BYTES_LEN);
+				}
+
+
+				hex_dump_with_cat_and_lvl("SAEPKStartM", modifier, modifier_len, DBG_CAT_SEC, CATSEC_SAE, DBG_LVL_INFO);
+			}
+		}
+	}
+#endif /* CONFIG_AP_SUPPORT */
+
+	if (RTMPGetKeyParameter("SAEPKSec", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+				sec_cfg->sae_pk.sec = os_str_tol(macptr, 0, 10);
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			i = 0;
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_pk.sec = SAE_PK_AUTO_GEN_DEF_SEC;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
+
+	if (RTMPGetKeyParameter("SAEPKLambda", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+				sec_cfg->sae_pk.lambda = os_str_tol(macptr, 0, 10);
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			i = 0;
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_pk.lambda = SAE_PK_AUTO_GEN_DEF_LAMBDA;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
+
+	if (RTMPGetKeyParameter("SAEPKGroup", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+
+				if (sec_cfg->sae_cap.key_input_mode != SAE_PK_KEY_INPUT_MODE_HEX)
+					continue;
+
+				sec_cfg->sae_pk.group_id = os_str_tol(macptr, 0, 10);
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			i = 0;
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_pk.group_id = SAE_DEFAULT_GROUP;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
+	/* test or testbed behavior only */
+	if (RTMPGetKeyParameter("SAEPKCfg", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), i++) {
+				UCHAR sae_pk_test = 0;
+
+				sae_pk_test = os_str_tol(macptr, 0, 16);
+				sec_cfg = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev.SecConfig;
+				sec_cfg->sae_pk.sae_pk_test_ctrl = sae_pk_test;
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			i = 0;
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.sae_pk.sae_pk_test_ctrl = 0;
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 }
@@ -2936,7 +3313,50 @@ VOID ReadSecurityParameterFromFile(
 					}
 				}
 			}
+		}
+	}
 #endif /* CONFIG_STA_SUPPORT */
+	/*RekeyCountDown*/
+	if (RTMPGetKeyParameter("RekeyCountDown", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (apidx = 0, macptr = rstrtok(tmpbuf, ";");
+				(macptr && apidx < pAd->ApCfg.BssidNum);
+				macptr = rstrtok(NULL, ";"), apidx++) {
+				wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, apidx)].wdev;
+				pSecConfig = &wdev->SecConfig;
+				pSecConfig->rekey_install_count_down = os_str_tol(macptr, 0, 10);
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			UINT8 i = 0;
+
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.rekey_install_count_down = 0;
+		}
+	}
+
+	/*RekeyDeauthDelay*/
+	if (RTMPGetKeyParameter("RekeyDeauthDelay", tmpbuf, MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+#ifdef CONFIG_AP_SUPPORT
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			for (apidx = 0, macptr = rstrtok(tmpbuf, ";");
+				(macptr && apidx < pAd->ApCfg.BssidNum);
+				macptr = rstrtok(NULL, ";"), apidx++) {
+				wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, apidx)].wdev;
+				pSecConfig = &wdev->SecConfig;
+				pSecConfig->rekey_deauth_delay = os_str_tol(macptr, 0, 10);
+			}
+		}
+#endif /* CONFIG_AP_SUPPORT */
+	} else {
+		IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+			UINT8 i = 0;
+
+			while (i < MAX_MBSSID_NUM(pAd))
+				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i++)].wdev.SecConfig.rekey_deauth_delay = 0;
 		}
 	}
 
@@ -3263,7 +3683,7 @@ VOID process_pmkid(
 #endif /* WSC_AP_SUPPORT */
 			) {
 			/* Enqueue a EAPOL-start message with the pEntry */
-			entry->EnqueueEapolStartTimerRunning = EAPOL_START_PSK;
+
 			entry->SecConfig.Handshake.WpaState = AS_INITPSK;
 			os_move_mem(&entry->SecConfig.Handshake.AAddr,
 				wdev->bssid,
@@ -3271,8 +3691,11 @@ VOID process_pmkid(
 			os_move_mem(&entry->SecConfig.Handshake.SAddr,
 				entry->Addr,
 				MAC_ADDR_LEN);
-			RTMPSetTimer(&entry->SecConfig.StartFor4WayTimer,
-				ENQUEUE_EAPOL_START_TIMER);
+			if ((entry->EnqueueEapolStartTimerRunning == EAPOL_START_DISABLE) &&
+				(entry->AssoDoneFlag != ASSOCIATE_RESP_TX_DONE)) {
+				RTMPSetTimer(&entry->SecConfig.StartFor4WayTimer,
+					ENQUEUE_EAPOL_START_TIMER);
+			}
 		}
 
 		store_pmkid_cache_in_sec_config(pAd, entry, CacheIdx);
@@ -3285,9 +3708,10 @@ VOID process_pmkid(
 			 "ASSOC - 2.PMKID not found\n");
 
 		/* Enqueue a EAPOL-start message to trigger EAP SM */
-		if (entry->EnqueueEapolStartTimerRunning == EAPOL_START_DISABLE
+		if ((entry->EnqueueEapolStartTimerRunning == EAPOL_START_DISABLE) &&
+			(entry->AssoDoneFlag != ASSOCIATE_RESP_TX_DONE)
 		) {
-			entry->EnqueueEapolStartTimerRunning = EAPOL_START_1X;
+			//entry->EnqueueEapolStartTimerRunning = EAPOL_START_1X;
 			RTMPSetTimer(&entry->SecConfig.StartFor4WayTimer, ENQUEUE_EAPOL_START_TIMER);
 		}
 	}
@@ -3358,30 +3782,47 @@ INT build_rsnxe_ie(
 	UCHAR cap = 0;
 
 #ifdef HOSTAPD_WPA3R3_SUPPORT
+	struct _RTMP_ADAPTER *ad = (struct _RTMP_ADAPTER *)wdev->sys_handle;
 	if (wdev == NULL) {
 		MTWF_DBG(NULL, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				"wdev is NULL\n");
 		return 0;
 	}
+
+	if (!IS_AKM_SAE(sec_cfg->AKMMap))
+		return 0;
+
 	/* Add RSNXE capability only for interface operating in AP mode
 	 * This capability is received from hostapd */
-	if (wdev->wdev_type == WDEV_TYPE_AP) {
+
+	if (!ad->CommonCfg.bHostapdDisabled) {
 		cap = sec_cfg->RSNXE_Val;
 		MTWF_DBG(NULL, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				"%s :RSNXE_Val:%d\n", __func__, sec_cfg->RSNXE_Val);
 	} else {
 #endif
-	/* remove it if any other authmode also use rsnxe */
-	if (!IS_AKM_SAE(sec_cfg->AKMMap))
-		return 0;
+		/* remove it if any other authmode also use rsnxe */
+		if (!(IS_AKM_SAE(sec_cfg->AKMMap)
+#ifdef DPP_SUPPORT
+		|| IS_AKM_DPP(sec_cfg->AKMMap)
+#endif
+))
+			return 0;
 
 #ifdef DOT11_SAE_SUPPORT
-	if (IS_AKM_SAE(sec_cfg->AKMMap) &&
-		sec_cfg->sae_cap.gen_pwe_method != PWE_LOOPING_ONLY)
-		cap |= (1 << IE_RSNXE_CAPAB_SAE_H2E);
+		if ((IS_AKM_SAE(sec_cfg->AKMMap)
+#ifdef DPP_SUPPORT
+		|| IS_AKM_DPP(sec_cfg->AKMMap)
+#endif
+		) && sec_cfg->sae_cap.gen_pwe_method != PWE_LOOPING_ONLY)
+			cap |= (1 << IE_RSNXE_CAPAB_SAE_H2E);
 
-	if (IS_AKM_SAE(sec_cfg->AKMMap) && sec_cfg->sae_cap.sae_pk_en != SAE_PK_DISABLE)
-		cap |= (1 << IE_RSNXE_CAPAB_SAE_PK);
+		if ((IS_AKM_SAE(sec_cfg->AKMMap)
+#ifdef DPP_SUPPORT
+		|| IS_AKM_DPP(sec_cfg->AKMMap)
+#endif
+		) && sec_cfg->sae_cap.sae_pk_en != SAE_PK_DISABLE)
+			cap |= (1 << IE_RSNXE_CAPAB_SAE_PK);
 #endif /* DOT11_SAE_SUPPORT */
 #ifdef HOSTAPD_WPA3R3_SUPPORT
 	}
@@ -3493,6 +3934,9 @@ UCHAR parse_oci_common_field(
 {
 	UCHAR bw = wlan_operate_get_bw(wdev);
 	UCHAR spacing;
+	INT16 rcv_freq;
+	UINT32 CapNode;
+	UINT16 ChFreq = 0;
 
 	hex_dump_with_cat_and_lvl("peer oci", buf, buf_len, DBG_CAT_SEC, CATSEC_OCV, DBG_LVL_INFO);
 
@@ -3505,9 +3949,24 @@ UCHAR parse_oci_common_field(
 
 	if (!is_channel_in_channelset_by_reg_class(ad, buf[0], wdev->PhyMode, wdev->channel)) {
 		MTWF_DBG(ad, DBG_CAT_SEC, CATSEC_OCV, DBG_LVL_ERROR,
-			"operating class(%d) check fail, chanel isn't in channel list\n",
-			buf[0]);
-		return FALSE;
+			"%s : operating class(%d) check fail, chanel isn't in channel list\n",
+			__func__, buf[0]);
+		rcv_freq = ieee80211_chan_to_freq_global(buf[0], wdev->channel);
+		if (rcv_freq < 0) {
+			MTWF_DBG(ad, DBG_CAT_SEC, CATSEC_OCV, DBG_LVL_ERROR,
+				"Invalid frequency %d received for channel %d\n",
+				rcv_freq, wdev->channel);
+			return FALSE;
+		}
+		CapNode = Get_System_CapNode_Info(ad);
+		ChFreq = Get_System_Freq_Info(ad, CapNode);
+
+		if (ChFreq != rcv_freq) {
+			MTWF_DBG(ad, DBG_CAT_SEC, CATSEC_OCV, DBG_LVL_ERROR,
+				"Primary channel mismatch in received OCI (we use %d but receiver is using %d)\n",
+				ChFreq, rcv_freq);
+			return FALSE;
+		}
 	}
 
 	if (get_spacing_by_reg_class(ad, buf[0], wdev->PhyMode, &spacing) == FALSE) {

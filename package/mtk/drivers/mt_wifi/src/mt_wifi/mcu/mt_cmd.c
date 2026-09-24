@@ -1712,6 +1712,69 @@ INT32 MtCmdDoCalibration(RTMP_ADAPTER *pAd, UINT32 func_idx,
 	ret = MtCmdRfTestTrigger(pAd, rRfATInfo, rsp_len);
 	return ret;
 }
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+static VOID MtCmdOndemandDPDResp(struct cmd_msg *msg, char *data, UINT16 len)
+{
+	EXT_EVENT_RF_TEST_RESULT_T *result = (EXT_EVENT_RF_TEST_RESULT_T *)data;
+
+	switch (le2cpu32(result->u4FuncIndex)) {
+	case EXT_CMD_ONDEMAND_DPD_CAL:
+		MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"%s:(func_idx = 0x%x)\n", __func__,
+				le2cpu32(result->u4FuncIndex));
+		break;
+	default:
+		MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"%s:UnKnown (func_idx = 0x%x)\n", __func__,
+				le2cpu32(result->u4FuncIndex));
+		break;
+	}
+}
+
+INT32 MtCmdOndemandCalibration(RTMP_ADAPTER *pAd,
+		UINT32 item, UINT32 band_idx)
+{
+	struct cmd_msg *msg;
+	INT32 ret = 0;
+	char *rsp_payload = NULL;
+	struct _CMD_ATTRIBUTE attr = {0};
+	UINT16 rsp_len = RF_TEST_DEFAULT_RESP_LEN;
+	CMD_TEST_CTRL_T TestCtrl;
+
+	os_zero_mem(&TestCtrl, sizeof(TestCtrl));
+	TestCtrl.u.rRfATInfo.Data.rCalParam.u4FuncData = cpu2le32(item);
+	TestCtrl.u.rRfATInfo.Data.rCalParam.ucDbdcIdx = band_idx;
+
+	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"func_idx:%x, band_idx:%x\n",
+			item, band_idx);
+
+	msg = MtAndesAllocCmdMsg(pAd, sizeof(TestCtrl));
+
+	if (!msg) {
+		ret = NDIS_STATUS_RESOURCES;
+		goto error;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ONDEMAND_DPD_CAL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET_AND_WAIT_RETRY_RSP);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 3000);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, rsp_len);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, rsp_payload);
+	SET_CMD_ATTR_RSP_HANDLER(attr, MtCmdOndemandDPDResp);
+	MtAndesInitCmdMsg(msg, attr);
+	MtAndesAppendCmdMsg(msg, (char *)&TestCtrl, sizeof(TestCtrl));
+
+	ret = chip_cmd_tx(pAd, msg);
+error:
+	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			"%s:(ret = %d)\n", __func__, ret);
+
+	return ret;
+}
+#endif
 
 INT32 MtCmdTxContinous(RTMP_ADAPTER *pAd, UINT32 PhyMode, UINT32 BW,
 					   UINT32 PriCh, UINT32 CentralCh, UINT32 Mcs, UINT32 WFSel,
@@ -2328,6 +2391,50 @@ UCHAR GetCfgBw2RawBw(UCHAR CfgBw)
 /* TODO: temporary to keep channel setting */
 MT_SWITCH_CHANNEL_CFG CurrentSwChCfg[2];
 #endif
+#ifdef MT7916_CUSTOMER_DEFINED_GPIO_CONFIG
+static void mt7916_config_gpio_based_on_channel(RTMP_ADAPTER *pAd, UCHAR ChBand, UCHAR Channel)
+{
+	UINT32 low_value = 0;
+	UINT32 high_value = 0;
+
+	if (ChBand == CMD_CH_BAND_6G) {
+		low_value = BIT(6) | BIT(10);
+		high_value = BIT(8) | BIT(9);
+	} else if (ChBand == CMD_CH_BAND_5G) {
+		if (Channel >= 36 && Channel <= 64) {
+			low_value = BIT(8);
+			high_value = BIT(6) | BIT(9) | BIT(10);
+		} else {
+			low_value = BIT(9);
+			high_value = BIT(6) | BIT(8) | BIT(10);
+		}
+	}
+
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004024, high_value);
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004028, low_value);
+
+	if (DebugLevel >= DBG_LVL_NOTICE) {
+		UINT32 gpio_val;
+
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005050, &gpio_val);
+		MTWF_PRINT("PIN Config: PIN6(%s) ",
+				((gpio_val & 0x5000000) == 0x5000000) ? "GPIO" : "NOT GPIO");
+
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005054, &gpio_val);
+		MTWF_PRINT("PIN8(%s) PIN9(%s) PIN10(%s)\n",
+				(((gpio_val & 0x5) == 0x5) ? "GPIO" : "NOT GPIO"),
+				(((gpio_val & 0x50) == 0x50) ? "GPIO" : "NOT GPIO"),
+				(((gpio_val & 0x500) == 0x500) ? "GPIO" : "NOT GPIO"));
+
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x70004020, &gpio_val);
+		MTWF_PRINT("PIN STATE: PIN6(%s) PIN8(%s) PIN9(%s) PIN10(%s)\n",
+				(((gpio_val & 0x40) == 0x40) ? "HIGH" : "LOW"),
+				(((gpio_val & 0x100) == 0x100) ? "HIGH" : "LOW"),
+				(((gpio_val & 0x200) == 0x200) ? "HIGH" : "LOW"),
+				(((gpio_val & 0x400) == 0x400) ? "HIGH" : "LOW"));
+	}
+}
+#endif /*MT7916_CUSTOMER_DEFINED_GPIO_CONFIG*/
 
 INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 {
@@ -2356,6 +2463,10 @@ INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 				 "central channel = 0 is invalid\n");
 		return -1;
 	}
+
+#ifdef MT7916_CUSTOMER_DEFINED_GPIO_CONFIG
+	mt7916_config_gpio_based_on_channel(pAd, SwChCfg.Channel_Band, SwChCfg.ControlChannel);
+#endif /*MT7916_CUSTOMER_DEFINED_GPIO_CONFIG*/
 
 #ifdef DBDC_MODE
 	if (pAd->CommonCfg.dbdc_mode) {
@@ -2423,7 +2534,7 @@ INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 	CmdChanSwitch.ucAPBW = GetCfgBw2RawBw(SwChCfg.ap_bw);
 #ifdef DFS_ADJ_BW_ZERO_WAIT
 	/* while BW160 zero-wait case, althought BW is 80, we need to set BW160 for listen RDD */
-	if (IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState) && (CmdChanSwitch.ucBW == BW_80)) {
+	if (IS_CH_BETWEEN(SwChCfg.ControlChannel, 36, 64) && IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState) && (CmdChanSwitch.ucBW == BW_80)) {
 
 		CmdChanSwitch.ucBW = BW_160;
 		CmdChanSwitch.ucAPBW = BW_160;
@@ -2450,11 +2561,6 @@ INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 		CmdChanSwitch.ucSwitchReason = CH_SWITCH_BY_NORMAL_TX_RX;
 
 	if (SwChCfg.bScan) {
-
-#ifdef MT_DFS_SUPPORT
-		if (RadarChannelCheck(pAd, SwChCfg.ControlChannel))
-			CmdChanSwitch.ucSwitchReason = CH_SWITCH_DFS;
-#endif
 
 #if defined(MT7615) || defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7981)
 
@@ -2547,11 +2653,9 @@ INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s: Ignore RADAR Event for Channel %d\n", __func__,
 				 CmdChanSwitch.ucCentralCh);
 		CmdChanSwitch.ucSwitchReason += CH_IGNORE_RADAR;
-	} else if (!DfsRadarChannelCheckForCMD(pAd, CmdChanSwitch.ucPrimCh, CmdChanSwitch.ucCentralCh2, SwChCfg.Bw)) {
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-			"%s: Ignore RADAR Event for Channel %d by DfsRadarChannelCheckForCMD\n", __func__, CmdChanSwitch.ucPrimCh);
-		CmdChanSwitch.ucSwitchReason += CH_IGNORE_RADAR;
-	}
+		pAd->ignore_emu_radar[SwChCfg.BandIdx] = TRUE;
+	} else
+		pAd->ignore_emu_radar[SwChCfg.BandIdx] = FALSE;
 #endif /* SCAN_RADAR_COEX_SUPPORT */
 
 	MtAndesAppendCmdMsg(msg, (char *)&CmdChanSwitch, sizeof(CmdChanSwitch));
@@ -2564,6 +2668,9 @@ INT32 MtCmdChannelSwitch(RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 	os_move_mem(&pAd->BgndScanCtrl.CurrentSwChCfg[SwChCfg.BandIdx], &SwChCfg, sizeof(MT_SWITCH_CHANNEL_CFG));
 #endif
 	ret = chip_cmd_tx(pAd, msg);
+#ifdef SPECIAL_11B_OBW_FEATURE
+	MtCmdSetTxTdCck(pAd, TRUE);
+#endif
 error:
 	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
 			 "%s:(ret = %d)\n", __func__, ret);
@@ -2732,7 +2839,7 @@ INT MtCmdSetTxRxPath(struct _RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 	CmdChanSwitch.u2CacCase = 0;
 #ifdef DFS_ADJ_BW_ZERO_WAIT
 	/* while BW160 zero-wait case, althought BW is 80, we need to set BW160 for listen RDD */
-	if (IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState) && (CmdChanSwitch.ucBW == BW_80)) {
+	if (IS_CH_BETWEEN(SwChCfg.ControlChannel, 36, 64) && IS_ADJ_BW_ZERO_WAIT_TX80RX160(pAd->CommonCfg.DfsParameter.BW160ZeroWaitState) && (CmdChanSwitch.ucBW == BW_80)) {
 
 		CmdChanSwitch.ucBW = BW_160;
 		CmdChanSwitch.ucAPBW = BW_160;
@@ -2759,10 +2866,6 @@ INT MtCmdSetTxRxPath(struct _RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 		CmdChanSwitch.ucSwitchReason = CH_SWITCH_BY_NORMAL_TX_RX;
 
 	if (SwChCfg.bScan) {
-#ifdef MT_DFS_SUPPORT
-		if (RadarChannelCheck(pAd, SwChCfg.ControlChannel))
-			CmdChanSwitch.ucSwitchReason = CH_SWITCH_DFS;
-#endif
 
 #ifdef OFFCHANNEL_ZERO_LOSS
 #if defined(MT7615) || defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7981)
@@ -2770,9 +2873,9 @@ INT MtCmdSetTxRxPath(struct _RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 			CmdChanSwitch.ucSwitchReason = CH_SWITCH_SCAN_BYPASS_DPD;
 #endif
 #else
-#if defined(MT7615) || defined(MT7915) || defined(MT7986) || defined(MT7916)
+#if defined(MT7615) || defined(MT7915) || defined(MT7986) || defined(MT7916) || defined(MT7981)
 
-		if (IS_MT7615(pAd) || IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd))
+		if (IS_MT7615(pAd) || IS_MT7915(pAd) || IS_MT7986(pAd) || IS_MT7916(pAd) || IS_MT7981(pAd))
 			CmdChanSwitch.ucSwitchReason = CH_SWITCH_SCAN_BYPASS_DPD;
 
 #endif
@@ -2803,11 +2906,9 @@ INT MtCmdSetTxRxPath(struct _RTMP_ADAPTER *pAd, MT_SWITCH_CHANNEL_CFG SwChCfg)
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s: Ignore RADAR Event for Channel %d\n", __func__,
 				 CmdChanSwitch.ucCentralCh);
 		CmdChanSwitch.ucSwitchReason += CH_IGNORE_RADAR;
-	} else if (!DfsRadarChannelCheckForCMD(pAd, CmdChanSwitch.ucPrimCh, CmdChanSwitch.ucCentralCh2, SwChCfg.Bw)) {
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-			"%s: Ignore RADAR Event for Channel %d by DfsRadarChannelCheckForCMD\n", __func__, CmdChanSwitch.ucPrimCh);
-		CmdChanSwitch.ucSwitchReason += CH_IGNORE_RADAR;
-	}
+		pAd->ignore_emu_radar[SwChCfg.BandIdx] = TRUE;
+	} else
+		pAd->ignore_emu_radar[SwChCfg.BandIdx] = FALSE;
 #endif /* SCAN_RADAR_COEX_SUPPORT */
 
 	MtAndesAppendCmdMsg(msg, (char *)&CmdChanSwitch, sizeof(CmdChanSwitch));
@@ -3058,6 +3159,45 @@ error:
 			 "%s:(ret = %d)\n", __func__, Ret);
 	return Ret;
 }
+#ifdef ANT_CONFIG_3T2T1T_SUPPORT
+/*****************************************
+ *	ExT_CID = 0x5b
+ *****************************************/
+INT32 MtCmdRFSetWf(RTMP_ADAPTER *pAd, UINT8 wf_id, UINT8 is_standby)
+{
+	struct cmd_msg *msg;
+	struct CMD_RF_DYNAMIC_CTRL RfDynamicCtrl;
+	INT32 ret = NDIS_STATUS_SUCCESS;
+	struct _CMD_ATTRIBUTE attr = {0};
+
+	msg = MtAndesAllocCmdMsg(pAd, sizeof(struct CMD_RF_DYNAMIC_CTRL));
+	if (!msg) {
+		ret = NDIS_STATUS_RESOURCES;
+		goto error;
+	}
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_3T_2T_1T_FEATURE_CTRL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	MtAndesInitCmdMsg(msg, attr);
+
+	os_zero_mem(&RfDynamicCtrl, sizeof(RfDynamicCtrl));
+	RfDynamicCtrl.u1AntIdx = wf_id;
+	RfDynamicCtrl.u1ModeIdx = is_standby;
+	MtAndesAppendCmdMsg(msg, (char *)&RfDynamicCtrl, sizeof(RfDynamicCtrl));
+	ret = chip_cmd_tx(pAd, msg);
+error:
+	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			 "%s:(ret = %d)\n", __func__, ret);
+	return ret;
+}
+#endif
+
+
 
 /*****************************************
  *	ExT_CID = 0x10
@@ -5608,7 +5748,8 @@ INT32 CmdMecCtrl(
 			prMecCtrlCmd->mecCmdPara.mec_amsdu_algo_thr.u1BaNum,
 			prMecCtrlCmd->mecCmdPara.mec_amsdu_algo_thr.u1AmsduNum,
 			prMecCtrlCmd->mecCmdPara.mec_amsdu_algo_thr.u2AmsduRateThr);
-
+	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "u2WlanIdx=0x%02X\n",
+		prMecCtrlCmd->mecCmdPara.mec_set_amsdu_max_size_t.u2WlanIdx);
 	for (u1Idx = 0 ; u1Idx < sizeof(CMD_MEC_CTRL_CMD_T) ; u1Idx++) {
 		MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "[%u]: %u\n", u1Idx, pu1Ptr[u1Idx]);
 	}
@@ -8106,6 +8247,52 @@ error:
 	return ret;
 }
 
+
+#if defined(RED_SUPPORT) && defined(VOW_SUPPORT)
+INT32 MtCmdSetMcliScheduleEnable(RTMP_ADAPTER *pAd, UINT8 McuDest, BOOLEAN enable)
+{
+	struct cmd_msg *msg;
+	INT32 Ret = 0;
+	UINT32 Val;
+#if (NEW_MCU_INIT_CMD_API)
+	struct _CMD_ATTRIBUTE attr = {0};
+#endif /* NEW_MCU_INIT_CMD_API */
+
+	msg = MtAndesAllocCmdMsg(pAd, sizeof(UINT32));
+
+	if (!msg) {
+		Ret = NDIS_STATUS_RESOURCES;
+		goto error;
+	}
+
+#if (NEW_MCU_INIT_CMD_API)
+	SET_CMD_ATTR_MCU_DEST(attr, McuDest);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_MCLI_ENABLE);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+
+	MtAndesInitCmdMsg(msg, attr);
+#else
+	MtAndesInitCmdMsg(msg, McuDest, EXT_CID, CMD_SET, EXT_CMD_ID_MCLI_ENABLE,
+		FALSE, 0, FALSE, FALSE, 0, NULL, NULL);
+#endif /* NEW_MCU_INIT_CMD_API */
+
+	Val = cpu2le32(enable);
+	MtAndesAppendCmdMsg(msg, (char *)&Val, sizeof(Val));
+
+	Ret = chip_cmd_tx(pAd, msg);
+
+	MTWF_DBG(NULL, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s:(ret = %d)\n", __func__, Ret);
+	return Ret;
+error:
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "(ret = %d)\n", Ret);
+	return Ret;
+}
+#endif
 
 #ifdef DSCP_PRI_SUPPORT
 /*    ExT_CID = 0xB4  in MT7915*/
@@ -12029,6 +12216,9 @@ error:
 	return ret;
 }
 
+#endif /*ZERO_LOSS_CSA_SUPPORT*/
+
+#if defined(ZERO_LOSS_CSA_SUPPORT) || (defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX))
 INT32 MtCmdSetMacTxEnable(RTMP_ADAPTER *pAd, UINT8 enable)
 {
 	struct cmd_msg *msg;
@@ -12063,7 +12253,8 @@ error:
 				"(ret = %d)\n", ret);
 	return ret;
 }
-#endif /*ZERO_LOSS_CSA_SUPPORT*/
+#endif /*ZERO_LOSS_CSA_SUPPORT && CONFIG_6G_SUPPORT */
+		/*&& CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 static VOID CmdWifiHifCtrlRsp(struct cmd_msg *msg, char *Data, UINT16 Len)
 {
@@ -16523,6 +16714,159 @@ error:
 	return Ret;
 }
 
+INT SetHeraOptionFastRateDown_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	INT32 Ret = TRUE;
+	struct cmd_msg *msg = NULL;
+	struct _CMD_ATTRIBUTE attr = {0};
+	UINT32 u4cmd = HERA_OPTION_CMD;
+	UINT8 u1Value;
+	CMD_RA_OPTION_CTRL_T param = {0};
+
+	if (!arg) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Null Parameters\n");
+		return FALSE;
+	}
+
+	u1Value = os_str_tol(arg, 0, 10);
+
+	param.u1Value = u1Value;
+	param.u1OptionType = RA_CTRL_OPTION_FAST_RATE_DOWN;
+
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "FastRateDown Enable=%d\n", u1Value);
+
+	/* Allocate memory for msg */
+	msg = AndesAllocCmdMsg(pAd, sizeof(u4cmd) + sizeof(param));
+	if (!msg) {
+		Ret = 0;
+		goto error;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_HE_RA_CTRL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET_AND_RETRY);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	AndesInitCmdMsg(msg, attr);
+#ifdef RT_BIG_ENDIAN
+		u4cmd = cpu2le32(u4cmd);
+#endif
+	AndesAppendCmdMsg(msg, (char *)&u4cmd, sizeof(u4cmd));
+	AndesAppendCmdMsg(msg, (char *)&param, sizeof(param));
+	chip_cmd_tx(pAd, msg);
+
+error:
+	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			"%s:(Ret = %d\n", __func__, Ret);
+
+	return Ret;
+}
+
+INT SetHeraOptionUBACtrl_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	INT32 Ret = TRUE;
+	struct cmd_msg *msg = NULL;
+	struct _CMD_ATTRIBUTE attr = {0};
+	UINT32 u4cmd = HERA_OPTION_CMD;
+	UINT8 u1Value;
+	CMD_RA_OPTION_CTRL_T param = {0};
+
+	if (!arg) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Null Parameters\n");
+		return FALSE;
+	}
+
+	u1Value = os_str_tol(arg, 0, 10);
+
+	param.u1Value = u1Value;
+	param.u1OptionType = RA_CTRL_OPTION_UBA_CTRL;
+
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "UBACtrl Enable=%d\n", u1Value);
+
+	/* Allocate memory for msg */
+	msg = AndesAllocCmdMsg(pAd, sizeof(u4cmd) + sizeof(param));
+	if (!msg) {
+		Ret = 0;
+		goto error;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_HE_RA_CTRL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET_AND_RETRY);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	AndesInitCmdMsg(msg, attr);
+#ifdef RT_BIG_ENDIAN
+		u4cmd = cpu2le32(u4cmd);
+#endif
+	AndesAppendCmdMsg(msg, (char *)&u4cmd, sizeof(u4cmd));
+	AndesAppendCmdMsg(msg, (char *)&param, sizeof(param));
+	chip_cmd_tx(pAd, msg);
+
+error:
+	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			"%s:(Ret = %d\n", __func__, Ret);
+
+	return Ret;
+}
+
+INT SetHeraOptionHRC_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	INT32 Ret = TRUE;
+	struct cmd_msg *msg = NULL;
+	struct _CMD_ATTRIBUTE attr = {0};
+	UINT32 u4cmd = HERA_OPTION_CMD;
+	UINT8 u1Value;
+	CMD_RA_OPTION_CTRL_T param = {0};
+
+	if (!arg) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Null Parameters\n");
+		return FALSE;
+	}
+
+	u1Value = os_str_tol(arg, 0, 10);
+
+	param.u1Value = u1Value;
+	param.u1OptionType = RA_CTRL_OPTION_HRC_EN;
+
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "HRC Enable=%d\n", u1Value);
+
+	/* Allocate memory for msg */
+	msg = AndesAllocCmdMsg(pAd, sizeof(u4cmd) + sizeof(param));
+	if (!msg) {
+		Ret = 0;
+		goto error;
+	}
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_HE_RA_CTRL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_SET_AND_RETRY);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	AndesInitCmdMsg(msg, attr);
+#ifdef RT_BIG_ENDIAN
+		u4cmd = cpu2le32(u4cmd);
+#endif
+	AndesAppendCmdMsg(msg, (char *)&u4cmd, sizeof(u4cmd));
+	AndesAppendCmdMsg(msg, (char *)&param, sizeof(param));
+	chip_cmd_tx(pAd, msg);
+
+error:
+	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+			"%s:(Ret = %d\n", __func__, Ret);
+
+	return Ret;
+}
+
 INT32 MtCmdSetVht1024QamSupport(
 	PRTMP_ADAPTER pAd)
 {
@@ -16978,14 +17322,13 @@ static VOID mt_cmd_get_rdd_ipi_scan_rsp(struct cmd_msg *msg, char *Data, UINT16 
 
 INT32 mt_cmd_get_rdd_ipi_scan(
 	PRTMP_ADAPTER pAd,
+	P_EXT_CMD_RDD_IPI_SCAN_T p_cmd_rdd_ipi_scan,
 	P_EXT_EVENT_RDD_IPI_SCAN p_rdd_ipi_hist_rlt)
 {
 	struct cmd_msg *msg;
-	EXT_CMD_RDD_IPI_SCAN_T rdd_ipi_scan_cmd;
 
 	struct _CMD_ATTRIBUTE attr = {0};
 	INT32 ret = 0;
-	os_zero_mem(&rdd_ipi_scan_cmd, sizeof(EXT_CMD_RDD_IPI_SCAN_T));
 	msg = MtAndesAllocCmdMsg(pAd, sizeof(EXT_CMD_RDD_IPI_SCAN_T));
 
 	if (!msg) {
@@ -17003,9 +17346,7 @@ INT32 mt_cmd_get_rdd_ipi_scan(
 	SET_CMD_ATTR_RSP_HANDLER(attr, mt_cmd_get_rdd_ipi_scan_rsp);
 	MtAndesInitCmdMsg(msg, attr);
 
-	rdd_ipi_scan_cmd.u1mode = 0;
-
-	MtAndesAppendCmdMsg(msg, (char *)&rdd_ipi_scan_cmd, sizeof(EXT_CMD_RDD_IPI_SCAN_T));
+	MtAndesAppendCmdMsg(msg, (char *)p_cmd_rdd_ipi_scan, sizeof(EXT_CMD_RDD_IPI_SCAN_T));
 	ret = chip_cmd_tx(pAd, msg);
 error:
 	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
@@ -17857,4 +18198,38 @@ error:
 #endif
 
 #endif
+
+INT32 MtCmdLpiCtrl(struct _RTMP_ADAPTER *pAd, UINT8 LpiEnable, UINT8 PSDLimit)
+{
+	struct cmd_msg *msg;
+	INT32 ret = 0;
+	struct EXT_CMD_ID_LPI_CTRL_T ExtLpiCtrl;
+	struct _CMD_ATTRIBUTE attr = {0};
+
+	msg = MtAndesAllocCmdMsg(pAd, sizeof(struct EXT_CMD_ID_LPI_CTRL_T));
+	if (!msg) {
+		ret = NDIS_STATUS_RESOURCES;
+		return ret;
+	}
+	os_zero_mem(&ExtLpiCtrl, sizeof(struct EXT_CMD_ID_LPI_CTRL_T));
+
+	SET_CMD_ATTR_MCU_DEST(attr, HOST2N9);
+	SET_CMD_ATTR_TYPE(attr, EXT_CID);
+	SET_CMD_ATTR_EXT_TYPE(attr, EXT_CMD_ID_LPI_CTRL);
+	SET_CMD_ATTR_CTRL_FLAGS(attr, INIT_CMD_QUERY);
+	SET_CMD_ATTR_RSP_WAIT_MS_TIME(attr, 0);
+	SET_CMD_ATTR_RSP_EXPECT_SIZE(attr, 0);
+	SET_CMD_ATTR_RSP_WB_BUF_IN_CALBK(attr, NULL);
+	SET_CMD_ATTR_RSP_HANDLER(attr, NULL);
+	MtAndesInitCmdMsg(msg, attr);
+	ExtLpiCtrl.ucLpiEnable = LpiEnable;
+	ExtLpiCtrl.ucPSDLimit = PSDLimit;
+	MtAndesAppendCmdMsg(msg, (char *)&ExtLpiCtrl, sizeof(struct EXT_CMD_ID_LPI_CTRL_T));
+
+	ret = chip_cmd_tx(pAd, msg);
+	MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+			 "LpiEnable: %d, PSDLimit: %d\n", LpiEnable, PSDLimit);
+
+	return ret;
+}
 

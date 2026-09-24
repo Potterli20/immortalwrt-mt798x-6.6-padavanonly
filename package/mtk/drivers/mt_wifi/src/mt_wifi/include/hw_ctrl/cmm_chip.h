@@ -1177,6 +1177,7 @@ BOOLEAN chip_eeprom_read16(struct _RTMP_ADAPTER *pAd, UINT32 offset, USHORT *val
 BOOLEAN chip_eeprom_read_with_range(struct _RTMP_ADAPTER *pAd, UINT32 start, UINT32 length, UCHAR *pbuf);
 
 
+
 #define RT28xx_EEPROM_READ16(_pAd, _offset, _val)   chip_eeprom_read16(_pAd, _offset, &(_val))
 
 #define RT28xx_EEPROM_WRITE16(_pAd, _offset, _val)		\

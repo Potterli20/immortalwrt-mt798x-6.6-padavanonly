@@ -40,14 +40,6 @@
 #define WOCPU_WO2_MCU_RESET_ADDR        0x15394050
 #define WOCPU_WO_MCU_RESET_MASK         0x20
 
-/*PCIE reg for bus set and reset*/
-#define VLPCFG_DEVICE_NODE "mediatek,mt6990-vlpcfg"
-#define PERICFG_AO_DEVICE_NODE "mediatek,mt6990-pericfg_ao"
-
-#define VLPCFG_INT_MASK 0x118 //rg_pcie_bridge_irq_dis
-#define PERICFG_AO_INT_MASK_PCIE_0 0xB04
-#define PERICFG_AO_INT_MASK_PCIE_1 0xB08
-
 /*
 *
 */
@@ -372,6 +364,13 @@ void
 warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 			int idx, bool msi_enable, u32 hif_type)
 {
+#define VLPCFG_DEVICE_NODE "mediatek,mt6990-vlpcfg"
+#define PERICFG_AO_DEVICE_NODE "mediatek,mt6990-pericfg_ao"
+
+#define VLPCFG_INT_MASK 0x118
+#define PERICFG_AO_INT_MASK_PCIE_0 0xB04
+#define PERICFG_AO_INT_MASK_PCIE_1 0xB08
+
 	struct device_node *node;
 	struct node_dts {
 		unsigned long base_addr;
@@ -450,58 +449,6 @@ warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 	warp_io_write32(wed, WED_PCIE_INT_CTRL, value);
 
 	return;
-}
-
-/*
-* Reset PCIE reg in relative to warp_bus_set_hw()
-*/
-void
-warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,
-                        int idx)
-{
-        struct device_node *node;
-        struct node_dts {
-                unsigned long base_addr;
-        };
-        struct node_dts node_cfg;
-        u32 value = 0;
-
-        if (idx == WARP_WED3 || idx == WARP_WED2) {
-                node = of_find_compatible_node(NULL, NULL, PERICFG_AO_DEVICE_NODE);
-        }
-        else {
-                node = of_find_compatible_node(NULL, NULL, VLPCFG_DEVICE_NODE);
-        }
-
-        if (node == NULL)
-                warp_dbg(WARP_DBG_ERR, "%s(): get device_node faill\n", __func__);
-
-        node_cfg.base_addr = (unsigned long)of_iomap(node, 0);
-
-        warp_dbg(WARP_DBG_ERR, "%s(): node_cfg.base_addr= 0x%x\n", __func__, node_cfg.base_addr);
-
-        switch (idx) {
-        case WARP_WED1:
-                warp_io_read32(&node_cfg, VLPCFG_INT_MASK, &value);
-		value &= ~(1 << 11);
-		warp_io_write32(&node_cfg, VLPCFG_INT_MASK, value);
-                break;
-
-        case WARP_WED2:
-                warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, &value);
-		value &= ~(1 << 3);
-		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_0, value);
-                break;
-
-        case WARP_WED3:
-                warp_io_read32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, &value);
-		value &= ~(1 << 3);
-		warp_io_write32(&node_cfg, PERICFG_AO_INT_MASK_PCIE_1, value);
-                break;
-
-	default:
-		break;
-        }
 }
 
 /*

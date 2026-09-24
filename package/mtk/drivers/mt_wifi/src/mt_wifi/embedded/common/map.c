@@ -179,7 +179,7 @@ BOOLEAN map_check_cap_ie(
 {
 	BOOLEAN Ret = FALSE;
 	UCHAR *p, *p_old = NULL;
-	UINT16 len = 0, ie_len = 0;
+	UINT32 len = 0, ie_len = 0;
 #ifdef MAP_R2
 	*profile = 0;
 	*vid = INVALID_VLAN_ID;
@@ -190,7 +190,7 @@ BOOLEAN map_check_cap_ie(
 			p_old = p;
 			len = eid->Len - 4;
 			Ret = TRUE;
-			while (p - p_old < len) {
+			while ((p - p_old < len) && (len > 2)) {
 				ie_len = *(p + 1);
 				switch (*p) {
 				case MAP_EXT_ATTRIBUTE:
@@ -389,6 +389,7 @@ VOID MAP_Init(
 	pAd->ApCfg.SteerPolicy.cu_thr = 0;
 	pAd->ApCfg.SteerPolicy.rcpi_thr = 0;
 	NdisZeroMemory(wdev->MAPCfg.vendor_ie_buf, VENDOR_SPECIFIC_LEN);
+	wdev->MAPCfg.vendor_ie_len = 0;
 	NdisZeroMemory(&(wdev->MAPCfg.scan_bh_ssids), sizeof(struct scan_BH_ssids));
 #ifdef MAP_R2
 	/*// TODO: Raghav: enable per client Tx/Rx airtime calculation*/

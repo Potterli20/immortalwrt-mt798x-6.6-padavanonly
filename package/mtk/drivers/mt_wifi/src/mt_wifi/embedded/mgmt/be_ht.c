@@ -299,8 +299,16 @@ INT32 wlan_operate_set_ht_bw(struct wifi_dev *wdev, UCHAR ht_bw, UCHAR ext_cha)
 	UCHAR cap_ht_bw = wlan_config_get_ht_bw(wdev);
 	INT32 ret = WLAN_OPER_OK;
 	struct freq_cfg cfg;
+	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)wdev->sys_handle;
 
-	if ((ht_bw == op->ht_oper.ht_bw) && (ext_cha == op->ht_oper.ext_cha))
+	/* for 5G band no need to check ext_cha info */
+	if ((ht_bw == op->ht_oper.ht_bw) &&
+		((ext_cha == op->ht_oper.ext_cha) || (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G)))
+		return ret;
+
+	if (pAd && pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitSupport &&
+		(wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) &&
+		pAd->CommonCfg.DfsParameter.ZwAdjBwFlag)
 		return ret;
 
 	if (ht_bw > cap_ht_bw) {
@@ -505,6 +513,12 @@ UCHAR wlan_operate_get_ht_bw(struct wifi_dev *wdev)
 {
 	struct wlan_operate *op = (struct wlan_operate *) wdev->wpf_op;
 
+	if (!op) {
+		MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			" op NULL\n");
+		return 0;
+	}
+
 	return op->ht_oper.ht_bw;
 }
 
@@ -512,6 +526,11 @@ UCHAR wlan_operate_get_ht_stbc(struct wifi_dev *wdev)
 {
 	struct wlan_operate *op = (struct wlan_operate *) wdev->wpf_op;
 
+	if (!op) {
+		MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			" op NULL\n");
+		return 0;
+	}
 	return op->ht_oper.ht_stbc;
 }
 
@@ -519,6 +538,11 @@ UCHAR wlan_operate_get_ht_ldpc(struct wifi_dev *wdev)
 {
 	struct wlan_operate *op = (struct wlan_operate *) wdev->wpf_op;
 
+	if (!op) {
+		MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			" op NULL\n");
+		return 0;
+	}
 	return op->ht_oper.ht_ldpc;
 }
 
@@ -526,6 +550,11 @@ UCHAR wlan_operate_get_ext_cha(struct wifi_dev *wdev)
 {
 	struct wlan_operate *op = (struct wlan_operate *) wdev->wpf_op;
 
+	if (!op) {
+		MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			" op NULL\n");
+		return 0;
+	}
 	return op->ht_oper.ext_cha;
 }
 

@@ -782,6 +782,8 @@ typedef enum _ERR_RECOVERY_STAGE {
 typedef struct _ERR_RECOVERY_CTRL_T {
 	ERR_RECOVERY_STAGE errRecovStage;
 	UINT32 status;
+	UINT32 hostSerStep;
+	UINT32 mcuToHostState;
 #ifdef WHNAT_SUPPORT
 	INT stop_rx_dma;
 #endif

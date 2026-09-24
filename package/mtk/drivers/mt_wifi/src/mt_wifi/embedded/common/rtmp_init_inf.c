@@ -166,7 +166,13 @@ INT rtmp_cfg_init(RTMP_ADAPTER *pAd, RTMP_STRING *pHostName)
 #endif
 	/*aid bitmap needs to consider the amounts of the non-transmitted bss of 11V mbss*/
 #ifdef DOT11V_MBSSID_SUPPORT
-	aid_order_reserved += bssid_num_to_max_indicator(pAd->ApCfg.BssidNum);
+	if (IS_BSSID_11V_ENABLED(pAd, DBDC_BAND0)
+#ifdef DBDC_MODE
+		|| IS_BSSID_11V_ENABLED(pAd, DBDC_BAND1)
+#endif /* DBDC_MODE */
+		) {
+		aid_order_reserved += bssid_num_to_max_indicator(pAd->ApCfg.BssidNum);
+	}
 #endif
 	entrytb_aid_bitmap_reserve(&pAd->MacTab.aid_info, aid_order_reserved);
 
@@ -472,6 +478,9 @@ int mt_wifi_init(VOID *pAdSrc, RTMP_STRING *pDefaultMac, RTMP_STRING *pHostName)
 	PCI_HIF_T *pci_hif = NULL;
 #endif
 #endif
+#ifdef MT7916_CUSTOMER_DEFINED_GPIO_CONFIG
+	UINT32 gpio_val;
+#endif /*MT7916_CUSTOMER_DEFINED_GPIO_CONFIG*/
 
 	if (!pAd)
 		return FALSE;
@@ -496,6 +505,17 @@ int mt_wifi_init(VOID *pAdSrc, RTMP_STRING *pDefaultMac, RTMP_STRING *pHostName)
 	pChCtrl_hwband1 = hc_get_channel_ctrl(pAd->hdev_ctrl, 1);
 
 	cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	if (IS_MT7916(pAd)) {
+		uint32_t macVal = 0;
+		RTMP_IO_READ32(pAd->hdev_ctrl, 0x70002600, &macVal);
+		macVal |= 0x00000001;
+		RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70002600, macVal);
+		mdelay(55);
+		macVal &= 0xfffffffe;
+		RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70002600, macVal);
+		mdelay(55);
+	}
 
 #ifdef CONFIG_FWOWN_SUPPORT
 	DriverOwn(pAd);
@@ -558,6 +578,24 @@ int mt_wifi_init(VOID *pAdSrc, RTMP_STRING *pDefaultMac, RTMP_STRING *pHostName)
 #ifdef MAC_INIT_OFFLOAD
 	AsicSetMacTxRx(pAd, ASIC_MAC_TXRX, TRUE);
 #endif /*MAC_INIT_OFFLOAD*/
+#ifdef MT7916_CUSTOMER_DEFINED_GPIO_CONFIG
+	// Set Pin Mux to GPIO
+	gpio_val = 0;
+	RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005050, &gpio_val);
+	gpio_val |= 0x05000000;
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70005050, gpio_val);
+
+	gpio_val = 0;
+	RTMP_IO_READ32(pAd->hdev_ctrl, 0x70005054, &gpio_val);
+	gpio_val |= 0x00000555;
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70005054, gpio_val);
+
+	/*Set GPIO direction as output*/
+	gpio_val = 0;
+	gpio_val = BIT(6) | BIT(8) | BIT(9) | BIT(10);
+	RTMP_IO_WRITE32(pAd->hdev_ctrl, 0x70004034, gpio_val);
+#endif /*MT7916_CUSTOMER_DEFINED_GPIO_CONFIG*/
+
 #ifdef WIFI_MODULE_DVT
 	mdvt_init(pAd);
 #endif
@@ -736,7 +774,8 @@ VOID RTMPDrvOpen(VOID *pAdSrc)
 #endif /* DOT11R_FT_SUPPORT */
 #ifdef MT_MAC
 #ifdef RT_CFG80211_SUPPORT
-	CFG80211_InitTxSCallBack(pAd);
+	if (!pAd->CommonCfg.bcfg80211Disabled)
+		CFG80211_InitTxSCallBack(pAd);
 #endif /* RT_CFG80211_SUPPORT */
 #endif /* MT_MAC */
 #endif /* CONFIG_STA_SUPPORT */
@@ -847,6 +886,12 @@ VOID RTMPDrvOpen(VOID *pAdSrc)
 	}
 
 	cp_support_is_enabled(pAd);
+
+#if defined(RED_SUPPORT) && defined(VOW_SUPPORT)
+	if (pAd->vow_cfg.mcli_schedule_en)
+		vow_mcli_schedule_enable(pAd, TRUE);
+#endif
+
 #ifdef GN_MIXMODE_SUPPORT
 	if (pAd->OpMode == OPMODE_AP)
 		gn_mixmode_is_enable(pAd);
@@ -910,6 +955,12 @@ VOID RTMPDrvClose(VOID *pAdSrc, VOID *net_dev)
 
 #endif /* CREDENTIAL_STORE */
 #endif /* CONFIG_STA_SUPPORT */
+
+#if defined(RED_SUPPORT) && defined(VOW_SUPPORT)
+	if (pAd->vow_cfg.mcli_schedule_en)
+		vow_mcli_schedule_enable(pAd, FALSE);
+#endif
+
 #ifdef CONFIG_AP_SUPPORT
 #ifdef BG_FT_SUPPORT
 	BG_FTPH_Remove();
@@ -1000,13 +1051,14 @@ VOID RTMPDrvClose(VOID *pAdSrc, VOID *net_dev)
 #endif /* CUSTOMER_VENDOR_IE_SUPPORT */
 
 #ifdef EXT_BUILD_CHANNEL_LIST
+	if (!pAd->CommonCfg.bExtChListDisabled) {
+		if (pAd->CommonCfg.pChDesp != NULL)
+			os_free_mem(pAd->CommonCfg.pChDesp);
 
-	if (pAd->CommonCfg.pChDesp != NULL)
-		os_free_mem(pAd->CommonCfg.pChDesp);
-
-	pAd->CommonCfg.pChDesp = NULL;
-	pAd->CommonCfg.DfsType = MAX_RD_REGION;
-	pAd->CommonCfg.bCountryFlag = 0;
+		pAd->CommonCfg.pChDesp = NULL;
+		pAd->CommonCfg.DfsType = MAX_RD_REGION;
+		pAd->CommonCfg.bCountryFlag = 0;
+	}
 #endif /* EXT_BUILD_CHANNEL_LIST */
 	pAd->CommonCfg.bCountryFlag = FALSE;
 
@@ -1050,7 +1102,8 @@ VOID RTMPDrvClose(VOID *pAdSrc, VOID *net_dev)
 		MATEngineExit(pAd);
 #endif /* MAT_SUPPORT */
 #ifdef CLIENT_WDS
-		CliWds_ProxyTabDestory(pAd);
+		if (!pAd->CommonCfg.bClientWdsDisabled)
+			CliWds_ProxyTabDestory(pAd);
 #endif /* CLIENT_WDS */
 		/* Shutdown Access Point function, release all related resources */
 		APShutdown(pAd);

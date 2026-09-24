@@ -1007,9 +1007,10 @@ VOID RTMPInsertRepeaterEntry(
 							pAd->ApCfg.MACRepeaterOuiMode,
 							pAddr,
 							pReptCliEntry->CurrentAddress);
-	if (Ret == FALSE)
+	if (Ret == FALSE) {
+		NdisReleaseSpinLock(&pAd->ApCfg.ReptCliEntryLock);
 		return;
-
+	}
 	pReptCliEntry->CliEnable = TRUE;
 	pReptCliEntry->CliConnectState = REPT_ENTRY_CONNTING;
 	pReptCliEntry->pNext = NULL;

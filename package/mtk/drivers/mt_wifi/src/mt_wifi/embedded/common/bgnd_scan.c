@@ -157,7 +157,7 @@ VOID BuildBgndScanChList(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	band_idx = HcGetBandByWdev(wdev);
 	pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, band_idx);
 
-	is_aband = ((WMODE_CAP_5G(wdev->PhyMode)) ? TRUE : FALSE);
+	is_aband = ((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G) ? FALSE : TRUE);
 
 	/* Get BW of wdev */
 	cfg_ht_bw = wlan_config_get_ht_bw(wdev);
@@ -915,7 +915,7 @@ VOID BackgroundChannelSwitchAnnouncementAction(
 
 NDIS_STATUS set_dfs_dedicated_rx_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg)
 {
-	NDIS_STATUS status = NDIS_STATUS_SUCCESS;
+	NDIS_STATUS status = TRUE;
 	INT32 recv = 0;
 	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
 	struct _RTMP_CHIP_OP *ops = hc_get_chip_ops(pAd->hdev_ctrl);
@@ -931,7 +931,7 @@ NDIS_STATUS set_dfs_dedicated_rx_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg
 	if (wdev == NULL) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
 		"wdev is Null\n");
-		return NDIS_STATUS_FAILURE;
+		return FALSE;
 	}
 
 	ch_band = wlan_config_get_ch_band(wdev);
@@ -958,7 +958,7 @@ NDIS_STATUS set_dfs_dedicated_rx_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg
 				MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_WARN,
 					"disable dedicated rx\n");
 
-				return NDIS_STATUS_SUCCESS;
+				return TRUE;
        }
 
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_INFO,
@@ -1041,7 +1041,7 @@ NDIS_STATUS set_dfs_dedicated_rx_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg
 
 		} else {
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "Arg is Null\n");
-			status = NDIS_STATUS_FAILURE;
+			status = FALSE;
 		}
 
 		return status;
@@ -1049,7 +1049,7 @@ NDIS_STATUS set_dfs_dedicated_rx_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg
 
 NDIS_STATUS set_dedicated_rx_hist_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg)
 {
-	NDIS_STATUS status = NDIS_STATUS_SUCCESS;
+	NDIS_STATUS status = TRUE;
 	UCHAR band_idx = 0;
 	INT32 recv = 0;
 	UINT32 thres = 0;
@@ -1066,7 +1066,7 @@ NDIS_STATUS set_dedicated_rx_hist_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * ar
 
 	if (wdev == NULL) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "wdev is Null\n");
-		return NDIS_STATUS_FAILURE;
+		return FALSE;
 	}
 
 	band_idx = HcGetBandByWdev(wdev);
@@ -1101,7 +1101,7 @@ NDIS_STATUS set_dedicated_rx_hist_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * ar
 
 		} else {
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "Arg is Null\n");
-			status = NDIS_STATUS_FAILURE;
+			status = FALSE;
 		}
 
 		return status;
@@ -1172,7 +1172,7 @@ NDIS_STATUS set_ipi_scan_ctrl_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg)
 
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_WARN,
 			"%s: Channel %d Bw %d\n", __func__, ch, bw);
-		rtmp_set_channel(pAd, tgt_wdev, ch);
+		wlan_operate_set_prim_ch(tgt_wdev, ch);
 	} else {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
 			"%s: Arg is Null\n", __func__);
@@ -1243,6 +1243,12 @@ NDIS_STATUS set_ipi_scan_hist_proc(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg)
 
 		/* clear histogram CR */
 		cmd_rdd_ipi_scan.u1mode = 1;
+		cmd_rdd_ipi_scan.u1Band = band_idx;
+#ifdef IPI_SCAN_WITH_PD_OFF
+		cmd_rdd_ipi_scan.u1pdSetting = 0;
+#else
+		cmd_rdd_ipi_scan.u1pdSetting = 1;
+#endif
 		status = mt_cmd_set_rdd_ipi_scan(pAd, &cmd_rdd_ipi_scan);
 
 		if (status == NDIS_STATUS_SUCCESS) {
@@ -1299,9 +1305,14 @@ VOID dedicated_rx_hist_scan_timeout_action(
 	if (IS_MT7986(pAd) || IS_MT7981(pAd)) {
 		UINT8 start_idx = 0;
 		UINT8 i, antena_count = 1;
+		EXT_CMD_RDD_IPI_SCAN_T cmd_rdd_ipi_scan;
 		EXT_EVENT_RDD_IPI_SCAN rdd_ipi_scan_hist;
+		os_zero_mem(&cmd_rdd_ipi_scan, sizeof(EXT_CMD_RDD_IPI_SCAN_T));
 		os_zero_mem(&rdd_ipi_scan_hist, sizeof(EXT_EVENT_RDD_IPI_SCAN));
-		mt_cmd_get_rdd_ipi_scan(pAd, &rdd_ipi_scan_hist);
+		cmd_rdd_ipi_scan.u1mode = 0;
+		cmd_rdd_ipi_scan.u1Band = pAd->BgndScanCtrl.band_idx;
+		cmd_rdd_ipi_scan.u1pdSetting = 1;
+		mt_cmd_get_rdd_ipi_scan(pAd, &cmd_rdd_ipi_scan, &rdd_ipi_scan_hist);
 		if (pAd->BgndScanCtrl.band_idx == 1)
 			start_idx = 4;
 
@@ -1961,17 +1972,18 @@ VOID mt_off_ch_scan_dedicated(
 
 #endif
 
-#ifdef ZWDFS_AX7800
+#if defined(ZWDFS_AX7800) || defined(ZWDFS_AX5400)
+	if (pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitDefault) {
 #ifdef MULTI_INF_SUPPORT
-	struct wifi_dev *temp_wdev;
-	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
-	PRTMP_ADAPTER pOpposAd = NULL;
-	struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
-	UINT opposBandIdx = !multi_inf_get_idx(pAd);
+		struct wifi_dev *temp_wdev;
+		POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+		PRTMP_ADAPTER pOpposAd = NULL;
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+		UINT opposBandIdx = !multi_inf_get_idx(pAd);
 
-	if (WMODE_CAP_5G(wdev->PhyMode)) {
-		pOpposAd = (PRTMP_ADAPTER)adapt_list[opposBandIdx];
-		pAd = pOpposAd;
+		if (WMODE_CAP_5G(wdev->PhyMode)) {
+			pOpposAd = (PRTMP_ADAPTER)adapt_list[opposBandIdx];
+			pAd = pOpposAd;
 			if (pOpposAd != NULL) {
 				MTWF_PRINT("%s Now: %s, Oppos: %s\n",
 				 __func__, pAd->net_dev->name, pOpposAd->net_dev->name);
@@ -1979,6 +1991,7 @@ VOID mt_off_ch_scan_dedicated(
 				MTWF_PRINT("%s Now: %s\n", __func__, pAd->net_dev->name);
 		}
 #endif
+	}
 #endif
 	/* Initialize */
 	os_zero_mem(&offch_cmd_cfg, sizeof(EXT_CMD_OFF_CH_SCAN_CTRL_T));

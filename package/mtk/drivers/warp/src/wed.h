@@ -27,8 +27,10 @@
 /*buffer mgmet initial token cnt*/
 /*max cr4 support token id, mt7622 can support up to 8192*/
 
+#ifdef WED_DYNAMIC_TXBM_SUPPORT
 #define WED_DYNBM_LOW_GRP			2
 #define WED_DYNBM_HIGH_GRP			(2*WED_DYNBM_LOW_GRP-1)
+#endif /*WED_DYNAMIC_TXBM_SUPPORT*/
 
 #define WED_PKT_NUM_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.pkt_num)
 #define WED_TOKEN_NUM_GET(_wed) (_wed->res_ctrl.tx_ctrl.res.token_num)

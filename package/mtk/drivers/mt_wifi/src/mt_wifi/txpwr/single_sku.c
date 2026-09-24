@@ -324,30 +324,43 @@ error:
 NDIS_STATUS MtReadPwrLimitTable(RTMP_ADAPTER *pAd, PCHAR *pi1Buffer, UINT8 u1Type)
 {
 	UINT8 sku_tbl_idx = 0;
+
+	/* Add Sku_21 and Backoff_21 for AFC standard power use only!!! */
 	PUINT8 pcptrSkuTbl[TABLE_SIZE] = {Sku_01, Sku_02, Sku_03, Sku_04, Sku_05,
 		Sku_06, Sku_07, Sku_08, Sku_09, Sku_10,
 		Sku_11, Sku_12, Sku_13, Sku_14, Sku_15,
-		Sku_16, Sku_17, Sku_18, Sku_19, Sku_20};
+		Sku_16, Sku_17, Sku_18, Sku_19, Sku_20, Sku_21};
 
 	PUINT8 pcptrBackoffTbl[TABLE_SIZE] = {Backoff_01, Backoff_02, Backoff_03, Backoff_04, Backoff_05,
 		Backoff_06, Backoff_07, Backoff_08, Backoff_09, Backoff_10,
 		Backoff_11, Backoff_12, Backoff_13, Backoff_14, Backoff_15,
-		Backoff_16, Backoff_17, Backoff_18, Backoff_19, Backoff_20};
+		Backoff_16, Backoff_17, Backoff_18, Backoff_19, Backoff_20, Backoff_21};
 
 	UINT32 Sku_sizeof[TABLE_SIZE] = {sizeof(Sku_01), sizeof(Sku_02), sizeof(Sku_03), sizeof(Sku_04), sizeof(Sku_05),
 		sizeof(Sku_06), sizeof(Sku_07), sizeof(Sku_08), sizeof(Sku_09), sizeof(Sku_10),
 		sizeof(Sku_11), sizeof(Sku_12), sizeof(Sku_13), sizeof(Sku_14), sizeof(Sku_15),
-		sizeof(Sku_16), sizeof(Sku_17), sizeof(Sku_18), sizeof(Sku_19), sizeof(Sku_20)};
+		sizeof(Sku_16), sizeof(Sku_17), sizeof(Sku_18), sizeof(Sku_19), sizeof(Sku_20), sizeof(Sku_21)};
 
 	UINT32 Backoff_sizeof[TABLE_SIZE] = {sizeof(Backoff_01), sizeof(Backoff_02), sizeof(Backoff_03), sizeof(Backoff_04), sizeof(Backoff_05),
 		sizeof(Backoff_06), sizeof(Backoff_07), sizeof(Backoff_08), sizeof(Backoff_09), sizeof(Backoff_10),
 		sizeof(Backoff_11), sizeof(Backoff_12), sizeof(Backoff_13), sizeof(Backoff_14), sizeof(Backoff_15),
-		sizeof(Backoff_16), sizeof(Backoff_17), sizeof(Backoff_18), sizeof(Backoff_19), sizeof(Backoff_20)};
+		sizeof(Backoff_16), sizeof(Backoff_17), sizeof(Backoff_18), sizeof(Backoff_19), sizeof(Backoff_20), sizeof(Backoff_21)};
 
 	/* query sku table index */
 	chip_get_sku_tbl_idx(pAd, &sku_tbl_idx);
 	if (sku_tbl_idx >= TABLE_SIZE)
 		return NDIS_STATUS_FAILURE;
+
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (pAd->CommonCfg.AfcDeviceType == AFC_STANDARD_POWER_DEVICE) {
+		MTWF_DBG(pAd, DBG_CAT_POWER, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Device is standard power\n");
+
+		sku_tbl_idx = AFC_STD_PWR_SKUTABLE_IDX;
+	}
+#endif /*CONFIG_6G_SUPPORT &&*/
+	/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 
 	MTWF_DBG(pAd, DBG_CAT_POWER, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 		KBLU " sku table idx: %d\n" KNRM, sku_tbl_idx);
@@ -1015,6 +1028,9 @@ VOID MtPwrLimitTblChProc(RTMP_ADAPTER *pAd, UINT8 u1BandIdx, UINT8 u1ChannelBand
 {
 	UINT8 u1Type;
 
+
+
+
 	for (u1Type = POWER_LIMIT_TABLE_TYPE_SKU; u1Type < POWER_LIMIT_TABLE_TYPE_NUM; u1Type++) {
 		if (pAd->fgPwrLimitRead[u1Type])
 			MtCmdPwrLimitTblUpdate(pAd, u1BandIdx, u1Type, u1ChannelBand, u1ControlChannel, u1CentralChannel);
@@ -1025,13 +1041,26 @@ NDIS_STATUS MtPwrFillLimitParam(RTMP_ADAPTER *pAd, UINT8 ChBand, UINT8 u1Control
 				UINT8 u1CentralChannel, VOID *pi1PwrLimitParam, UINT8 u1Type)
 {
 	UINT8 u1RateIdx, u1FillParamType, u1ParseParamType, u1ParamIdx, u1ParamIdx2, u1ChListIdx;
+	UINT8 u1DupOffset_BFOFF, u1DupOffset_BFON, dup_idx;
+	UINT8 u1DupOffset_OFDM_BFOFF = 4, u1DupOffset_OFDM_BFON = 8;
 	PUINT8 pu1FillParamTypeLen = NULL;
 	PUINT8 pu1RawDataIdxOffset = NULL;
 	P_CH_POWER_V1 prPwrLimitTbl, prTempPwrLimitTbl;
 	RTMP_CHIP_CAP *pChipCap = hc_get_chip_cap(pAd->hdev_ctrl);
 	UINT8 u1TypeFillNum[TABLE_PARSE_TYPE_NUM] = {pChipCap->single_sku_type_num, pChipCap->backoff_type_num};
 	UINT8 u1PwrLimitChannel;
+	INT8 i1PwrValue = 0;
 	PDL_LIST pList = NULL;
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	UINT16 u2AfcChannelIdx;
+	UINT8 u1TblTypeLengh;
+	POS_COOKIE pObj_debug = (POS_COOKIE) pAd->OS_Cookie;
+	INT32 ifIndex_debug = pObj_debug->ioctl_if;
+	struct wifi_dev *wdev_debug;
+
+	wdev_debug = &pAd->ApCfg.MBSSID[ifIndex_debug].wdev;
+#endif /*CONFIG_6G_SUPPORT &&*/
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 	/* sanity check for null pointer */
 	if (!pi1PwrLimitParam)
@@ -1062,6 +1091,16 @@ NDIS_STATUS MtPwrFillLimitParam(RTMP_ADAPTER *pAd, UINT8 ChBand, UINT8 u1Control
 		for (u1ChListIdx = 0; u1ChListIdx < prPwrLimitTbl->u1ChNum; u1ChListIdx++) {
 			/* check Channel Band and Channel */
 			if ((ChBand == prPwrLimitTbl->u1ChBand) && (u1PwrLimitChannel == prPwrLimitTbl->pu1ChList[u1ChListIdx])) {
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+				if (!is_afc_in_run_state(pAd)) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "%s::AFC is not Enabled\n", __func__);
+				} else {
+					u2AfcChannelIdx = (UINT16)afc_get_channel_index(u1PwrLimitChannel);
+					MTWF_PRINT("u1PwrLimitChannel = %d, u2AfcChannelIdx = %d\n", u1PwrLimitChannel, u2AfcChannelIdx);
+				}
+#endif /*CONFIG_6G_SUPPORT &&*/
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 				/* update sku parameter for cck, ofdm, ht20/40, vht20/40/80/160 to buffer */
 				for (u1FillParamType = 0, u1ParseParamType = 0, u1ParamIdx = 0, u1ParamIdx2 = 0; u1FillParamType < u1TypeFillNum[u1Type]; u1FillParamType++, u1ParseParamType++) {
 					/* raw data index increment for different parameter type */
@@ -1076,8 +1115,15 @@ NDIS_STATUS MtPwrFillLimitParam(RTMP_ADAPTER *pAd, UINT8 ChBand, UINT8 u1Control
 						if ((u1Type == POWER_LIMIT_TABLE_TYPE_SKU) &&
 							(u1FillParamType == pChipCap->single_sku_tbl_type_ht40) &&
 							(u1RateIdx == (pChipCap->single_sku_fill_tbl_ht40 - 1))) {
-							if (prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + (pChipCap->single_sku_parse_tbl_htvht40 - 1))
-								*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = *(prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + (pChipCap->single_sku_parse_tbl_htvht40 - 1));
+							if (prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + (pChipCap->single_sku_parse_tbl_htvht40 - 1)) {
+								i1PwrValue = *(prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + (pChipCap->single_sku_parse_tbl_htvht40 - 1));
+#ifdef VENDOR10_VLP_FEATURE
+				if (pAd->root_ap_vlp && pAd->vlp_ctrl)
+					*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = (pAd->vlp_pwr ? pAd->vlp_pwr : i1PwrValue);
+				else
+#endif
+								*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = i1PwrValue;
+							}
 							u1ParseParamType = u1ParseParamType - 2;
 						} else if ((u1Type == POWER_LIMIT_TABLE_TYPE_BACKOFF) &&
 							(u1FillParamType == pChipCap->backoff_tbl_bf_on_type_ht40) &&
@@ -1086,8 +1132,15 @@ NDIS_STATUS MtPwrFillLimitParam(RTMP_ADAPTER *pAd, UINT8 ChBand, UINT8 u1Control
 								*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = *(prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + u1RateIdx);
 							u1ParseParamType = u1ParseParamType - 4;
 						} else {
-							if (prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + u1RateIdx)
-								*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = *(prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + u1RateIdx);
+							if (prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + u1RateIdx) {
+								i1PwrValue = *(prPwrLimitTbl->pu1PwrLimit + u1ParamIdx2 + u1RateIdx);
+#ifdef VENDOR10_VLP_FEATURE
+				if (pAd->root_ap_vlp && pAd->vlp_ctrl)
+					*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = (pAd->vlp_pwr ? pAd->vlp_pwr : i1PwrValue);
+				else
+#endif
+								*((INT8 *)pi1PwrLimitParam + u1ParamIdx + u1RateIdx) = i1PwrValue;
+							}
 						}
 					}
 
@@ -1100,6 +1153,49 @@ NDIS_STATUS MtPwrFillLimitParam(RTMP_ADAPTER *pAd, UINT8 ChBand, UINT8 u1Control
 			}
 		}
 	}
+
+	if ((pAd->CommonCfg.SKU_DUP_Patch_enable) && (ChBand == 2) && (u1Type == POWER_LIMIT_TABLE_TYPE_BACKOFF)) {
+		if (u1CentralChannel == 15 || u1CentralChannel == 47 || u1CentralChannel == 79
+			|| u1CentralChannel == 111 || u1CentralChannel == 143 || u1CentralChannel == 175
+			|| u1CentralChannel == 207) {
+			/* BW160 */
+			u1DupOffset_BFOFF = 106;
+			u1DupOffset_BFON = 116;
+		} else if (u1CentralChannel == 7 || u1CentralChannel == 23 || u1CentralChannel == 39
+			|| u1CentralChannel == 55 || u1CentralChannel == 71 || u1CentralChannel == 87
+			|| u1CentralChannel == 103 || u1CentralChannel == 119 || u1CentralChannel == 135
+			|| u1CentralChannel == 151 || u1CentralChannel == 167 || u1CentralChannel == 183
+			|| u1CentralChannel == 199 || u1CentralChannel == 215) {
+			/* BW80 */
+			u1DupOffset_BFOFF = 87;
+			u1DupOffset_BFON = 97;
+		} else if (u1ControlChannel != u1CentralChannel) {
+			/* BW40 */
+			u1DupOffset_BFOFF = 68;
+			u1DupOffset_BFON = 78;
+		} else {
+			/* BW20 */
+			u1DupOffset_BFOFF = 49;
+			u1DupOffset_BFON = 59;
+		}
+		for (dup_idx = 0; dup_idx < BACKOFF_TABLE_BF_OFF_OFDM_LENGTH_V1; dup_idx++)
+			*((INT8 *)pi1PwrLimitParam + dup_idx + u1DupOffset_OFDM_BFOFF) = *((INT8 *)pi1PwrLimitParam + dup_idx + u1DupOffset_BFOFF);
+		for (dup_idx = 0; dup_idx < BACKOFF_TABLE_BF_ON_OFDM_LENGTH_V1; dup_idx++)
+			*((INT8 *)pi1PwrLimitParam + dup_idx + u1DupOffset_OFDM_BFON) = *((INT8 *)pi1PwrLimitParam + dup_idx + u1DupOffset_BFON);
+	}
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (WMODE_CAP_6G(wdev_debug->PhyMode) && (pAd->afc_ctrl.AfcStateMachine.CurrState == AFC_RUN)) {
+		if (u1Type == POWER_LIMIT_TABLE_TYPE_SKU)
+			u1TblTypeLengh = AFC_TXPWR_END_IDX;
+		else if (u1Type == POWER_LIMIT_TABLE_TYPE_BACKOFF)
+			u1TblTypeLengh = AFC_BACKOFF_END_IDX;
+		for (u1ParamIdx = 0; u1ParamIdx < u1TblTypeLengh; u1ParamIdx++) {
+			i1PwrValue = afc_pwr_calculation(pAd, u1ParamIdx, u2AfcChannelIdx, *((INT8 *)pi1PwrLimitParam + u1ParamIdx), u1Type);
+			*((INT8 *)pi1PwrLimitParam + u1ParamIdx) = i1PwrValue;
+		}
+	}
+#endif /*CONFIG_6G_SUPPORT &&*/
+	   /*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
 
 	return NDIS_STATUS_SUCCESS;
 

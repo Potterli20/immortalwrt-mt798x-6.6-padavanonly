@@ -410,10 +410,7 @@ VOID RTMPSetLEDStatus(RTMP_ADAPTER *pAd, UCHAR Status, UCHAR BandIdx)
 				}
 			}
 #else
-			if ((Status == LED_RADIO_OFF) && (wdev_same_band_cnt == 0)) { /* Interface down case */
-				AndesLedEnhanceOP(pAd, BandIdx, LED_TX_OVER_BLINK_DISABLE, LED_REVERSE_POLARITY_ENABLE,
-					BandIdx, LED_TX_DATA_ONLY, 0, 0, LED_CMD);
-			} else if ((Status == LED_LINK_DOWN) && (wdev_same_band_cnt == 1)) { /* Radio On/Off case */
+			if (wdev_same_band_cnt == 0) {
 				AndesLedEnhanceOP(pAd, BandIdx, LED_TX_OVER_BLINK_DISABLE, LED_REVERSE_POLARITY_ENABLE,
 						BandIdx, LED_TX_DATA_ONLY, 0, 0, LED_CMD);
 			}

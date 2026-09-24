@@ -2308,6 +2308,7 @@ static INT qm_for_wsys_notify_handle(struct notify_entry *ne, INT event_id, VOID
 	struct _RTMP_ADAPTER *ad = ne->priv;
 	struct wifi_dev *wdev = info->wdev;
 	struct qm_ops *qm = ad->qm_ops;
+	struct _STA_TR_ENTRY *tr_entry = (struct _STA_TR_ENTRY *)info->v;
 
 	MTWF_DBG(ad, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
 		"event_id: %d, wdev=%d\n", event_id, info->wdev->wdev_idx);
@@ -2317,9 +2318,12 @@ static INT qm_for_wsys_notify_handle(struct notify_entry *ne, INT event_id, VOID
 		if (qm->bss_clean_queue)
 			qm->bss_clean_queue(ad, wdev);
 		break;
+	case WSYS_NOTIFY_DISCONNT_ACT:
+		if (qm->sta_clean_queue)
+			qm->sta_clean_queue(ad, tr_entry->wcid);
+		break;
 	case WSYS_NOTIFY_OPEN:
 	case WSYS_NOTIFY_CONNT_ACT:
-	case WSYS_NOTIFY_DISCONNT_ACT:
 	case WSYS_NOTIFY_LINKUP:
 	case WSYS_NOTIFY_LINKDOWN:
 	case WSYS_NOTIFY_STA_UPDATE:

@@ -840,10 +840,10 @@ static VOID MtWriteTMacInfo(
 	txd_1->NoAck = (TxInfo->bAckRequired ? 0 : 1);
 	txd_1->Tid = TxInfo->UserPriority;
 
-	if (IS_CIPHER_NONE(TxInfo->CipherAlg))
-		txd_1->ProtectFrame = 0;
-	else
+	if (TxInfo->CipherAlg)
 		txd_1->ProtectFrame = 1;
+	else
+		txd_1->ProtectFrame = 0;
 
 	txd_1->OwnMacAddr = TxInfo->OwnMacIdx;
 

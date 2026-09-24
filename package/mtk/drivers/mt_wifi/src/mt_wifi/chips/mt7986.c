@@ -27,7 +27,6 @@
 #include "mac/mac_mt/fmac/mt_fmac.h"
 
 #include "eeprom/mt7986_e2p.h"
-
 #if defined(CONFIG_FIRST_IF_EPAELNA) || defined(CONFIG_SECOND_IF_EPAELNA) || defined(CONFIG_THIRD_IF_EPAELNA)
 #include "eeprom/mt7986_e2p_ePAeLNA.h"
 #endif
@@ -4139,9 +4138,7 @@ extern RTMP_STRING *get_dev_eeprom_binary(VOID *pvAd);
 
 UCHAR *mt7986_get_default_bin_image(RTMP_ADAPTER *ad)
 {
-
 	return MT7986_E2PImage;
-
 	return NULL;
 }
 
@@ -4154,12 +4151,20 @@ INT32 mt7986_get_default_bin_image_file(RTMP_ADAPTER *ad, RTMP_STRING *path, BOO
 
 	if (skus & MT7986_ADIE_MT7976_TYPE_MASK ) { /* MT7976 case */
 		if (skus == ENUM_MT7976_DUAL_ADIE_DBDC) { /* AX6000 */
+#ifdef SKU_AX8400
+			ret = snprintf(path, 100, "/lib/firmware/%s", MT7986_EEPROM_BIN_FILE_NAME_AX8400_MT7976);
+#else
 			ret = snprintf(path, 100, "/lib/firmware/%s", MT7986_EEPROM_BIN_FILE_NAME_AX6000_MT7976);
+#endif
 		} else if (skus == ENUM_MT7976_ONE_ADIE_DBDC) { /* one A-Die DBDC cases */
 			/* iPA & ePA both use ePA MT7976 ePA EEPROM for bring-up only */
 			ret = snprintf(path, 100, "/lib/firmware/%s", MT7986_EEPROM_BIN_FILE_NAME_ONE_ADIE_DBDC_MT7976_EPA);
 		} else if (skus == ENUM_MT7976_ONE_ADIE_SINGLE_BAND) { /* AX7800 */
+#ifdef SKU_AX7800
 			ret = snprintf(path, 100, "/lib/firmware/%s", MT7986_EEPROM_BIN_FILE_NAME_AX7800_MT7976); /* TODO : may have AX7800 EEPROM or use AX6000 EEPROM */
+#elif SKU_AX5400
+			ret = snprintf(path, 100, "/lib/firmware/%s", MT7986_EEPROM_BIN_FILE_NAME_AX5400_MT7976); /* TODO : may have AX5400 EEPROM or use AX6000 EEPROM */
+#endif
 		} else {/* fill default  */
 			ret = snprintf(path, 100, "%s", EEPROM_DEFAULT_FILE_PATH);
 			MTWF_PRINT("\x1b[41m unknown of MT7976!!\x1b[m\n");
@@ -6029,6 +6034,7 @@ static VOID mt7986_isr(struct pci_hif_chip *hif_chip)
 	if (IntSource & MT_INT_MCU2HOST_SW_INT_STS) {
 		sched_ops->schedule_sw_int(task_group);
 		hif_chip->IntPending |= MT_INT_MCU2HOST_SW_INT_STS;
+		pAd->ErrRecoveryCtl.hostSerStep = 1;
 	}
 
 	HIF_IO_WRITE32(pAd->hdev_ctrl, MT_INT_SOURCE_CSR, IntSource);
@@ -6990,6 +6996,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	struct pci_task_group *task_group = &hif_chip->task_group;
 	struct pci_schedule_task_ops *sched_ops = hif_chip->schedule_task_ops;
 
+	ad->ErrRecoveryCtl.hostSerStep = 3;
 	/* traverse each pci_hif_chip */
 	for (i = 0; i < pci_hif->pci_hif_chip_num; i++) {
 		hif_chip = pci_hif->pci_hif_chip[i];
@@ -7004,9 +7011,11 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 	if (!bFound)
 		return;
 
+	ad->ErrRecoveryCtl.hostSerStep = 4;
+
 #ifdef RTMP_MAC_PCI
 	RTMP_IO_READ32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, &int_source);
-
+	ad->ErrRecoveryCtl.mcuToHostState = int_source;
 #ifdef CONFIG_FWOWN_SUPPORT
 	if (int_source & MT_SW_INT_DRV_OWN) {
 		RTMP_IO_WRITE32(ad->hdev_ctrl, WF_WFDMA_HOST_DMA0_MCU2HOST_SW_INT_STA_ADDR, MT_SW_INT_DRV_OWN);
@@ -7021,6 +7030,7 @@ static VOID pci_sw_int_handler(RTMP_ADAPTER *ad, void *hif_chip_ptr)
 
 #ifdef ERR_RECOVERY
 	if (int_source & MT7663_ERROR_DETECT_MASK) {
+		ad->ErrRecoveryCtl.hostSerStep = 5;
 		/* updated ErrRecovery Status. */
 		ad->ErrRecoveryCtl.status = int_source;
 
@@ -7201,6 +7211,8 @@ static VOID mt7986_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 		UINT32 reg;
 	} cr_list[] = {
 		{"SER_STATUS       ", WF_SW_DEF_CR_SER_STATUS_ADDR},
+		{"SER_WA_STEP      ", WF_MCU_WA_SW_DEF_CR_SER_ADDR},
+		{"SER_WM_STEP      ", WF_SW_DEF_CR_SER_STEPS_ADDR},
 		{"SER_PLE_ERR      ", WF_SW_DEF_CR_PLE_STATUS_ADDR},
 		{"SER_PLE_ERR_1    ", WF_SW_DEF_CR_PLE1_STATUS_ADDR},
 		{"SER_PLE_ERR_AMSDU", WF_SW_DEF_CR_PLE_AMSDU_STATUS_ADDR},
@@ -7238,6 +7250,12 @@ static VOID mt7986_dump_ser_stat(RTMP_ADAPTER *pAd, UINT8 dump_lvl)
 			}
 		}
 	}
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STEP     = 0x%08X\n", pAd->ErrRecoveryCtl.hostSerStep);
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_HOST_STAGE    = 0x%08X\n", ErrRecoveryCurStage(&pAd->ErrRecoveryCtl));
+	MTWF_DBG(pAd, DBG_CAT_HW, CATHW_SER, DBG_LVL_ERROR,
+			"::E  R , SER_MCU_TO_HOST   = 0x%08X\n", pAd->ErrRecoveryCtl.mcuToHostState);
 
 	if (dump_lvl >= DBG_LVL_INFO) {
 		/* dump HWITS workaround info */
@@ -10297,6 +10315,10 @@ static VOID show_muru_stacapinfo_ctrl(struct _RTMP_ADAPTER *pAd, UINT_16 WlanIdx
 		offset = OFFSET_OF(MURU_STA_UL_OFDMA, u1RxTrgFrmBy11ac);
 		addr = subbase_r + offset;
 		MTWF_PRINT("|-|-(0x%08X) u1RxTrgFrmBy11ac = %d\n", addr, muru_io_r_u8(pAd, addr));
+
+		offset = OFFSET_OF(MURU_STA_UL_OFDMA, u1RxCtrlFrmToMBss);
+		addr = subbase_r + offset;
+		MTWF_PRINT("|-|-(0x%08X) u1RxCtrlFrmToMBss = %d\n", addr, muru_io_r_u8(pAd, addr));
 
 		offset = OFFSET_OF(MURU_PURE_STACAP_INFO, rDlMimo);
 		addr = subbase + offset;

@@ -88,8 +88,12 @@
 #define CONN_INFRA_WAKEPU_TOP		0x01A0
 #define CONN_INFRA_WAKEPU_WF		0x01A4
 #define CONN2AP_REMAP_MCU_EMI 		0x01C4
+#define CONN2AP_RSVD_EMI_REGION_1	0x01CC
+#define CONN2AP_RSVD_EMI_REGION_2	0x01D0
 #define CONN2AP_REMAP_WF_PERI 		0x01D4
 #define CONN2AP_RSVD_PERI_REGION1	0x01D8
+#define CONN2AP_RSVD_PERI_REGION2	0x01DC
+#define CONN2AP_RSVD_PERI_REGION3	0x01E0
 #define DBG_DUMMY_3 				0x02CC
 
 /**********************************************************************/

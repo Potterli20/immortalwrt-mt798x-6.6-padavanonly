@@ -142,5 +142,5 @@
 #endif
 
 #define WED_WDMA_SINGLE_RING
-#define WARP_SUSPEND_RESUME
+
 //#define WARP_DVT

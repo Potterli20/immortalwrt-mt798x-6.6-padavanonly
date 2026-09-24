@@ -52,6 +52,7 @@
 #define HW_MAX_AGG_EN_TP 300
 #define HW_MIN_AGG_EN_TP 50
 
+#define CHK_REORDERING_PACKET_TIMEOUT_IN_MS		(50)
 #define REORDERING_PACKET_TIMEOUT_IN_MS		(100)
 #define MAX_REORDERING_PACKET_TIMEOUT_IN_MS	(1500)
 
@@ -226,6 +227,8 @@ struct ba_control {
 	ULONG numAsOriginator;	/*  I am originator of   numAsOriginator clients. These clients are in the BAOriEntry[] */
 	ULONG numDoneOriginator;	/*  count Done Originator sessions */
 	ULONG dbg_flag;
+	RALINK_TIMER_STRUCT FlushTimer;
+	atomic_t SetFlushTimer;
 };
 
 struct fq_stainfo_type {

@@ -1,6 +1,8 @@
---- a/mt_wifi/embedded/common/cmm_info.c	2022-04-25 18:12:15.000000000 +0800
-+++ b/mt_wifi/embedded/common/cmm_info.c	2022-11-10 23:22:13.914830802 +0800
-@@ -6705,6 +6705,7 @@ VOID RTMPIoctlGetSiteSurvey(
+diff --git a/mt_wifi/embedded/common/cmm_info.c b/mt_wifi/embedded/common/cmm_info.c
+index fd555e7..b7b92f4 100644
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -6971,6 +6971,7 @@ VOID RTMPIoctlGetSiteSurvey(
  		OS_WAIT(3000);
  	}
  
@@ -8,5 +10,3 @@
  
  	for (i = bss_start_idx; i < ScanTab->BssNr; i++) {
  		pBss = &ScanTab->BssEntry[i];
- 		
- 		

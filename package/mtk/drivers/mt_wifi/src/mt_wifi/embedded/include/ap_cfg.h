@@ -205,6 +205,26 @@ INT	ApCfg_Set_PerMbssMaxStaNum_Proc(
 
 INT	set_bss_max_idle_period_proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 
+INT RTMPIoctliSendCustomframe(RTMP_ADAPTER *pAd, UCHAR *Buf, ULONG FrameLen);
+
+INT RTMPIoctlCustomframe(
+	IN RTMP_ADAPTER *pAd,
+	IN RTMP_STRING *arg);
+
+#ifdef CONFIG_RA_CEILING_SUPPORT
+INT RTMPIoctladdRateCeilingEntry(
+	IN RTMP_ADAPTER *pAd,
+	IN RTMP_STRING *arg);
+
+INT CheckEntryInRCelingTable(
+	IN struct RATE_CEILING_TABLE *tbl,
+	IN UINT8 * mac);
+#endif
+
+#ifdef ZERO_LOSS_CSA_SUPPORT
+INT Set_KickOffTime_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+#endif
+
 struct apcfg_parameters {
 	LONG cfg_mode[2]; /*WirelessMode*/
 	ULONG tx_power_percentage; /*TxPower*/
@@ -250,6 +270,9 @@ struct apcfg_parameters {
 
 #ifdef MT_DFS_SUPPORT
 	BOOLEAN bDfsEnable; /*DfsEnable*/
+#ifdef MT_BAND4_DFS_SUPPORT /*302502*/
+	BOOLEAN band4DfsEnable; /*Band4DfsEnable*/
+#endif
 #endif
 
 #ifdef BACKGROUND_SCAN_SUPPORT
@@ -290,6 +313,7 @@ struct apcfg_parameters {
 INT Set_Quick_Channel_Switch_En_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 #ifdef CONFIG_AP_SUPPORT
 void ap_phy_rrm_init_byRf(RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
+VOID UpdatedRaBfInfoBwByWdev(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UINT_8 BW);
 #endif
 VOID MacTableResetNonMapWdev(RTMP_ADAPTER *pAd, struct wifi_dev *wdev);
 #ifdef CONFIG_MAP_SUPPORT
@@ -413,3 +437,7 @@ INT32 HcUpdateMSDUTxAllow(struct radio_dev *rdev);
 
 #endif /* __AP_CFG_H__ */
 BOOLEAN wdev_down_exec_ioctl(RTMP_IOCTL_INPUT_STRUCT *wrq, USHORT subcmd);
+
+
+UINT8 CheckPSDLimitType(RTMP_ADAPTER *pAd);
+void TxPowerLimitTypeInit(RTMP_ADAPTER *pAd, UINT8 lpi_en, struct wifi_dev *wdev);

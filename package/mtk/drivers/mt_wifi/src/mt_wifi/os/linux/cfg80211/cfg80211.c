@@ -154,11 +154,9 @@ static const UINT32 CipherSuites[] = {
 #endif
 #endif /*DOT11W_PMF_SUPPORT*/
 	WLAN_CIPHER_SUITE_GCMP,
-#if (KERNEL_VERSION(4, 0, 0) <= LINUX_VERSION_CODE)
 	WLAN_CIPHER_SUITE_CCMP_256,
 #ifdef HOSTAPD_SUITEB_SUPPORT
 	WLAN_CIPHER_SUITE_GCMP_256,
-#endif
 #endif
 
 };
@@ -1661,7 +1659,7 @@ static int CFG80211_OpsKeyAdd(
 				KeyInfo.cipher = Ndis802_11TKIPEnable;
 			else if (pParams->cipher == WLAN_CIPHER_SUITE_CCMP)
 				KeyInfo.cipher = Ndis802_11AESEnable;
-#if (KERNEL_VERSION(4, 0, 0) <= LINUX_VERSION_CODE)
+#ifdef HOSTAPD_SUITEB_SUPPORT
 		} else if (pParams->cipher == WLAN_CIPHER_SUITE_GCMP_256) {
 			KeyInfo.KeyType = RT_CMD_80211_KEY_WPA;
 			KeyInfo.cipher = Ndis802_11GCMP256Enable;
@@ -2014,6 +2012,7 @@ static int CFG80211_OpsConnect(
 	VOID *pAd;
 	CMD_RTPRIV_IOCTL_80211_CONNECT ConnInfo;
 	CMD_RTPRIV_IOCTL_80211_ASSOC_IE AssocIe;
+	struct cfg80211_crypto_settings *crypto = &pSme->crypto;
 	struct ieee80211_channel *pChannel = pSme->channel;
 	INT32 Pairwise = 0;
 	INT32 Groupwise = 0;
@@ -2086,6 +2085,13 @@ static int CFG80211_OpsConnect(
 		CFG80211DBG(DBG_LVL_INFO, ("NONE...\n"));
 		ConnInfo.PairwiseEncrypType |= RT_CMD_80211_CONN_ENCRYPT_NONE;
 	}
+
+	// wpa_supplicant sets 1 akm-suite and pairwise-cipher
+	ConnInfo.AkmSuite = crypto->akm_suites[0];
+	CFG80211DBG(DBG_LVL_INFO, ("AkmSuite: %08x\n", ConnInfo.AkmSuite));
+
+	ConnInfo.Pairwise = crypto->ciphers_pairwise[0];
+	CFG80211DBG(DBG_LVL_INFO, ("Pairwise: %08x\n", ConnInfo.Pairwise));
 
 	if (Groupwise == WLAN_CIPHER_SUITE_CCMP)
 		ConnInfo.GroupwiseEncrypType |= RT_CMD_80211_CONN_ENCRYPT_CCMP;
@@ -4048,8 +4054,8 @@ static struct wireless_dev *CFG80211_WdevAlloc(
 		RTMP_ADAPTER *ad = (RTMP_ADAPTER *)pAd;
 		struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(ad->hdev_ctrl);
 		struct mcs_nss_caps *nss_cap = &cap->mcs_nss;
-		pWdev->wiphy->available_antennas_tx = BIT(nss_cap->max_nss) - 1;
-		pWdev->wiphy->available_antennas_rx = BIT(nss_cap->max_nss) - 1;
+		pWdev->wiphy->available_antennas_tx = BIT(nss_cap->max_nss[0]) - 1;
+		pWdev->wiphy->available_antennas_rx = BIT(nss_cap->max_nss[0]) - 1;
 	}
 #endif /* ANTENNA_CONTROL_SUPPORT */
 
@@ -4107,6 +4113,7 @@ BOOLEAN CFG80211_Register(
 		MTWF_DBG(pAd, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "80211> Allocate MAC80211 CB fail!\n");
 		return FALSE;
 	}
+	os_zero_mem(pCfg80211_CB, sizeof(CFG80211_CB));
 
 	/* allocate wireless device */
 	RTMP_DRIVER_80211_BANDINFO_GET(pAd, &BandInfo);

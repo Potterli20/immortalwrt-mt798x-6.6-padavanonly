@@ -1083,6 +1083,7 @@ VOID PeerPublicAction(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 							(pAd->CommonCfg.bForty_Mhz_Intolerant == FALSE)) {
 							UCHAR cfg_ht_bw = wlan_config_get_ht_bw(wdev);
 							UCHAR cfg_ext_cha = wlan_config_get_ext_cha(wdev);
+							MAC_TABLE_ENTRY *pEntry = &pAd->MacTab.Content[Elem->Wcid];
 
 							MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 									  "DTIM Period reached, BSS20WidthReq=%d, Intolerant40=%d!\n",
@@ -1093,11 +1094,12 @@ VOID PeerPublicAction(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 							if (pAd->CommonCfg.LastBSSCoexist2040.field.BSS20WidthReq ||
 								pAd->CommonCfg.LastBSSCoexist2040.field.Intolerant40) {
 								wlan_operate_set_ht_bw(wdev, HT_BW_20, EXTCHA_NONE);
+								pEntry->bForty_Mhz_Intolerant = TRUE;
 							} else {
 								/*recover to origin bw & extcha*/
 								wlan_operate_set_ht_bw(wdev, cfg_ht_bw, cfg_ext_cha);
 							}
-
+							ap_sync_bssinfo_to_fw(pAd, wdev);
 							MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 									  "\tNow RecomWidth=%d, ExtChanOffset=%d\n",
 									  wlan_operate_get_ht_bw(wdev),

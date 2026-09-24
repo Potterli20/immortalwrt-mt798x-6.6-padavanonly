@@ -12,11 +12,16 @@ struct _RTMP_ADAPTER;
 #define RALINK_RDG_CAP      (1 << 2)
 #define RALINK_256QAM_CAP   (1 << 3)
 
+#define MEDIATEK_TLV	    (1 << 0)
 #define MEDIATEK_256QAM_CAP (1 << 3)
 #ifdef MWDS
 #define MEDIATEK_MWDS_CAP   (1 << 7)
 #endif
 #define BROADCOM_256QAM_CAP (1 << 0)
+
+#define MTK_TLV_TYPE 0x1
+
+#define MTK_TLV_VALUE_MLR   (1 << 0)
 
 typedef enum vendor_ie_in_frame_type {
 	VIE_BEACON = 0, /*make sure it starts from 0, for initialization.*/
@@ -123,6 +128,11 @@ typedef struct GNU_PACKED _vht_tx_pwr_env_ie {
 	UCHAR local_max_txpwr_40Mhz;
 } VHT_TX_PWR_ENV;
 
+struct GNU_PACKED _mtk_tlv {
+	UCHAR type;
+	UCHAR len;
+	UCHAR val;
+};
 
 struct GNU_PACKED _mediatek_ie {
 	IE_HEADER ie_hdr;

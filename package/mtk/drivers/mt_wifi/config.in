@@ -1153,6 +1153,20 @@ config MTK_IAP_VENDOR1_FEATURE_SUPPORT
 	depends on MTK_ENTERPRISE_AP_SUPPORT
 	default n
 
+#HOSTAPD_MAP_SUPPORT
+config MTK_HOSTAPD_MAP_SUPPORT
+        bool "Hostapd MAP Support"
+        depends on MTK_MT_AP_SUPPORT
+        depends on MTK_CFG80211_SUPPORT
+        default n
+
+#HOSTAPD_WAPP_SUPPORT
+config MTK_HOSTAPD_WAPP_SUPPORT
+        bool "Hostapd WAPP Support"
+        depends on MTK_MT_AP_SUPPORT
+        depends on MTK_CFG80211_SUPPORT
+        default n
+
 #CUSTOMISED HOSTAPD
 config MTK_CUSTOMISED_HOSTAPD_SUPPORT
 	bool "Customised Hostapd Support"
@@ -1309,6 +1323,12 @@ config MTK_VENDOR_FEATURE11_SUPPORT
         depends on MTK_WIFI_DRIVER
         depends on MTK_MT_AP_SUPPORT
         default n
+
+config MTK_DFS_SLAVE_SUPPORT
+	bool "DFS-Slave Support"
+	depends on MTK_WIFI_DRIVER
+	depends on MTK_MT_AP_SUPPORT
+	default n
 
 config MTK_PCIE_ASPM_DYM_CTRL_SUPPORT
 	bool "Pcie Aspm Dynamic Control Support"

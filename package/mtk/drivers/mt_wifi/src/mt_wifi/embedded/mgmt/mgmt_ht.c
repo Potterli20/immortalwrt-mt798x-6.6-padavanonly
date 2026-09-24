@@ -435,18 +435,18 @@ VOID RTMPSetHT(
 
 #ifdef CONFIG_MULTI_CHANNEL
 #if defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT)
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		if ((pHTPhyMode->BW == BW_20) && (pHTPhyMode->Channel != 0)) {
+			wlan_config_set_ht_bw(wdev, HT_BW_20);
+			wlan_operate_set_ht_bw(wdev, HT_BW_20, EXTCHA_NONE);
+		} else if (INFRA_ON(pAd)) {
+			struct wifi_dev *p2p_dev = &pAd->StaCfg[0].wdev;
+			UCHAR ht_bw = wlan_config_get_ht_bw(p2p_dev);
+			UCHAR ext_cha = wlan_config_get_ext_cha(p2p_dev);
 
-	if ((pHTPhyMode->BW == BW_20) && (pHTPhyMode->Channel != 0)) {
-		wlan_config_set_ht_bw(wdev, HT_BW_20);
-		wlan_operate_set_ht_bw(wdev, HT_BW_20, EXTCHA_NONE);
-	} else if (INFRA_ON(pAd)) {
-		struct wifi_dev *p2p_dev = &pAd->StaCfg[0].wdev;
-		UCHAR ht_bw = wlan_config_get_ht_bw(p2p_dev);
-		UCHAR ext_cha = wlan_config_get_ext_cha(p2p_dev);
-
-		wlan_operate_set_ht_bw(p2p_dev, ht_bw, ext_cha);
+			wlan_operate_set_ht_bw(p2p_dev, ht_bw, ext_cha);
+		}
 	}
-
 #endif /* defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT) */
 #endif /* CONFIG_MULTI_CHANNEL */
 

@@ -86,7 +86,9 @@
 #define SKUTABLE_18					18
 #define SKUTABLE_19					19
 #define SKUTABLE_20					20
-#define TABLE_SIZE					 20
+#define TABLE_SIZE					 21
+#define AFC_STD_PWR_SKUTABLE_IDX			20
+
 
 #define VHT20_OFFSET					0
 #define VHT40_OFFSET					7

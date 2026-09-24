@@ -334,5 +334,9 @@ DECLARE_TIMER_FUNCTION(notify_timer_callback);
 #endif
 #endif
 
+#ifdef CONFIG_WLAN_SERVICE
+DECLARE_TIMER_FUNCTION(chip_ctrl_manual_hetb_tx_exec_timer);
+#endif
+
 #endif /* __RTMP_TIMER_H__ */
 

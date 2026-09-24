@@ -538,11 +538,11 @@ INT Set_HotSpot_OnOff(
 	NdisZeroMemory(Buf, sizeof(*Event));
 	Event = (HSCTRL_EVENT_DATA *)Buf;
 #ifdef CONFIG_STA_SUPPORT
-	Event->ControlIndex = 0;
+//	Event->ControlIndex = 0;
 #endif /*CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 	Event->ControlIndex = APIndex;
-#endif /* CONFIG_STA_SUPPORT */
+#endif /* CONFIG_AP_SUPPORT */
 	Len += 1;
 	Event->EventTrigger = EventTrigger;
 	Len += 1;
@@ -567,17 +567,10 @@ enum HSCTRL_STATE HSCtrlCurrentState(
 #ifdef CONFIG_AP_SUPPORT
 	PHSCTRL_EVENT_DATA Event = (PHSCTRL_EVENT_DATA)Elem->Msg;
 	pHSCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].HotSpotCtrl;
-	/* Added NULL check and goto logic, to resolve coverity bug */
-	if (pHSCtrl != NULL)
-		goto label;
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	/* Added NULL check and goto logic, to resolve coverity bug */
-	if (pHSCtrl != NULL)
-		goto label;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
 #endif /* CONFIG_STA_SUPPORT */
-label:
 	return pHSCtrl->HSCtrlState;
 }
 
@@ -591,16 +584,11 @@ VOID HSCtrlSetCurrentState(
 #ifdef CONFIG_AP_SUPPORT
 	PHSCTRL_EVENT_DATA Event = (PHSCTRL_EVENT_DATA)Elem->Msg;
 	pHSCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].HotSpotCtrl;
-	/* Added the assignment for pHSCtrl->HSCtrlState inside macro to resolve
-		coverity bug */
-	pHSCtrl->HSCtrlState = State;
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	/* Added the assignment for pHSCtrl->HSCtrlState inside macro to resolve
-		coverity bug */
-	pHSCtrl->HSCtrlState = State;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
 #endif /* CONFIG_STA_SUPPORT */
+	pHSCtrl->HSCtrlState = State;
 }
 
 
@@ -616,10 +604,10 @@ static VOID HSCtrlOn(
 	MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			 "BSSID: %d\n", Event->ControlIndex);
 #ifdef CONFIG_STA_SUPPORT
-	NetDev = pAd->net_dev;
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	pGASCtrl = &pAd->StaCfg[0].GASCtrl;
-	wdev = &pAd->StaCfg[0].wdev;
+//	NetDev = pAd->net_dev;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
+//	pGASCtrl = &pAd->StaCfg[0].GASCtrl;
+//	wdev = &pAd->StaCfg[0].wdev;
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 	NetDev = pAd->ApCfg.MBSSID[Event->ControlIndex].wdev.if_dev;
@@ -675,12 +663,12 @@ static VOID HSCtrlInit(
 #endif
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	NdisZeroMemory(pHSCtrl, sizeof(*pHSCtrl));
-	pHSCtrl->HotSpotEnable = 0;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
+//	NdisZeroMemory(pHSCtrl, sizeof(*pHSCtrl));
+//	pHSCtrl->HotSpotEnable = 0;
 #ifdef CONFIG_HOTSPOT
-	pHSCtrl->HSCtrlState = HSCTRL_IDLE;
-	NdisAllocateSpinLock(pAd, &pHSCtrl->IeLock);
+//	pHSCtrl->HSCtrlState = HSCTRL_IDLE;
+//	NdisAllocateSpinLock(pAd, &pHSCtrl->IeLock);
 #endif
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
@@ -715,10 +703,10 @@ VOID HSCtrlExit(
 	UCHAR APIndex;
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	/* Remove all IE */
-	HSCtrlRemoveAllIE(pHSCtrl);
-	NdisFreeSpinLock(&pHSCtrl->IeLock);
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
+//	/* Remove all IE */
+//	HSCtrlRemoveAllIE(pHSCtrl);
+//	NdisFreeSpinLock(&pHSCtrl->IeLock);
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 
@@ -743,8 +731,8 @@ VOID HSCtrlHalt(
 	UCHAR APIndex;
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	pHSCtrl->HotSpotEnable = 0;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
+//	pHSCtrl->HotSpotEnable = 0;
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 
@@ -773,10 +761,10 @@ static VOID HSCtrlOff(
 	MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			 "BSSID %d\n", Event->ControlIndex);
 #ifdef CONFIG_STA_SUPPORT
-	NetDev = pAd->net_dev;
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	pGASCtrl = &pAd->StaCfg[0].GASCtrl;
-	wdev = &pAd->StaCfg[0].wdev;
+//	NetDev = pAd->net_dev;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
+//	pGASCtrl = &pAd->StaCfg[0].GASCtrl;
+//	wdev = &pAd->StaCfg[0].wdev;
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
 	NetDev = pAd->ApCfg.MBSSID[Event->ControlIndex].wdev.if_dev;
@@ -865,8 +853,8 @@ BOOLEAN HotSpotEnable(
 
 				if (pHSCtrl->HotSpotEnable != TRUE) {
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-							 "%s, %u [Disable] %02X:%02X:%02X:%02X:%02X:%02X\n",
-							  __LINE__, PRINT_MAC(GASFrame->Hdr.Addr1));
+						"[Disable] %02X:%02X:%02X:%02X:%02X:%02X\n",
+						PRINT_MAC(GASFrame->Hdr.Addr1));
 				}
 
 				break;
@@ -883,18 +871,12 @@ BOOLEAN HotSpotEnable(
 		MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "can't recognize Type %d\n", Type);
 		return FALSE;
 	}
-	/* Added NULL check and goto logic, to resolve coverity bug */
-	if (pHSCtrl != NULL)
-		goto label;
 
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
-	/* Added NULL check and goto logic, to resolve coverity bug */
-	if (pHSCtrl != NULL)
-		goto label;
+//	pHSCtrl = &pAd->StaCfg[0].HotSpotCtrl;
 #endif /* CONFIG_STA_SUPPORT */
-label:
+
 	return pHSCtrl->HotSpotEnable;
 }
 
@@ -921,6 +903,7 @@ BOOLEAN hotspot_rx_snoop(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, RX_BLK *pRx
 	BSS_STRUCT *pMbss = pEntry->pMbss;
 	/* PUCHAR pData = NdisEqualMemory(SNAP_802_1H, pRxBlk->pData, 6) ? (pRxBlk->pData + 6) : pRxBlk->pData; */
 	PUCHAR pData = pRxBlk->pData + 12;
+	PUCHAR pDataEnd = pRxBlk->pData + pRxBlk->DataSize;
 	UCHAR Offset = 0;
 
 	/* Check if Proxy ARP Candidate for IPv4 */
@@ -935,7 +918,7 @@ BOOLEAN hotspot_rx_snoop(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, RX_BLK *pRx
 	}
 
 	/* Check if Neighbor solicitation during duplicate address detection procedure */
-	if (IsIpv6DuplicateAddrDetect(pAd, pData, &Offset)) {
+	if (IsIpv6DuplicateAddrDetect(pAd, pData, pDataEnd, &Offset)) {
 		/* Proxy MAC address/IPv6 mapping */
 		/* AddIPv6ProxyARPEntry(pAd, pMbss, pEntry->Addr, (pData + 50)); */
 		MTWF_DBG(pAd, DBG_CAT_PROTO, DBG_SUBCAT_ALL, DBG_LVL_INFO, "AddIPv6ProxyARPEntry:offset=%d\n", Offset);
@@ -946,17 +929,17 @@ BOOLEAN hotspot_rx_snoop(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, RX_BLK *pRx
 	}
 
 	/* Check if Router solicitation */
-	if (IsIPv6RouterSolicitation(pAd, pData)) {
+	if (IsIPv6RouterSolicitation(pAd, pData, pDataEnd)) {
 		/* Proxy MAC address/IPv6 mapping for link local address */
 		AddIPv6ProxyARPEntry(pAd, pMbss, pEntry->Addr,  (pData + 10), 1);
 	}
 
 	/* JERRY: add to parse DHCPv6 solicit to check proxy arp entry */
-	if (IsIPv6DHCPv6Solicitation(pAd, pData))
+	if (IsIPv6DHCPv6Solicitation(pAd, pData, pDataEnd))
 		AddIPv6ProxyARPEntry(pAd, pMbss, pEntry->Addr,  (pData + 10), 1);
 
 	/* Check if Proxy ARP Candidate for IPv6 */
-	if (IsIPv6ProxyARPCandidate(pAd, pData)) {
+	if (IsIPv6ProxyARPCandidate(pAd, pData, pDataEnd)) {
 		FoundProxyARPEntry = IPv6ProxyARP(pAd, pMbss, pData, FALSE, 1);
 
 		if (FoundProxyARPEntry) {
@@ -1214,7 +1197,7 @@ BOOLEAN hotspot_check_dhcp_arp(
 
 		if (pMbss->WNMCtrl.ProxyARPEnable) {
 			/* Check if IPv6 Proxy ARP Candidate from DS */
-			if (IsIPv6ProxyARPCandidate(pAd, pSrcBuf - 2)) {
+			if (IsIPv6ProxyARPCandidate(pAd, pSrcBuf - 2, GET_OS_PKT_DATATAIL(pPacket))) {
 				BOOLEAN FoundProxyARPEntry;
 
 				FoundProxyARPEntry = IPv6ProxyARP(pAd, pMbss, pSrcBuf - 2, TRUE, 1);

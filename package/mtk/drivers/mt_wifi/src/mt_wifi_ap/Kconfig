@@ -463,6 +463,16 @@ config WIFI_CSI_CN_INFO_SUPPORT
 	depends on MT_AP_SUPPORT
 	default n
 
+config 6G_AFC_SUPPORT
+	bool "6G Band AFC Support"
+	depends on MT_AP_SUPPORT
+	default n
+
+config DFS_SLAVE_SUPPORT
+	bool "DFS-Slave Support"
+	depends on MT_AP_SUPPORT
+	default n
+
 #config DBG_ENHANCE
 #	bool "DBG enhanced"
 #	default n

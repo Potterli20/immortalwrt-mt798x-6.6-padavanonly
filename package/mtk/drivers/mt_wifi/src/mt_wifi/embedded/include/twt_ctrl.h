@@ -41,6 +41,7 @@
 #define TWT_HW_GRP_MAX_NUM			0
 #endif
 #define TWT_HW_BTWT_MAX_NUM			 4
+#define TWT_HW_BTWT_ARGT_IDX_BASE    12
 #define TWT_HW_GRP_MAX_MEMBER_CNT	 8
 
 #define TWT_TYPE_INDIVIDUAL			0

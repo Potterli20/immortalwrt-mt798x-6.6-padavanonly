@@ -36,7 +36,7 @@ dump_pkt_info(struct wed_buf_res *res)
 		grp = list_entry(grp_cur, struct wed_bm_group_info, list);
 
 		if (grp) {
-			list_for_each(pkt_cur, &grp->pkt_head) {
+				list_for_each(pkt_cur, &grp->pkt_head) {
 				info = list_entry(pkt_cur, struct wed_pkt_info, list);
 
 				if (info) {
@@ -62,7 +62,7 @@ dump_pkt_info(struct wed_buf_res *res)
 		grp = list_entry(grp_cur, struct wed_bm_group_info, list);
 
 		if (grp) {
-			list_for_each(pkt_cur, &grp->pkt_head) {
+				list_for_each(pkt_cur, &grp->pkt_head) {
 				info = list_entry(pkt_cur, struct wed_pkt_info, list);
 
 				if (info) {
@@ -267,19 +267,17 @@ bm_deinit_all(struct wed_entry *wed, struct wed_buf_res *res)
 	}
 
 #ifdef WED_DYNAMIC_TXBM_SUPPORT
-	if(IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_TXBM)) {
-		if (sw_conf->txbm.enable == true)
-			del_timer(&res->bm2high_monitor);
+	if (sw_conf->txbm.enable)
+		del_timer(&res->bm2high_monitor);
 
-		list_for_each_safe(cur, next, &res->budget_head) {
-			struct wed_bm_group_info *grp = list_entry(cur, struct wed_bm_group_info, list);
+	list_for_each_safe(cur, next, &res->budget_head) {
+		struct wed_bm_group_info *grp = list_entry(cur, struct wed_bm_group_info, list);
 
-			if (grp) {
-				grp_info_free(wed, res, &grp->pkt_head);
-				list_del(&grp->list);
-				memset(grp, 0, sizeof(*grp));
-				warp_os_free_mem(grp);
-			}
+		if (grp) {
+			grp_info_free(wed, res, &grp->pkt_head);
+			list_del(&grp->list);
+			memset(grp, 0, sizeof(*grp));
+			warp_os_free_mem(grp);
 		}
 	}
 #endif	/* WED_DYNAMIC_TXBM_SUPPORT */
@@ -754,6 +752,7 @@ int regist_dl_dybm_task(struct wed_entry *wed)
 
 	if (warp_os_alloc_mem((u8 **)&wed->dybm_dl_tasks, sizeof(struct dybm_dl_tasks), GFP_ATOMIC) == 0) {
 		tasks = (struct dybm_dl_tasks *)wed->dybm_dl_tasks;
+
 		tasklet_init(&tasks->tbuf_alloc_task, buf_alloc_task, (unsigned long)wed);
 		tasklet_init(&tasks->tkn_alloc_task, token_alloc_task, (unsigned long)wed);
 		tasklet_init(&tasks->tbudge_refill_task, tbudge_refill_handler, (unsigned long)wed);
@@ -840,7 +839,7 @@ wed_txbm_init(struct wed_entry *wed, struct wifi_hw *hw)
 		init_grp = ceil(sw_conf->rx_wdma_ring_depth*WDMA_RX_RING_NUM, res->bm_grp_sz);
 
 #ifdef WED_DYNAMIC_TXBM_SUPPORT
-	if (sw_conf->txbm.enable == true) {
+	if (sw_conf->txbm.enable) {
 		timer_setup(&res->bm2high_monitor, txbm_free_handler, 0);
 		wed->hw_cap |= WED_HW_CAP_DYN_TXBM;
 		res->bm_rsv_grp = init_grp;
@@ -886,7 +885,7 @@ wed_txbm_init(struct wed_entry *wed, struct wifi_hw *hw)
 		}
 
 		if (sw_conf->txbm.vld_group > init_grp) {
-			if (sw_conf->txbm.enable == true)
+			if (sw_conf->txbm.enable)
 				res->bm_rsv_grp = sw_conf->txbm.vld_group-sw_conf->txbm.alt_quota;
 			else
 				res->bm_rsv_grp = sw_conf->txbm.vld_group;
@@ -1059,7 +1058,7 @@ wed_rx_bm_ring_init(
 
 	if (warp_dma_buf_alloc(wed->pdev, desc, len) < 0) {
 		warp_dbg(WARP_DBG_ERR, "%s(): allocate desc fail, len=%d\n", __func__, len);
-		return -1;
+		return ret;
 	}
 
 	len =  sizeof(struct warp_dma_cb) * res->ring_len;
@@ -1067,7 +1066,7 @@ wed_rx_bm_ring_init(
 
 	if (!ring->cell) {
 		warp_dbg(WARP_DBG_ERR, "%s(): allocate ring->cell faild\n", __func__);
-		return -1;
+		return ret;
 	}
 
 	for (i = 0; i < res->ring_len; i++)
@@ -1076,7 +1075,6 @@ wed_rx_bm_ring_init(
 	ring->head = NULL;
 
 	ret = 0;
-
 	return ret;
 }
 
@@ -1171,7 +1169,7 @@ wed_rx_budget_ring_exit(
 	for (i = 0; i < ring_len; i++)
 		wed_rx_bm_dma_cb_exit(wed, &ring->cell[i]);
 
-	dma_unmap_single(&wed->pdev->dev, desc->alloc_pa, desc->alloc_size, DMA_FROM_DEVICE);
+	dma_unmap_single(&wed->pdev->dev, desc->alloc_pa, desc->alloc_size, PCI_DMA_FROMDEVICE);
 	warp_os_free_mem(desc->alloc_va);
 	memset(desc, 0, sizeof(*desc));
 
@@ -1367,7 +1365,6 @@ void
 rxbm_recycle_handler(unsigned long data)
 {
 	u32 value = 0, fifo_left = 0;
-	bool reschedule = false;
 	struct wed_entry *wed = (struct wed_entry *)data;
 	struct dybm_conf_t *sw_conf = &wed->sw_conf->rxbm;
 	struct wed_rx_ctrl *rx_ctrl = &wed->res_ctrl.rx_ctrl;
@@ -1415,7 +1412,6 @@ rxbm_recycle_handler(unsigned long data)
 			goto err_out;
 		}
 
-		fifo_left = warp_rxbm_left_query(wed);
 #ifdef WARP_DVT
 		warp_dbg(WARP_DBG_OFF, "%s(): shrink INT triggered, total:%d! used:%04x left:%d\n",
 				 __func__, value, value - fifo_left, fifo_left);
@@ -1508,8 +1504,6 @@ err_out:
 	if (locked)
 		spin_unlock(&rx_ctrl->recy_lock);
 #endif	/* EXTEND_POLLING */
-	if (reschedule)
-		tasklet_schedule(&tasks->rbuf_free_task);
 
 	return;
 }
@@ -1796,7 +1790,7 @@ wed_rx_bm_init(struct wed_entry *wed, struct wifi_hw *hw)
 		}
 
 		if (IS_WED_HW_CAP(wed, WED_HW_CAP_DYN_RXBM)) {
-			u32 rx_bm_max = res->ring_len;
+			u32 rx_bm_max = 0;
 
 			if (sw_conf->max_group) {
 				if (sw_conf->max_group*128 <= hw->hw_rx_token_num)

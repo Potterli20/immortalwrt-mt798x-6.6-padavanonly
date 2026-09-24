@@ -244,13 +244,6 @@ struct osal_op_history_entry {
 	unsigned long usec;
 };
 
-typedef long __kernel_time_t;
-
-struct timeval {
-	__kernel_time_t		tv_sec;		/* seconds */
-	__kernel_suseconds_t	tv_usec;	/* microseconds */
-};
-
 struct osal_op_history {
 	struct ring ring_buffer;
 	struct osal_op_history_entry *queue;

@@ -58,7 +58,7 @@ static VOID ap_tx_ok_update(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, TX_
 	UCHAR  pUserPriority, QIdx;
 #endif
 
-	if (!entry) {
+	if ((!entry) || (IS_MULTICAST_MAC_ADDR(txblk->pSrcBufHeader))) {
 #ifdef TXRX_STAT_SUPPORT
 		BSS_STRUCT *txrx_mbss = NULL;
 		if (txblk->wdev) {
@@ -112,13 +112,24 @@ static VOID ap_tx_ok_update(struct _RTMP_ADAPTER *ad, struct wifi_dev *wdev, TX_
 		}
 	} else {
 		/*if WHNAT enable, query from CR4 and then update it*/
-		if ((ad->CommonCfg.whnat_en) && (IS_ASIC_CAP(ad, fASIC_CAP_MCU_OFFLOAD)))
+		if ((ad->CommonCfg.whnat_en) && (IS_ASIC_CAP(ad, fASIC_CAP_MCU_OFFLOAD))) {
+#ifdef ANDLINK_V4_0
+			entry->TxDataPacketByte.QuadPart += txblk->SrcBufLen;
+			INC_COUNTER64(entry->TxDataPacketCount);
+#endif
 			return;
+		}
 	}
 #else
 	/*if WHNAT enable, query from CR4 and then update it*/
-	if ((ad->CommonCfg.whnat_en) && (IS_ASIC_CAP(ad, fASIC_CAP_MCU_OFFLOAD)))
+	if ((ad->CommonCfg.whnat_en) && (IS_ASIC_CAP(ad, fASIC_CAP_MCU_OFFLOAD))) {
+#ifdef ANDLINK_V4_0
+		entry->TxDataPacketByte.QuadPart += txblk->SrcBufLen;
+		INC_COUNTER64(entry->TxDataPacketCount);
+#endif
 		return;
+	}
+
 #endif
 #endif /*WHNAT_SUPPORT*/
 
@@ -341,7 +352,7 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 #endif /* WH_EVENT_NOTIFIER */
 
 #if defined(RT_CFG80211_SUPPORT) || defined(DYNAMIC_VLAN_SUPPORT)
-			{
+			if (!pAd->CommonCfg.bcfg80211Disabled || !pAd->CommonCfg.bDynamicVlanDisabled) {
 				UCHAR *pSrcBuf;
 				UINT16 TypeLen;
 
@@ -350,7 +361,8 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 
 #ifdef DYNAMIC_VLAN_SUPPORT
 				pSrcBuf += LENGTH_802_3;
-				if (TypeLen == ETH_TYPE_VLAN && entry->vlan_id) {
+				if (TypeLen == ETH_TYPE_VLAN && entry->vlan_id &&
+					!pAd->CommonCfg.bDynamicVlanDisabled) {
 					USHORT vlan_id = *(USHORT *)pSrcBuf;
 
 					vlan_id = cpu2be16(vlan_id);
@@ -364,7 +376,7 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 #endif
 #ifdef RT_CFG80211_SUPPORT
 
-				if (TypeLen == ETH_TYPE_EAPOL) {
+				if (TypeLen == ETH_TYPE_EAPOL && !pAd->CommonCfg.bcfg80211Disabled) {
 					struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
 					struct _STA_TR_ENTRY *tr_entry = &tr_ctl->tr_entry[entry->wcid];
 
@@ -402,13 +414,13 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 		}
 #endif /* A4_CONN */
 #ifdef CLIENT_WDS
-		if (entry == NULL) {
+		if (entry == NULL && (!pAd->CommonCfg.bClientWdsDisabled)) {
 			PUCHAR pEntryAddr = CliWds_ProxyLookup(pAd, pkt_va);
 
 			if (pEntryAddr != NULL) {
 				entry = MacTableLookup(pAd, pEntryAddr);
 				if (entry && (entry->Sst == SST_ASSOC))
-					wcid = (UCHAR)entry->wcid;
+					wcid = (UINT16)entry->wcid;
 			}
 		}
 #endif /* CLIENT_WDS */
@@ -487,7 +499,8 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 		if (!RTMPCheckEtherType(pAd, pkt, tr_entry, wdev))
 			return FALSE;
 	} else {
-		RTMPCheckDhcpArp(pkt);
+		if (!RTMPCheckEtherType(pAd, pkt, tr_entry, wdev))
+			return FALSE;
 	}
 
 	if (tr_entry->PortSecured == WPA_802_1X_PORT_NOT_SECURED) {
@@ -496,7 +509,7 @@ INT ap_fp_tx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET 
 			   || (IS_IEEE8021X_Entry(wdev))
 #endif /* DOT1X_SUPPORT */
 #ifdef HOSTAPD_11R_SUPPORT
-			   || (IS_AKM_PSK_Entry(wdev))
+			   || (IS_AKM_PSK_Entry(wdev) && !pAd->CommonCfg.bHostapdDisabled)
 #endif
 			  ) && ((RTMP_GET_PACKET_EAPOL(pkt) || RTMP_GET_PACKET_WAI(pkt))))
 		   ) {
@@ -577,14 +590,15 @@ INT ap_tx_pkt_allowed(
 #endif /* WH_EVENT_NOTIFIER */
 
 #ifdef RADIUS_MAC_AUTH_SUPPORT
-			if (wdev->radius_mac_auth_enable) {
+			if (wdev->radius_mac_auth_enable &&
+				!pAd->CommonCfg.bRadiusMacAuthDisabled) {
 				if (!entry->bAllowTraffic)
 					return FALSE;
 			}
 #endif
 
 #ifdef DYNAMIC_VLAN_SUPPORT
-		{
+		if (!pAd->CommonCfg.bDynamicVlanDisabled) {
 			UCHAR *pSrcBuf;
 			UINT16 TypeLen;
 
@@ -946,25 +960,31 @@ INT ap_send_data_pkt(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pkt)
 */
 VOID ap_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *pTxBlk)
 {
-#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 	MAC_TABLE_ENTRY *pMacEntry = pTxBlk->pMacEntry;
 	pTxBlk->CipherAlg = CIPHER_NONE;
+	pTxBlk->KeyIdx = 0;
 
 	/* TODO:Eddy, Confirm MESH/Apcli.WAPI */
 	if (TX_BLK_TEST_FLAG(pTxBlk, fTX_bClearEAPFrame)
 		) {
 		pTxBlk->pKey =  NULL;
 	} else if (pTxBlk->TxFrameType == TX_MCAST_FRAME) {
-		pTxBlk->CipherAlg = wdev->SecConfig.GroupCipher;
-		pTxBlk->KeyIdx =  wdev->SecConfig.GroupKeyId;
-		if (IS_CIPHER_WEP(wdev->SecConfig.GroupCipher)) {
-			pTxBlk->pKey = (PCIPHER_KEY)&(wdev->SecConfig.WepKey[pTxBlk->KeyIdx]);
-		} else {
-			pTxBlk->pKey = NULL;
-			ASSERT(pTxBlk->pKey);
+		if (!IS_CIPHER_NONE(wdev->SecConfig.GroupCipher)) {
+			/* Change pTxBlk->CipherAlg non zero for TxD ref */
+			pTxBlk->CipherAlg = wdev->SecConfig.GroupCipher;
+			pTxBlk->KeyIdx =  wdev->SecConfig.GroupKeyId;
+			if (IS_CIPHER_WEP(wdev->SecConfig.GroupCipher)) {
+				pTxBlk->pKey = (PCIPHER_KEY)&(wdev->SecConfig.WepKey[pTxBlk->KeyIdx]);
+			} else {
+				/* TBD : S/W no support bcast now */
+				pTxBlk->pKey = NULL;
+				/* pTxBlk->pKey = wdev->SecConfig.GTK; */
+			}
 		}
 	} else if (pMacEntry) {
+#if defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT)
 		if (CLIENT_STATUS_TEST_FLAG(pMacEntry, fCLIENT_STATUS_SOFTWARE_ENCRYPT)) {
+			/* S/W case only support partial encryp type */
 			TX_BLK_SET_FLAG(pTxBlk, fTX_bSwEncrypt);
 			pTxBlk->KeyIdx =  pMacEntry->SecConfig.PairwiseKeyId;
 			if (IS_CIPHER_WEP40(pMacEntry->SecConfig.PairwiseCipher)) {
@@ -981,17 +1001,30 @@ VOID ap_find_cipher_algorithm(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *
 				/* CIPHER_AES , CIPHER_TKIP and others TBD */
 				pTxBlk->pKey = &pMacEntry->SecConfig.SwPairwiseKey;
 				pTxBlk->CipherAlg = pMacEntry->SecConfig.SwPairwiseKey.CipherAlg;
-
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+				pTxBlk->tfm = pMacEntry->SecConfig.tfm;
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 				if (pTxBlk->CipherAlg == CIPHER_AES)
 					inc_iv_byte(pTxBlk->pKey->TxTsc, LEN_WPA_TSC, 1);
 				else if (pTxBlk->CipherAlg == CIPHER_TKIP)
 					inc_iv_byte(pTxBlk->pKey->TxTsc, LEN_WPA_TSC, 1);
 			}
+		} else
+#endif /* defined(SOFT_ENCRYPT) || defined(SW_CONNECT_SUPPORT) */
+		{
+			pTxBlk->pKey = NULL;
+			/* Non S/W encrypt cases */
+			if (!IS_CIPHER_NONE(pMacEntry->SecConfig.PairwiseCipher)) {
+				/* Change pTxBlk->CipherAlg non zero for TxD ref */
+				pTxBlk->CipherAlg = pMacEntry->SecConfig.PairwiseCipher;
+				pTxBlk->KeyIdx =  pMacEntry->SecConfig.PairwiseKeyId;
+				if (IS_CIPHER_WEP(pMacEntry->SecConfig.PairwiseCipher))
+					pTxBlk->pKey = (PCIPHER_KEY)&(pMacEntry->SecConfig.WepKey[pTxBlk->KeyIdx]);
+			}
 		}
 	}
-#else /* SOFT_ENCRYPT || SW_CONNECT_SUPPORT */
-	pTxBlk->CipherAlg = CIPHER_NONE;
-#endif /* !SOFT_ENCRYPT && !SW_CONNECT_SUPPORT */
 
 }
 
@@ -1025,7 +1058,8 @@ static inline VOID ap_build_cache_802_11_header(
 			|| TX_BLK_TEST_FLAG(pTxBlk, fTX_bWDSEntry)
 #endif /* WDS_SUPPORT */
 #ifdef CLIENT_WDS
-			|| TX_BLK_TEST_FLAG(pTxBlk, fTX_bClientWDSFrame)
+			|| (TX_BLK_TEST_FLAG(pTxBlk, fTX_bClientWDSFrame) &&
+				(!pAd->CommonCfg.bClientWdsDisabled))
 #endif /* CLIENT_WDS */
 		   ) {
 			/* The addr3 of WDS packet is Destination Mac address and Addr4 is the Source Mac address. */
@@ -1153,7 +1187,8 @@ static inline VOID ap_build_802_11_header(RTMP_ADAPTER *pAd, TX_BLK *pTxBlk)
 				|| TX_BLK_TEST_FLAG(pTxBlk, fTX_bWDSEntry)
 #endif /* WDS_SUPPORT */
 #ifdef CLIENT_WDS
-				|| TX_BLK_TEST_FLAG(pTxBlk, fTX_bClientWDSFrame)
+				|| (TX_BLK_TEST_FLAG(pTxBlk, fTX_bClientWDSFrame) &&
+					(!pAd->CommonCfg.bClientWdsDisabled))
 #endif /* CLIENT_WDS */
 			   ) {
 				wifi_hdr->FC.ToDs = 1;
@@ -1324,7 +1359,8 @@ BOOLEAN ap_fill_non_offload_tx_blk(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_
 				else
 #endif /* WDS_SUPPORT */
 #ifdef CLIENT_WDS
-					if (IS_ENTRY_CLIWDS(pMacEntry)) {
+					if (IS_ENTRY_CLIWDS(pMacEntry) &&
+						(!pAd->CommonCfg.bClientWdsDisabled)) {
 						PUCHAR pDA = GET_OS_PKT_DATAPTR(pPacket);
 						PUCHAR pSA = GET_OS_PKT_DATAPTR(pPacket) + MAC_ADDR_LEN;
 					UCHAR idx = pMacEntry->func_tb_idx;
@@ -1378,6 +1414,9 @@ BOOLEAN ap_fill_non_offload_tx_blk(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_
 
 #endif /* SW_CONNECT_SUPPORT */
 				TX_BLK_SET_FLAG(pTxBlk, fTX_ForceRate);
+
+				pTxBlk->pTransmit->field.MODE = MODE_CCK;
+				pTxBlk->pTransmit->field.MCS = MCS_LONGP_RATE_1;
 
 				/* Modify the WMM bit for ICV issue. If we have a packet with EOSP field need to set as 1, how to handle it? */
 				if (!pTxBlk->pMacEntry)
@@ -1477,6 +1516,8 @@ BOOLEAN ap_fill_offload_tx_blk(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK 
 	/*get MBSS for tx counter usage*/
 	if (pTxBlk->TxFrameType != TX_MCAST_FRAME)
 		pTxBlk->pMbss = pTxBlk->pMacEntry->pMbss;
+
+	pTxBlk->wdev = wdev;
 	return TRUE;
 }
 
@@ -1497,12 +1538,12 @@ INT ap_mlme_mgmtq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 	MAC_TX_INFO mac_info;
 	struct DOT11_H *pDot11h = NULL;
 	struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
-#ifdef	CONFIG_RCSA_SUPPORT
 	UINT8 BandIdx = 0;
+#ifdef CONFIG_RCSA_SUPPORT
 #ifdef MT_DFS_SUPPORT
 	PDFS_PARAM pDfsParam = &pAd->CommonCfg.DfsParameter;
 #endif
-#endif
+#endif  /* CONFIG_RCSA_SUPPORT */
 #ifdef DPP_SUPPORT
 	UINT16 orig_sn;
 #endif /* DPP_SUPPORT */
@@ -1662,16 +1703,24 @@ INT ap_mlme_mgmtq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 	mac_info.PsmBySw = 1;
 	mac_info.txpwr_offset = 0;
 
-	if (pAd->CommonCfg.bSeOff != TRUE) {
-		if (HcGetBandByWdev(wdev) == BAND0) {
+	BandIdx = HcGetBandByWdev(wdev);
+
+	if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+		if (BandIdx == BAND0) {
 			if ((pAd->CommonCfg.CCKTxStream[BAND0] == 1) &&
 				(transmit->field.MODE == MODE_CCK))
 				mac_info.AntPri = 0x0;
 			else
 				mac_info.AntPri = BAND0_SPE_IDX;
-		}
-		else if (HcGetBandByWdev(wdev) == BAND1) {
-			mac_info.AntPri = BAND1_SPE_IDX;
+		} else if (BandIdx == BAND1) {
+			if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 1) &&
+				(transmit->field.MODE == MODE_OFDM))
+				mac_info.AntPri = 0x0;
+			else if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 2) &&
+				(transmit->field.MODE == MODE_OFDM))
+				mac_info.AntPri = BAND1_SPE_IDX_2STS;
+			else
+				mac_info.AntPri = BAND1_SPE_IDX;
 		}
 	}
 	/* check if the pkt is Tmr frame. */
@@ -1690,6 +1739,24 @@ INT ap_mlme_mgmtq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 		transmit = &wdev->eap.mgmphymode;
 	}
 #endif /* CONFIG_RA_PHY_RATE_SUPPORT */
+
+
+	if ((pHeader_802_11->FC.SubType == SUBTYPE_ASSOC_RSP) ||
+		(pHeader_802_11->FC.SubType == SUBTYPE_REASSOC_RSP)) {
+		struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
+
+		if (IS_AKM_PSK(pSecConfig->AKMMap)
+			|| IS_AKM_WPA2(pSecConfig->AKMMap)
+			|| IS_AKM_WPA3_192BIT(pSecConfig->AKMMap)
+			|| IS_AKM_OWE(pSecConfig->AKMMap)
+#ifdef DOT1X_SUPPORT
+			|| IS_AKM_1X(pSecConfig->AKMMap)
+#endif /* DOT1X_SUPPORT */
+		) {
+			PID = PID_MGMT_ASSOC_RSP;
+			mac_info.txs2h = TRUE;
+		}
+	}
 
 
 #ifdef DPP_SUPPORT
@@ -1965,6 +2032,7 @@ INT ap_mlme_dataq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 #endif /* SPECIFIC_TX_POWER_SUPPORT */
 	struct dev_rate_info *rate;
 	struct DOT11_H *pDot11h = NULL;
+	UCHAR BandIdx = 0;
 
 	if (wdev == NULL)
 		return NDIS_STATUS_FAILURE;
@@ -2092,11 +2160,24 @@ INT ap_mlme_dataq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 	mac_info.wmm_set = HcGetWmmIdx(pAd, wdev);
 	mac_info.q_idx  = HcGetMgmtQueueIdx(pAd, wdev, RTMP_GET_PACKET_TYPE(tx_blk->pPacket));
 	mac_info.txpwr_offset = 0;
-	if (pAd->CommonCfg.bSeOff != TRUE) {
-		if (HcGetBandByWdev(wdev) == BAND0)
+
+	BandIdx = HcGetBandByWdev(wdev);
+
+	if (pAd->CommonCfg.bSeOff[BandIdx] != TRUE) {
+		if (BandIdx == BAND0) {
 			mac_info.AntPri = BAND0_SPE_IDX;
-		else if (HcGetBandByWdev(wdev) == BAND1)
-			mac_info.AntPri = BAND1_SPE_IDX;
+		} else if (BandIdx == BAND1) {
+			if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 1) &&
+				(pHeader_802_11->FC.Type == FC_TYPE_MGMT) &&
+				(pHeader_802_11->FC.Type == SUBTYPE_BEACON))
+				mac_info.AntPri = 0;
+			else if ((pAd->CommonCfg.OFDMTxStream[BAND1] == 2) &&
+				(pHeader_802_11->FC.Type == FC_TYPE_MGMT) &&
+				(pHeader_802_11->FC.Type == SUBTYPE_BEACON))
+				mac_info.AntPri = BAND1_SPE_IDX_2STS;
+			else
+				mac_info.AntPri = BAND1_SPE_IDX;
+		}
 	}
 
 	mac_info.OmacIdx = wdev->OmacIdx;
@@ -2111,6 +2192,22 @@ INT ap_mlme_dataq_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 			mac_info.hdr_len += 4;
 
 		mac_info.PID = PID_MGMT;
+		if ((pHeader_802_11->FC.SubType == SUBTYPE_ASSOC_RSP) ||
+			(pHeader_802_11->FC.SubType == SUBTYPE_REASSOC_RSP)) {
+			struct _SECURITY_CONFIG *pSecConfig = &wdev->SecConfig;
+
+			if (IS_AKM_PSK(pSecConfig->AKMMap)
+				|| IS_AKM_WPA2(pSecConfig->AKMMap)
+				|| IS_AKM_WPA3_192BIT(pSecConfig->AKMMap)
+				|| IS_AKM_OWE(pSecConfig->AKMMap)
+#ifdef DOT1X_SUPPORT
+				|| IS_AKM_1X(pSecConfig->AKMMap)
+#endif /* DOT1X_SUPPORT */
+			) {
+				mac_info.PID = PID_MGMT_ASSOC_RSP;
+				mac_info.txs2h = TRUE;
+			}
+		}
 
 		if (IS_ASIC_CAP(pAd, fASIC_CAP_ADDBA_HW_SSN)) {
 			if (pHeader_802_11->FC.SubType == SUBTYPE_ACTION) {
@@ -2639,7 +2736,7 @@ UINT32 vow_clone_legacy_frame(RTMP_ADAPTER *pAd, TX_BLK *pTxBlk)
 		__func__, pkt, pAd->vow_cloned_wtbl_max, pTxBlk->pPacket, pkt));*/
 
 	if (pAd->CommonCfg.dbdc_mode)
-		band = WMODE_CAP_5G(wdev->PhyMode) ? 1 : 0;
+		band = (WMODE_CAP_5G(wdev->PhyMode) || WMODE_CAP_6G(wdev->PhyMode)) ? 1 : 0;
 	else
 		band = 0;
 	if (pAd->vow_cloned_wtbl_max[band]) {
@@ -2914,6 +3011,12 @@ INT ap_legacy_tx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 {
 	INT32 ret = NDIS_STATUS_SUCCESS;
 	struct wifi_dev_ops *wdev_ops = wdev->wdev_ops;
+
+
+	if (RTMP_GET_PACKET_LOWRATE(tx_blk->pPacket)) {
+		TX_BLK_CLEAR_FLAG(tx_blk, fTX_CT_WithTxD);
+		TX_BLK_CLEAR_FLAG(tx_blk, fTX_MCU_OFFLOAD);
+	}
 
 	if (!fill_tx_blk(pAd, wdev, tx_blk)) {
 		ap_tx_drop_update(pAd, wdev, tx_blk);
@@ -3192,6 +3295,14 @@ INT ap_tx_pkt_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 #endif /* SW_CONNECT_SUPPORT */
 	UINT16 wcid = RTMP_GET_PACKET_WCID(tx_blk->pPacket);
 
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	if (!afc_check_tx_enable(pAd, wdev)) {
+		RELEASE_NDIS_PACKET(pAd, tx_blk->pPacket, NDIS_STATUS_FAILURE);
+		return NDIS_STATUS_FAILURE;
+	}
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 	if (RTMP_GET_PACKET_WCID(tx_blk->pPacket) != 0)
 
 	if (!wdev) {
@@ -3313,23 +3424,27 @@ INT ap_tx_pkt_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, TX_BLK *tx_blk)
 #endif /* SW_CONNECT_SUPPORT */
 
 		pEntry = &pAd->MacTab.Content[wcid];
+#ifdef WHNAT_SUPPORT
+		if (!((pAd->CommonCfg.whnat_en) && (IS_ASIC_CAP(pAd, fASIC_CAP_MCU_OFFLOAD)))) {
 #ifdef MT7626_REDUCE_TX_OVERHEAD
 #else
-		INC_COUNTER64(pEntry->TxPackets);
-		pEntry->TxBytes += tx_blk->SrcBufLen;
+			INC_COUNTER64(pEntry->TxPackets);
+			pEntry->TxBytes += tx_blk->SrcBufLen;
 #ifdef TR181_SUPPORT
-		if (pEntry->pMbss) {
-			pEntry->pMbss->TxCount++;
-			pEntry->pMbss->TransmittedByteCount += tx_blk->SrcBufLen;
-		}
+			if (pEntry->pMbss) {
+				pEntry->pMbss->TxCount++;
+				pEntry->pMbss->TransmittedByteCount += tx_blk->SrcBufLen;
+			}
 #endif
 
 #endif
-		pEntry->OneSecTxBytes += tx_blk->SrcBufLen;
+			pEntry->OneSecTxBytes += tx_blk->SrcBufLen;
+			pEntry->one_sec_tx_pkts++;
+		}
+#endif
 #ifdef ANTENNA_DIVERSITY_SUPPORT
 		pEntry->ant_div_tx_bytes += tx_blk->SrcBufLen;
 #endif
-		pEntry->one_sec_tx_pkts++;
 	}
 
 end:
@@ -3561,7 +3676,7 @@ INT ap_rx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxBlk)
 	if ((pFmeCtrl->FrDs == 1) && (pFmeCtrl->ToDs == 1)) {
 #ifdef CLIENT_WDS
 
-		if (pEntry) {
+		if (pEntry && (!pAd->CommonCfg.bClientWdsDisabled)) {
 			/* The CLIENT WDS must be a associated STA */
 			if (IS_ENTRY_CLIWDS(pEntry))
 				;
@@ -3637,16 +3752,20 @@ INT ap_rx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxBlk)
 						pEventHdlrHook(pAd, pMovedEntry->wdev, pMovedEntry->Addr, pMovedEntry->wdev->channel);
 				}
 #endif /* WH_EVENT_NOTIFIER */
-				if (ProtoType == ETH_TYPE_ARP || pMovedEntry->NoDataIdleCount > 1) {
 #ifdef MAP_R2
-					if (IS_MAP_ENABLE(pAd) && IS_MAP_R2_ENABLE(pAd))
-						wapp_handle_sta_disassoc(pAd, pMovedEntry->wcid, REASON_DEAUTH_STA_LEAVING);
+				if (IS_MAP_ENABLE(pAd) && IS_MAP_R2_ENABLE(pAd))
+					wapp_handle_sta_disassoc(pAd, pMovedEntry->wcid, REASON_DEAUTH_STA_LEAVING);
 #endif
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-						 "AP found a entry(%02X:%02X:%02X:%02X:%02X:%02X) moved to another dev! Delete it from MAC table.\n",
-							PRINT_MAC(pMovedEntry->Addr));
-					mac_entry_delete(pAd, pMovedEntry);
-				}
+#ifdef WHNAT_SUPPORT
+#ifdef CONFIG_FAST_NAT_SUPPORT
+				if (pAd->CommonCfg.whnat_en && ppe_del_entry_by_mac)
+					ppe_del_entry_by_mac(pMovedEntry->Addr);
+#endif
+#endif
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+					 "AP found a entry(%02X:%02X:%02X:%02X:%02X:%02X) moved to another dev! Delete it from MAC table.\n",
+						PRINT_MAC(pMovedEntry->Addr));
+				mac_entry_delete(pAd, pMovedEntry);
 			}
 		}
 			a4_proxy_update(pAd, pEntry->func_tb_idx, pEntry->wcid, pRxBlk->Addr4, ARPSenderIP);
@@ -3858,7 +3977,8 @@ INT ap_rx_pkt_allowed(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxBlk)
 #endif /* WH_EVENT_NOTIFIER */
 
 #ifdef RADIUS_MAC_AUTH_SUPPORT
-	if (pEntry->wdev->radius_mac_auth_enable) {
+	if (pEntry->wdev->radius_mac_auth_enable &&
+		!pAd->CommonCfg.bRadiusMacAuthDisabled) {
 		if (!pEntry->bAllowTraffic)
 			return FALSE;
 	}
@@ -3967,8 +4087,8 @@ INT ap_rx_pkt_foward(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pPac
 					but not to air if match following case:
 						a). pMbss->IsolateInterStaTraffic == TRUE
 				*/
-				to_os = TRUE;
-				to_air = FALSE;
+				to_air = TRUE;
+				to_os = FALSE;
 
 				if (pMbss->IsolateInterStaTraffic == 1)
 					to_air = FALSE;
@@ -4027,7 +4147,7 @@ INT ap_rx_pkt_foward(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, PNDIS_PACKET pPac
 
 #ifdef MBSS_AS_WDS_AP_SUPPORT
 #ifdef CLIENT_WDS
-		else if ((!pEntry)
+		else if (((!pEntry) && (!pAd->CommonCfg.bClientWdsDisabled))
 #ifdef AIR_MONITOR
 			|| (pEntry && IS_ENTRY_MONITOR(pEntry))
 #endif
@@ -4339,6 +4459,8 @@ INT ap_ieee_802_3_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxB
 		PUCHAR pDA = pRxBlk->Addr3;
 		PUCHAR pSA = pRxBlk->Addr2;
 		PUCHAR pData = pRxBlk->pData + 12;
+
+		PUCHAR pDataEnd = pRxBlk->pData + pRxBlk->DataSize;
 		UINT16 protoType = OS_NTOHS(*((UINT16 *)(pData)));
 #ifdef MAP_TS_TRAFFIC_SUPPORT
 		/*when TS enable, for igmp need skip vlan header before handle*/
@@ -4355,9 +4477,9 @@ INT ap_ieee_802_3_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxB
 		}
 #endif
 		if (protoType == ETH_P_IP)
-			IGMPSnooping(pAd, pDA, pSA, pData, pEntry, pRxBlk->wcid);
+			IGMPSnooping(pAd, pDA, pSA, pData, pDataEnd, pEntry, pRxBlk->wcid);
 		else if (protoType == ETH_P_IPV6)
-			MLDSnooping(pAd, pDA, pSA,  pData, pEntry, pRxBlk->wcid);
+			MLDSnooping(pAd, pDA, pSA,  pData, pDataEnd, pEntry, pRxBlk->wcid);
 	}
 
 #ifdef IGMP_TVM_SUPPORT
@@ -4414,6 +4536,13 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 #endif /* SW_CONNECT_SUPPORT */
 #if defined(SOFT_ENCRYPT) || defined(ADHOC_WPA2PSK_SUPPORT) || defined(WTBL_TDD_SUPPORT) || defined(SW_CONNECT_SUPPORT)
 	PCIPHER_KEY pPairwiseKey = NULL;
+
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+	struct crypto_aead *tfm = NULL;
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+
 	UINT8 KeyId = 0;
 	NDIS_STATUS status;
 #endif /* defined(SOFT_ENCRYPT) || defined(ADHOC_WPA2PSK_SUPPORT) || defined(WTBL_TDD_SUPPORT) */
@@ -4464,8 +4593,15 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 
 	pData = pRxBlk->FC;
 	/* 1. skip 802.11 HEADER */
-	pData += hdr_len;
-	pRxBlk->DataSize -= hdr_len;
+	if (pRxBlk->DataSize > hdr_len) {
+		pData += hdr_len;
+		pRxBlk->DataSize -= hdr_len;
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+			"[%s] skip 802.11 HEADER fail, pRxBlk->DataSize = %d\n",
+			__func__, pRxBlk->DataSize);
+		return FALSE;
+	}
 
 	/* 2. QOS */
 	if (pFmeCtrl->SubType & 0x08) {
@@ -4491,9 +4627,18 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 			pCounter->MPDUInReceivedAMPDUCount.u.LowPart++;
 		}
 
+		hdr_len += 2;
+
 		/* skip QOS contorl field */
-		pData += 2;
-		pRxBlk->DataSize -= 2;
+		if (pRxBlk->DataSize > 2) {
+			pData += 2;
+			pRxBlk->DataSize -= 2;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"[%s] skip QOS contorl field fail, pRxBlk->DataSize = %d\n",
+				__func__, pRxBlk->DataSize);
+			return FALSE;
+		}
 	}
 
 	pRxBlk->UserPriority = UserPriority;
@@ -4539,8 +4684,17 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 #endif /* AGGREGATION_SUPPORT */
 		{
 			/* skip HTC control field */
-			pData += 4;
-			pRxBlk->DataSize -= 4;
+
+			hdr_len += 4;
+			if (pRxBlk->DataSize > 4) {
+				pData += 4;
+				pRxBlk->DataSize -= 4;
+			} else {
+				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"[%s] skip HTC control field fail, pRxBlk->DataSize = %d\n",
+					__func__, pRxBlk->DataSize);
+				return FALSE;
+			}
 		}
 	}
 
@@ -4555,7 +4709,14 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 	if (pRxInfo->L2PAD) {
 		/* just move pData pointer because DataSize excluding HW padding */
 		RX_BLK_SET_FLAG(pRxBlk, fRX_PAD);
-		pData += 2;
+		if (pRxBlk->DataSize > 2) {
+			pData += 2;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"[%s] skip HW padding fail, pRxBlk->DataSize = %d\n",
+				__func__, pRxBlk->DataSize);
+			return FALSE;
+		}
 	}
 
 	if (pRxBlk->AmsduState) {
@@ -4564,11 +4725,25 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 		rx_base = (struct _RXD_BASE_STRUCT *)pRxBlk->rmac_info;
 
 		/* skip 2 bytes HW padding */
-		pData += 2;
-		pRxBlk->DataSize -= 2;
+		if (pRxBlk->DataSize > 2) {
+			pData += 2;
+			pRxBlk->DataSize -= 2;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"[%s] skip 2 bytes HW padding fail, pRxBlk->DataSize = %d\n",
+				__func__, pRxBlk->DataSize);
+			return FALSE;
+		}
 
-		pData += LENGTH_802_3;
-		pRxBlk->DataSize -= LENGTH_802_3;
+		if (pRxBlk->DataSize > LENGTH_802_3) {
+			pData += LENGTH_802_3;
+			pRxBlk->DataSize -= LENGTH_802_3;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"[%s] skip 802.3 HEADER fail, pRxBlk->DataSize = %d\n",
+				__func__, pRxBlk->DataSize);
+			return FALSE;
+		}
 	}
 
 	pRxBlk->pData = pData;
@@ -4587,6 +4762,11 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 		!IS_HIF_TYPE(pAd, HIF_MT)) {
 		if ((pFmeCtrl->Wep == 1) && (pRxInfo->Decrypted == 0)) {
 #if defined(WTBL_TDD_SUPPORT) || defined(SW_CONNECT_SUPPORT)
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+			tfm = pEntry->SecConfig.tfm;
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 			if (IS_CIPHER_CCMP128(pEntry->SecConfig.PairwiseCipher)) {
 				pPairwiseKey = &pEntry->SecConfig.SwPairwiseKey;
 			} else if (IS_CIPHER_TKIP(pEntry->SecConfig.PairwiseCipher)) {
@@ -4622,15 +4802,33 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 			} else
 #endif /* HDR_TRANS_SUPPORT */
 			{
-				status = RTMPSoftDecryptionAction(pAd,
-												  pRxBlk->FC,
-												  UserPriority,
-												  pPairwiseKey,
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+				if (tfm && pPairwiseKey && (pPairwiseKey->CipherAlg == CIPHER_AES)) {
+					status = ccmp_decrypt(tfm, pRxBlk, pPairwiseKey->RxTsc, pRxBlk->FC);
+
+					if (status == NDIS_STATUS_SUCCESS) {
+						/* skip CCMP hdr */
+						pRxBlk->pData = pData + LEN_CCMP_HDR;
+						/* skip CCMP hdr & MIC LEN */
+						pRxBlk->DataSize = pRxBlk->DataSize - LEN_CCMP_HDR - LEN_CCMP_MIC;
+					}
+
+				} else
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+				{
+					status = RTMPSoftDecryptionAction(pAd,
+													  pRxBlk->FC,
+													  UserPriority,
+													  pPairwiseKey,
 #ifdef CONFIG_STA_SUPPORT
-												  wdev_idx,
+													  wdev_idx,
 #endif /* CONFIG_STA_SUPPORT */
-												  pRxBlk->pData,
-												  &(pRxBlk->DataSize));
+													  pRxBlk->pData,
+													  &(pRxBlk->DataSize));
+				}
+
 			}
 
 			if (status != NDIS_STATUS_SUCCESS) {
@@ -4643,7 +4841,7 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 			} else {
 #ifdef SW_CONNECT_SUPPORT
 				if (tr_entry->bSw) {
-					MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "wcid =%d, S/W decryp OK !!\n", pEntry->wcid);
+					MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "wcid =%d, S/W decryp OK !!, pRxBlk->DataSize=%u\n", pEntry->wcid, pRxBlk->DataSize);
 					RX_BLK_CLEAR_FLAG(pRxBlk, fRX_CM);
 				}
 #endif /* SW_CONNECT_SUPPORT */
@@ -4722,7 +4920,14 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 			Minus MIC length and calculate the MIC value
 		*/
 		if (bFragment && (pFmeCtrl->Wep) && IS_CIPHER_TKIP_Entry(pEntry)) {
-			pRxBlk->DataSize -= 8;
+			if (pRxBlk->DataSize > 8) {
+				pRxBlk->DataSize -= 8;
+			} else {
+				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"[%s] Minus MIC length fail, pRxBlk->DataSize = %d\n",
+					__func__, pRxBlk->DataSize);
+				return FALSE;
+			}
 
 			if (rtmp_chk_tkip_mic(pAd, pEntry, pRxBlk) == FALSE)
 				return TRUE;
@@ -4757,12 +4962,13 @@ INT ap_ieee_802_11_data_rx(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRx
 			PUCHAR pDA = pRxBlk->Addr3;
 			PUCHAR pSA = pRxBlk->Addr2;
 			PUCHAR pData = NdisEqualMemory(SNAP_802_1H, pRxBlk->pData, 6) ? (pRxBlk->pData + 6) : pRxBlk->pData;
+			PUCHAR pDataEnd = pRxBlk->pData + pRxBlk->DataSize;
 			UINT16 protoType = OS_NTOHS(*((UINT16 *)(pData)));
 
 			if (protoType == ETH_P_IP)
-				IGMPSnooping(pAd, pDA, pSA, pData, pEntry, pRxBlk->wcid);
+				IGMPSnooping(pAd, pDA, pSA, pData, pDataEnd, pEntry, pRxBlk->wcid);
 			else if (protoType == ETH_P_IPV6)
-				MLDSnooping(pAd, pDA, pSA,  pData, pEntry, pRxBlk->wcid);
+				MLDSnooping(pAd, pDA, pSA,  pData, pDataEnd, pEntry, pRxBlk->wcid);
 		}
 
 #endif /* IGMP_SNOOP_SUPPORT */

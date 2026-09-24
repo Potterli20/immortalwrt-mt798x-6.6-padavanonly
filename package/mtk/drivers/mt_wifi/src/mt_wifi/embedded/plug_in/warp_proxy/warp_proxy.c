@@ -407,6 +407,20 @@ void client_update_wo_rxcnt(void *priv_data, void *wo_rxcnt)
 		(pEntry->wcid != r_cnt->wlan_idx))
 		return;
 
+	if ((IS_ENTRY_PEER_AP(pEntry) || IS_ENTRY_REPEATER(pEntry)) &&
+		(pEntry->func_tb_idx < MAX_MULTI_STA)
+) {
+		ad->StaCfg[pEntry->func_tb_idx].StaStatistic.RxCount += r_cnt->rx_pkt_cnt;
+		ad->StaCfg[pEntry->func_tb_idx].StaStatistic.ReceivedByteCount += r_cnt->rx_byte_cnt;
+		ad->StaCfg[pEntry->func_tb_idx].StaStatistic.RxErrorCount += r_cnt->rx_err_cnt;
+		ad->StaCfg[pEntry->func_tb_idx].StaStatistic.RxDropCount += r_cnt->rx_drop_cnt;
+	}
+
+#ifdef CONFIG_MAP_SUPPORT
+	if (IS_MAP_ENABLE(ad))
+		pEntry->RxBytesMAP += r_cnt->rx_byte_cnt;
+#endif
+
 	pEntry->RxPackets.QuadPart += r_cnt->rx_pkt_cnt;
 	pEntry->RxBytes += r_cnt->rx_byte_cnt;
 	if (pEntry->pMbss) {

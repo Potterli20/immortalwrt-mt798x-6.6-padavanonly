@@ -1007,6 +1007,7 @@ end:
 * Security
 */
 static INT multi_profile_merge_security(
+	struct _RTMP_ADAPTER *ad,
 	struct mpf_data *mpf,
 	CHAR *buf1,
 	CHAR *buf2,
@@ -1098,10 +1099,43 @@ static INT multi_profile_merge_security(
 	/*SAEPKGroup*/
 	multi_profile_merge_perbss(mpf, "SAEPKGroup", buf1, buf2, final, MPF_APPEND_BSS0);
 #endif
+#else
+	if (ad->CommonCfg.bHostapdDisabled) {
+#ifdef DOT11_SAE_SUPPORT
+		/*PWDID*/
+		multi_profile_merge_increase(mpf, 1, "PWDID", buf1, buf2, final);
+		/*PWDIDR*/
+		multi_profile_merge_perbss(mpf, "PWDIDR", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*PweMethod*/
+		multi_profile_merge_perbss(mpf, "PweMethod", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPK*/
+		multi_profile_merge_perbss(mpf, "SAEPK", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPKInputMode*/
+		multi_profile_merge_perbss(mpf, "SAEPKInputMode", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPKKeyFilePath*/
+		multi_profile_merge_increase(mpf, 1, "SAEPKKeyFilePath", buf1, buf2, final);
+		/*SAEPKCfg*/
+		multi_profile_merge_perbss(mpf, "SAEPKCfg", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPKKey*/
+		multi_profile_merge_increase(mpf, 1, "SAEPKKey", buf1, buf2, final);
+		/*SAEPKStartM*/
+		multi_profile_merge_increase(mpf, 1, "SAEPKStartM", buf1, buf2, final);
+		/*SAEPKSec*/
+		multi_profile_merge_perbss(mpf, "SAEPKSec", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPKLambda*/
+		multi_profile_merge_perbss(mpf, "SAEPKLambda", buf1, buf2, final, MPF_APPEND_BSS0);
+		/*SAEPKGroup*/
+		multi_profile_merge_perbss(mpf, "SAEPKGroup", buf1, buf2, final, MPF_APPEND_BSS0);
+#endif
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 	/* OCVSupport */
 	multi_profile_merge_perbss(mpf, "OCVSupport", buf1, buf2, final, MPF_APPEND_BSS0);
 	multi_profile_merge_perbss(mpf, "TransitionDisable", buf1, buf2, final, MPF_APPEND_BSS0);
+	/* RekeyCountDown */
+	multi_profile_merge_perbss(mpf, "RekeyCountDown", buf1, buf2, final, MPF_APPEND_BSS0);
+	/* RekeyDeauthDelay */
+	multi_profile_merge_perbss(mpf, "RekeyDeauthDelay", buf1, buf2, final, MPF_APPEND_BSS0);
 	return NDIS_STATUS_SUCCESS;
 }
 
@@ -1688,6 +1722,7 @@ end:
 * mbss related merge function
 */
 static INT multi_profile_merge_mbss(
+	struct _RTMP_ADAPTER *ad,
 	struct mpf_data *data,
 	CHAR *buf1,
 	CHAR *buf2,
@@ -1707,6 +1742,12 @@ static INT multi_profile_merge_mbss(
 	multi_profile_merge_separate("MAP_Turnkey", buf1, buf2, final);
 	multi_profile_merge_separate("MAP_Ext", buf1, buf2, final);
 #endif
+#ifdef WSC_AP_SUPPORT
+	/* merge wsc uuide */
+	multi_profile_merge_increase(data, 1, "WSC_UUID_E", buf1, buf2, final);
+	/* merge wsc uuidstr */
+	multi_profile_merge_increase(data, 1, "WSC_UUID_Str", buf1, buf2, final);
+#endif
 	/*merge WirelessMode*/
 	multi_profile_merge_perbss(data, "WirelessMode", buf1, buf2, final, MPF_APPEND_BSS0);
 	/*merge Channel*/
@@ -1724,7 +1765,7 @@ static INT multi_profile_merge_mbss(
 	/*merge ACSCheckTimeMin*/
 	multi_profile_merge_separate("ACSCheckMinTime", buf1, buf2, final);
 	/*merge security*/
-	multi_profile_merge_security(data, buf1, buf2, final);
+	multi_profile_merge_security(ad, data, buf1, buf2, final);
 	/*merge WmmCapable*/
 	multi_profile_merge_separate("WmmCapable", buf1, buf2, final);
 	/*merge NoForwarding*/
@@ -1881,6 +1922,10 @@ static INT multi_profile_merge_mbss(
 #ifdef WIFI_CSI_CN_INFO_SUPPORT
 	multi_profile_merge_separate("EnableCNInfo", buf1, buf2, final);
 #endif /* WIFI_CSI_CN_INFO_SUPPORT */
+
+	multi_profile_merge_separate("SE_OFF", buf1, buf2, final);
+
+	multi_profile_merge_separate("OFDMTxStream", buf1, buf2, final);
 
 	return NDIS_STATUS_SUCCESS;
 }
@@ -3074,6 +3119,30 @@ static INT multi_profile_merge_mcast(
 }
 #endif /* MCAST_RATE_SPECIFIC */
 
+#ifdef CONFIG_6G_SUPPORT
+/*
+ * merge 6G only related
+ */
+static INT multi_profile_merge_6g_only(CHAR *buf1, CHAR *buf2, CHAR *final)
+{
+	CHAR tmpbuf[64] = "";
+	UCHAR len = sizeof(tmpbuf);
+
+	if (RTMPGetKeyParameter("He6gIobType", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("He6gIobType", tmpbuf, len, final, TRUE);
+
+	if (RTMPGetKeyParameter("He6gIobTu", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("He6gIobTu", tmpbuf, len, final, TRUE);
+
+	if (RTMPGetKeyParameter("He6gIobMode", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("He6gIobMode", tmpbuf, len, final, TRUE);
+
+	if (RTMPGetKeyParameter("He6gOob", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("He6gOob", tmpbuf, len, final, TRUE);
+
+	return NDIS_STATUS_SUCCESS;
+}
+#endif
 
 /*
 * merge 5G only related
@@ -3136,6 +3205,36 @@ static INT multi_profile_merge_5g_only(
 	if (RTMPGetKeyParameter("IEEE80211H", tmpbuf, len, buf_mu, TRUE) == TRUE)
 		RTMPSetKeyParameter("IEEE80211H", tmpbuf, len, final, TRUE);
 
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+	/*AFC Device Type*/
+	if (RTMPGetKeyParameter("AfcDeviceType", tmpbuf, len, buf_mu, TRUE) == TRUE)
+		RTMPSetKeyParameter("AfcDeviceType", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcSpBwDup", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcSpBwDup", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcFreqrange", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcFreqrange", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("ACSAfterAFC", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("ACSAfterAFC", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcSpectrumType", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcSpectrumType", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass131", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass131", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass132", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass132", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass133", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass133", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass134", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass134", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass135", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass135", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("AfcOpClass136", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("AfcOpClass136", tmpbuf, len, final, TRUE);
+#endif /*CONFIG_6G_SUPPORT && */
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
+	if (RTMPGetKeyParameter("LPIEnable", tmpbuf, len, buf_mu, TRUE))
+		RTMPSetKeyParameter("LPIEnable", tmpbuf, len, final, TRUE);
+
 #ifdef DBDC_ONE_BAND1_SUPPORT
 	if (RTMPGetKeyParameter("CountryCode", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("CountryCode", tmpbuf, len, final, TRUE);
@@ -3156,6 +3255,12 @@ static INT multi_profile_merge_5g_only(
 	if (RTMPGetKeyParameter("DfsFalseAlarmPrevent", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("DfsFalseAlarmPrevent", tmpbuf, len, final, TRUE);
 
+#ifdef MT_BAND4_DFS_SUPPORT /*302502*/
+	/*Band4DfsEnable*/
+	if (RTMPGetKeyParameter("Band4DfsEnable", tmpbuf, len, buf_mu, TRUE) == TRUE)
+		RTMPSetKeyParameter("Band4DfsEnable", tmpbuf, len, final, TRUE);
+#endif
+
 	/* DfsZeroWait */
 	if (RTMPGetKeyParameter("DfsZeroWait", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("DfsZeroWait", tmpbuf, len, final, TRUE);
@@ -3175,9 +3280,6 @@ static INT multi_profile_merge_5g_only(
 	/*DfsTargetCh*/
 	if (RTMPGetKeyParameter("DfsTargetCh", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("DfsTargetCh", tmpbuf, len, final, TRUE);
-
-	if (RTMPGetKeyParameter("Ch144Support", tmpbuf, len, buf2, TRUE) == TRUE)
-		RTMPSetKeyParameter("Ch144Support", tmpbuf, len, final, TRUE);
 	/*DfsPreferType*/
 	if (RTMPGetKeyParameter("DfsChSelPrefer", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("DfsChSelPrefer", tmpbuf, len, final, TRUE);
@@ -3191,6 +3293,27 @@ static INT multi_profile_merge_5g_only(
 	if (RTMPGetKeyParameter("Vht1024QamSupport", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("Vht1024QamSupport", tmpbuf, len, final, TRUE);
 
+	/*CERegCacEn*/
+	if (RTMPGetKeyParameter("CERegCacEn", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("CERegCacEn", tmpbuf, len, final, TRUE);
+
+#ifdef DFS_VENDOR10_CUSTOM_FEATURE
+	if (RTMPGetKeyParameter("Ch144Support", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("Ch144Support", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("OldChannel_Dev1", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("OldChannel_Dev1", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("OldHTBW_Dev1", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("OldHTBW_Dev1", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("OldVHTBW_Dev1", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("OldVHTBW_Dev1", tmpbuf, len, final, TRUE);
+#endif
+
+#ifdef VENDOR10_VLP_FEATURE
+	if (RTMPGetKeyParameter("VlpCtrl", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("VlpCtrl", tmpbuf, len, final, TRUE);
+	if (RTMPGetKeyParameter("VlpPwr", tmpbuf, len, buf2, TRUE) == TRUE)
+		RTMPSetKeyParameter("VlpPwr", tmpbuf, len, final, TRUE);
+#endif
 	return NDIS_STATUS_SUCCESS;
 }
 
@@ -3336,6 +3459,7 @@ static INT multi_profile_merge_global_setting_only(CHAR *buf1, CHAR *buf2, CHAR 
 	/*RED_Enable*/
 	if (RTMPGetKeyParameter("RED_Enable", tmpbuf, len, buf2, TRUE) == TRUE)
 		RTMPSetKeyParameter("RED_Enable", tmpbuf, len, final, TRUE);
+
 
 
 	return NDIS_STATUS_SUCCESS;
@@ -3798,6 +3922,19 @@ static INT multi_profile_merge_3wireFunctionEnable(
 }
 #endif
 
+#ifdef DFS_SLAVE_SUPPORT
+static INT multi_profile_merge_dfs_slave_data(
+	struct mpf_data *data,
+	CHAR *buf1,
+	CHAR *buf2,
+	CHAR *final)
+{
+	multi_profile_merge_separate("DfsSlaveEn", buf1, buf2, final);
+	multi_profile_merge_separate("SlaveSkipStaDisc", buf1, buf2, final);
+	return NDIS_STATUS_SUCCESS;
+}
+#endif /* DFS_SLAVE_SUPPORT */
+
 /*
 * set second profile and merge it.
 */
@@ -3827,7 +3964,7 @@ static INT multi_profile_merge(
 
 #ifdef MBSS_SUPPORT
 
-		if (multi_profile_merge_mbss(data, buf1, buf2, final) != NDIS_STATUS_SUCCESS)
+		if (multi_profile_merge_mbss(ad, data, buf1, buf2, final) != NDIS_STATUS_SUCCESS)
 			return retval;
 
 #endif /*MBSS_SUPPORT*/
@@ -3908,6 +4045,16 @@ static INT multi_profile_merge(
 		return retval;
 
 #endif
+
+#ifdef CONFIG_6G_SUPPORT
+	if (multi_profile_merge_6g_only(buf1, buf2, final) != NDIS_STATUS_SUCCESS)
+		return retval;
+#endif /* CONFIG_6G_SUPPORT */
+
+#ifdef MLR_SUPPORT
+	multi_profile_merge_separate("MLREnable", buf1, buf2, final);
+#endif /* MLR_SUPPORT */
+
 #ifdef IGMP_SNOOP_SUPPORT
 
 	if (multi_profile_merge_igmp(buf1, buf2, final) != NDIS_STATUS_SUCCESS)
@@ -4029,6 +4176,10 @@ static INT multi_profile_merge(
 	if (multi_profile_merge_3wireFunctionEnable(data, buf1, buf2, final) != NDIS_STATUS_SUCCESS)
 		return retval;
 #endif
+#ifdef DFS_SLAVE_SUPPORT
+	if (multi_profile_merge_dfs_slave_data(data, buf1, buf2, final) != NDIS_STATUS_SUCCESS)
+		return retval;
+#endif /* DFS_SLAVE_SUPPORT */
 	data->enable = TRUE;
 	/*adjust specific device name*/
 	data->specific_dname = TRUE;

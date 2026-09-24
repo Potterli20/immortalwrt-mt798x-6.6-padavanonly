@@ -68,6 +68,9 @@ static NTSTATUS hw_ctrl_flow_v2_link_up(struct WIFI_SYS_CTRL *wsys)
 	struct _BSS_INFO_ARGUMENT_T *bss = &wsys->BssInfoCtrl;
 	UINT16 txop_level = TXOP_0;
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(ad->hdev_ctrl);
+#ifdef CONFIG_6G_SUPPORT
+	UCHAR iob_mode;
+#endif /* CONFIG_6G_SUPPORT */
 
 	MTWF_DBG(ad, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "wdev_idx=%d\n", wsys->wdev->wdev_idx);
 	if (bss->u4BssInfoFeature) {
@@ -79,6 +82,15 @@ static NTSTATUS hw_ctrl_flow_v2_link_up(struct WIFI_SYS_CTRL *wsys)
 
 	if (sta_rec->EnableFeature) {
 		AsicStaRecUpdate(ad, sta_rec);
+#ifdef CONFIG_6G_SUPPORT
+		if (wdev && WMODE_CAP_6G(wdev->PhyMode)) {
+			iob_mode = wlan_config_get_unsolicit_tx_mode(wdev);
+			if ((iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP)
+				&& (wdev->tr_tb_idx < MAX_LEN_OF_MAC_TABLE))
+				chip_ra_init(ad, &ad->MacTab.Content[wdev->tr_tb_idx]);
+		}
+#endif /* CONFIG_6G_SUPPORT */
+
 		/*update starec to tr_entry*/
 		wifi_sys_update_starec(ad, sta_rec);
 	}
@@ -269,6 +281,9 @@ static NTSTATUS hw_ctrl_flow_v2_peer_update(struct WIFI_SYS_CTRL *wsys)
 	struct _STA_REC_CTRL_T *sta_rec = &wsys->StaRecCtrl;
 #ifdef RACTRL_FW_OFFLOAD_SUPPORT
 	UINT32 featues = 0;
+#ifdef CONFIG_6G_SUPPORT
+	UCHAR iob_mode;
+#endif /* CONFIG_6G_SUPPORT */
 
 	MTWF_DBG(ad, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "wdev_idx=%d\n", wsys->wdev->wdev_idx);
 	/*update ra rate*/
@@ -295,6 +310,13 @@ static NTSTATUS hw_ctrl_flow_v2_peer_update(struct WIFI_SYS_CTRL *wsys)
 	if (sta_rec->EnableFeature & STA_REC_RA_FEATURE) {
 		featues = sta_rec->EnableFeature;
 		sta_rec->EnableFeature = STA_REC_RA_FEATURE;
+#ifdef CONFIG_6G_SUPPORT
+		if (wdev && WMODE_CAP_6G(wdev->PhyMode)) {
+			iob_mode = wlan_config_get_unsolicit_tx_mode(wdev);
+			if (iob_mode == UNSOLICIT_TXMODE_NON_HT_DUP)
+				sta_rec->update_ra = TRUE;
+		}
+#endif /* CONFIG_6G_SUPPORT */
 		AsicStaRecUpdate(ad, sta_rec);
 		sta_rec->EnableFeature = featues & (~STA_REC_RA_FEATURE);
 	}

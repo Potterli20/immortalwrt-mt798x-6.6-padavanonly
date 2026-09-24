@@ -725,7 +725,7 @@ NDIS_STATUS bss_mgmt_rsp_handler(
 			RTMP_SEM_LOCK(&dsc_oob->list_lock);
 			dsc_oob->repted_bss_cnt = rsp_param->data.repted_bss.repted_bss_cnt;
 			if (dsc_oob->repted_bss_cnt > MAX_REPTED_BSS_CNT)	/* avoid overflow */
-				dsc_oob->repted_bss_cnt = MAX_REPTED_BSS_CNT
+				dsc_oob->repted_bss_cnt = MAX_REPTED_BSS_CNT;
 			NdisMoveMemory(dsc_oob->repted_bss_list,
 						   rsp_param->data.repted_bss.repted_bss_list,
 						   dsc_oob->repted_bss_cnt * sizeof(repted_bss_info));
@@ -823,7 +823,7 @@ ULONG ap_6g_build_unsol_bc_probe_rsp(
 	} else
 #endif /* CONFIG_HOTSPOT_R2 */
 
-	ComposeBcnPktTail(pAd, wdev, &frame_len, f_buf);
+	ComposeBcnPktTail(pAd, wdev, &frame_len, f_buf, FALSE);
 
 	MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s, Build BC_PROBE_RSP, Len = %ld\n",
 			 __func__, frame_len);
@@ -912,6 +912,9 @@ NDIS_STATUS ap_6g_build_discovery_frame(
 			TransmitSet.field.BW		= BW_80;
 			TransmitSet.field.MODE	= MODE_OFDM;
 			TransmitSet.field.MCS	= MCS_RATE_6;
+		} else if (iob_mode == UNSOLICIT_TXMODE_HE_SU) {
+			TransmitSet.field.MODE	= MODE_HE;
+			TransmitSet.field.MCS	= MCS_0;
 		} else {
 			TransmitSet.field.BW		= BW_20;
 			TransmitSet.field.MODE	= MODE_OFDM;

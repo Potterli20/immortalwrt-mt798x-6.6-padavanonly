@@ -899,7 +899,7 @@ static void __exit whnat_module_exit(void)
 module_init(whnat_module_init);
 module_exit(whnat_module_exit);
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_SUPPORTED_DEVICE("mt7615 within mt7622");
 

@@ -608,6 +608,9 @@ static PUCHAR MATProto_PPPoEDis_Rx(
 	PUidMacMappingEntry pEntry = NULL;
 	pData = pLayerHdr;
 
+
+
+
 	if (*(pData) != 0x11)
 		return NULL;
 
@@ -737,14 +740,19 @@ static PUCHAR MATProto_PPPoEDis_Tx(
 {
 	PUCHAR pData, pTagContent = NULL, pPayloadLen, pPPPPoETail;
 	PUCHAR pSrcMac, pDstMac;
-	UINT16 payloadLen, leftLen, offset;
+	UINT16 payloadLen, offset;
+	UINT32 leftLen;
 	UINT16 tagID, tagLen = 0;
 	UINT16 isServer = 0, needUpdateSesTb = 0, sesID = 0;
 	UINT16 findTag = 0;
 	PUidMacMappingEntry pEntry = NULL;
 	PUCHAR pPktHdr;
 	PNDIS_PACKET pModSkb = NULL;
+	UCHAR *pkt_end;
+	UINT32 pkt_len = GET_OS_PKT_LEN(pSkb);
+
 	pPktHdr = GET_OS_PKT_DATAPTR(pSkb);
+	pkt_end = pPktHdr + pkt_len;
 	pDstMac = pPktHdr;
 	pSrcMac = (pPktHdr + 6);
 	pData = pLayerHdr;
@@ -755,6 +763,9 @@ static PUCHAR MATProto_PPPoEDis_Tx(
 
 	/* Check the Code type. */
 	pData++;
+
+	if (pData >= pkt_end)
+		return NULL;
 
 	switch (*pData) {
 	/* Send by pppoe client */
@@ -793,29 +804,52 @@ static PUCHAR MATProto_PPPoEDis_Tx(
 	*/
 	pData++;
 
+	if (pData >= (pkt_end-2))
+		return NULL;
+
 	if (needUpdateSesTb)
 		sesID = OS_NTOHS(get_unaligned((PUINT16)(pData)));
 
 	/* Ignore the session ID field.(length = 2) */
 	pData += 2;
+
+	if (pData >= (pkt_end-2))
+		return NULL;
+
 	/* Get the payload length, and  shift the payload length field(length = 2) to next field. */
-	payloadLen = OS_NTOHS(get_unaligned((PUINT16)(pData)));
+	os_move_mem(&payloadLen, pData, sizeof(payloadLen));
+	payloadLen = OS_NTOHS(payloadLen);
+
+	if ((pData+payloadLen) > pkt_end)
+		return NULL;
+
 	pPayloadLen = pData;
 	offset = pPayloadLen - (PUCHAR)(GET_OS_PKT_DATAPTR(pSkb));
 	pData += 2;
+
+if (pData >= pkt_end)
+	return NULL;
+
 	/* First parsing the PPPoE paylod to find out the required tag(e.g., x0103 or 0x0104) */
 	leftLen = payloadLen;
 
-	while (leftLen) {
+	if (!leftLen || leftLen > 0xFFFF)
+		return NULL;
+
+	while (leftLen >= 4) {
 		tagID = OS_NTOHS(get_unaligned((PUINT16)(pData)));
 		tagLen = OS_NTOHS(get_unaligned((PUINT16)(pData + 2)));
 
-		if (tagID == findTag && tagLen > 0) {
+
+		if (tagID == findTag && tagLen > 0 && leftLen >= tagLen + 4) {
 			/* Move the pointer to the tag value field. 4 = 2(TAG ID) + 2(TAG_LEN) */
 			pTagContent = pData + 4;
 			/*			tagLen = tagLen > PPPOE_DIS_UID_LEN ? PPPOE_DIS_UID_LEN : tagLen; */
 			break;
 		} else {
+			if (leftLen < tagLen + 4) /* handle boundary error */
+				break;
+
 			pData += (tagLen + 4);
 			leftLen -= (tagLen + 4);
 		}
@@ -827,15 +861,16 @@ static PUCHAR MATProto_PPPoEDis_Tx(
 	if (pEntry && (pTagContent == NULL)) {
 		PUCHAR tailHead;
 
-		if ((skb_tailroom(RTPKT_TO_OSPKT(pSkb)) < (PPPOE_DIS_UID_LEN + 4)) || (OS_PKT_CLONED(pSkb))) {
-			pModSkb = skb_copy_expand(pSkb, skb_headroom(pSkb), (skb_tailroom(pSkb) + PPPOE_DIS_UID_LEN + 4), GFP_ATOMIC);
+		if (OS_PKT_CLONED(pSkb)) {
+		/*pModSkb = (PNDIS_PACKET)skb_copy(RTPKT_TO_OSPKT(pSkb), MEM_ALLOC_FLAG); */
+			OS_PKT_COPY(RTPKT_TO_OSPKT(pSkb), pModSkb);
 		} else
 			pModSkb = (PNDIS_PACKET)RTPKT_TO_OSPKT(pSkb);
 
 		if (!pModSkb)
 			return NULL;
 
-		/*		tailHead = skb_put(RTPKT_TO_OSPKT(pModSkb), (PPPOE_DIS_UID_LEN + 4)); */
+		/*tailHead = skb_put(RTPKT_TO_OSPKT(pModSkb), (PPPOE_DIS_UID_LEN + 4)); */
 		tailHead = OS_PKT_TAIL_BUF_EXTEND(pModSkb, (PPPOE_DIS_UID_LEN + 4));
 
 		if (tailHead) {
@@ -937,10 +972,16 @@ static PUCHAR MATProto_PPPoESes_Rx(
 	IN PUCHAR			pLayerHdr,
 	IN PUCHAR			pDevMacAdr)
 {
-	PUCHAR srcMac, dstMac = NULL, pData;
+	PUCHAR srcMac, dstMac = NULL, pData, pDataEnd;
 	UINT16 sesID;
+
+	pDataEnd = GET_OS_PKT_DATATAIL(pSkb);
 	srcMac = (GET_OS_PKT_DATAPTR(pSkb) + 6);
 	pData = pLayerHdr;
+
+	if ((pData + 6) > pDataEnd)
+		return NULL;
+
 	/*skip the first two bytes.(version/Type/Code) */
 	pData += 2;
 	/*get the session ID */

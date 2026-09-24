@@ -1212,6 +1212,8 @@ s_int32 net_ad_tx(
 
 	/* Fill tx blk for test mode */
 	ret = net_ad_fill_non_offload_tx_blk(ad, wdev, tx_blk);
+	if (ret)
+		return ret;
 
 	/* TMAC_INFO setup for test mode */
 	ret = net_ad_fill_tmac_info(ad, &tmac_info, band_idx);
@@ -1589,6 +1591,9 @@ s_int32 net_ad_startup_ap(
 #ifdef CONFIG_AP_SUPPORT
 	BSS_STRUCT *mbss = NULL;
 #endif /* CONFIG_AP_SUPPROT */
+#if defined(MT7986)
+	BOOLEAN Cancelled;
+#endif /* MT7986 */
 
 	/* Get adapter from jedi driver first */
 	GET_PAD_FROM_NET_DEV(ad, winfos->net_dev);
@@ -1605,7 +1610,9 @@ s_int32 net_ad_startup_ap(
 	}
 
 	RTMPSetTimer(&ad->Mlme.PeriodicTimer, MLME_TASK_EXEC_INTV);
-
+#if defined(MT7986)
+	RTMPReleaseTimer(&ad->chip_ctrl_manual_hetb_tx_timer, &Cancelled);
+#endif /* MT7986 */
 #ifdef CONFIG_AP_SUPPORT
 	APStartUp(ad, mbss, AP_BSS_OPER_ALL);
 #endif /* CONFIG_AP_SUPPROT */
@@ -1684,7 +1691,11 @@ s_int32 net_ad_stop_ap(
 
 	RTMPCancelTimer(&ad->Mlme.PeriodicTimer, &cancelled);
 	RTMP_SET_FLAG(ad, fRTMP_ADAPTER_SYSEM_READY);
-
+#if defined(MT7986)
+	RTMPInitTimer(ad, &ad->chip_ctrl_manual_hetb_tx_timer,
+		GET_TIMER_FUNCTION(chip_ctrl_manual_hetb_tx_exec_timer),
+		ad, TRUE);
+#endif /* MT7986 */
 	return ret;
 }
 
@@ -2234,6 +2245,16 @@ s_int32 net_ad_alloc_wtbl(
 							    OPMODE_ATE,
 							    TRUE);
 		entry = (struct _MAC_TABLE_ENTRY *)*virtual_wtbl;
+		if (entry) {
+			if (entry->wcid >= SERV_WCID_ALL) {
+				SERV_LOG(SERV_DBG_CAT_ADAPT, SERV_DBG_LVL_ERROR,
+					("%s: invalid wcid %d!\n",
+					__func__, entry->wcid));
+				goto err_out;
+			}
+			winfos->wcid[entry->wcid] = entry->wcid;
+		}
+
 		SERV_LOG(SERV_DBG_CAT_ADAPT, SERV_DBG_LVL_TRACE,
 			 ("%s(): [Create]\n", __func__));
 	}
@@ -3580,12 +3601,13 @@ s_int32 net_ad_set_wmm_param_by_qid(
 }
 
 s_int32 net_ad_clean_sta_q(
-	struct test_wlan_info *winfos, u_char band_idx, u_char wcid)
+	struct test_wlan_info *winfos, u_char band_idx)
 {
 	s_int32 ret = SERV_STATUS_SUCCESS;
 	RTMP_ADAPTER *ad = NULL;
 	struct qm_ops *ops = NULL;
 	struct wifi_dev *wdev = NULL;
+	u_int16 i;
 
 	/* Get adapter from jedi driver first */
 	GET_PAD_FROM_NET_DEV(ad, winfos->net_dev);
@@ -3596,12 +3618,16 @@ s_int32 net_ad_clean_sta_q(
 
 	ops = ad->qm_ops;
 
-	if (ops->sta_clean_queue) {
-		ret = ops->sta_clean_queue(ad, wcid);
-		if (ret)
-			ret = SERV_STATUS_OSAL_NET_FAIL_SEND_FWCMD;
+	for (i = 1; i < SERV_WCID_ALL; i++) {
+		if (winfos->wcid[i] == 0)
+			continue;
+		if (ops->sta_clean_queue) {
+			ret = ops->sta_clean_queue(ad, winfos->wcid[i]);
+			winfos->wcid[i] = 0;
+			if (ret)
+				ret = SERV_STATUS_OSAL_NET_FAIL_SEND_FWCMD;
+		}
 	}
-
 	if (ops->bss_clean_queue)
 			ops->bss_clean_queue(ad, wdev);
 

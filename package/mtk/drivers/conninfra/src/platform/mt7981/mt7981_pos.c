@@ -331,11 +331,23 @@ int consys_emi_set_remapping_reg(void)
 		CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_REMAP_MCU_EMI,
 									addr_info->emi_ap_phy_base, 0, 16, 20);
 
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_EMI_REGION_1,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_EMI_REGION_2,
+									0x3C000000, 0, 16, 20);
+
 	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_REMAP_WF_PERI,
 									0x300D0000, 0, 16, 20);
 
 	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION1,
 									0x11F20000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION2,
+									0x3C000000, 0, 16, 20);
+
+	CONSYS_REG_WRITE_OFFSET_RANGE(REG_CONN_HOST_CSR_TOP_ADDR + CONN2AP_RSVD_PERI_REGION3,
+									0x3C000000, 0, 16, 20);
 
 	return 0;
 }
@@ -863,7 +875,8 @@ static int _connsys_a_die_sw_cntl(enum sys_spi_subsystem subsystem, unsigned cha
 	if (conn_hw_env[adie_idx].valid && (conn_hw_env[adie_idx].adie_id == 0x7976)) {
 		if ((conn_hw_env[adie_idx].adie_hw_version == 0x8A00)
 			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8A10)
-			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8B00)){
+			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8B00)
+			 || (conn_hw_env[adie_idx].adie_hw_version == 0x8C10)) {
 			consys_spi_write_nolock(subsystem, ATOP_RG_TOP_THADC_00, 0x4A563B00);
 			consys_spi_write_nolock(subsystem, ATOP_RG_XO_01, 0x1D59080F);
 			consys_spi_write_nolock(subsystem, ATOP_RG_XO_03, 0x34C00FE0);

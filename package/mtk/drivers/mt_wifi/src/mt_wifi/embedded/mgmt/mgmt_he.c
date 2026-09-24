@@ -690,6 +690,9 @@ static UINT8 *build_max_colocated_bssid_ind(struct wifi_dev *wdev, UINT8 *f_buf)
 static UINT8 *build_he_6g_op_info(struct wifi_dev *wdev, UINT8 *f_buf)
 {
 	struct he_6g_op_info he6g_op = {0};
+#if (defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)) || defined(VENDOR10_VLP_FEATURE)
+	struct _RTMP_ADAPTER *pAd;
+#endif
 	UINT8 *pos = f_buf;
 	UINT8 he6g_present = wlan_config_get_he6g_op_present(wdev);
 	UINT8 wdev_bw = wlan_operate_get_bw(wdev);
@@ -702,7 +705,18 @@ static UINT8 *build_he_6g_op_info(struct wifi_dev *wdev, UINT8 *f_buf)
 		he6g_op.ctrl = HE_6G_OP_CTRL_SET_CH_WIDTH(wdev_bw);/*2:BW80,3:BW8080/160*/
 		he6g_op.ctrl |= (1 << HE_6G_OP_CONTROL_DUP_BCN_SHIFT);
 		he6g_op.min_rate = 6;
-
+#if (defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)) || defined(VENDOR10_VLP_FEATURE)
+		pAd = (struct _RTMP_ADAPTER *)wdev->sys_handle;
+#endif
+#if defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+		if ((strncmp(pAd->CommonCfg.CountryCode, "US", 2) == 0) && (pAd->CommonCfg.AfcDeviceType))
+			he6g_op.ctrl |= (HE_6G_STANDARD_POWER_AP << HE_6G_OP_CONTROL_REGULATORY_INFO_SHIFT);
+#endif
+#ifdef VENDOR10_VLP_FEATURE
+		if (pAd->root_ap_vlp && pAd->vlp_ctrl) {
+			he6g_op.ctrl |= (HE_6G_VERY_LOW_POWER_AP << HE_6G_OP_CONTROL_REGULATORY_INFO_SHIFT);
+		}
+#endif
 		if (HE_6G_OP_CTRL_GET_CH_WIDTH(he6g_op.ctrl) == 0x3) {
 			/* BW160 */
 			he6g_op.ccfs_0 = GET_BW160_PRIM80_CENT(prim_ch, cent_ch_1);
@@ -1136,6 +1150,46 @@ static UINT8 *build_he_6g_rnr(struct wifi_dev *wdev, UINT8 *f_buf, UINT32 querie
  * Defined in IEEE 802.11AX
  * Appeared in Beacon, ProbResp frames
  */
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+INT build_he_txpwr_envelope_eirp(struct wifi_dev *wdev, UINT8 *f_buf)
+{
+	UINT8 len = 0, pwr_cnt;
+	HE_TXPWR_ENV_IE txpwr_env;
+	UCHAR he_bw = wlan_config_get_he_bw(wdev);
+	UCHAR ht_bw = wlan_operate_get_ht_bw(wdev);
+	UCHAR ucBand = wlan_config_get_ch_band(wdev);
+
+	NdisZeroMemory(&txpwr_env, sizeof(txpwr_env));
+
+	if ((he_bw == HE_BW_160)
+		|| (he_bw == HE_BW_8080))
+		pwr_cnt = 3;
+	else if (he_bw == HE_BW_80)
+		pwr_cnt = 2;
+	else {
+		if (ht_bw == HT_BW_40)
+			pwr_cnt = 1;
+		else
+			pwr_cnt = 0;
+	}
+
+	txpwr_env.tx_pwr_info.max_tx_pwr_cnt = pwr_cnt;
+	txpwr_env.tx_pwr_info.max_tx_pwr_interpretation = TX_PWR_INTERPRET_REG_CLIENT_EIRP;
+	txpwr_env.tx_pwr_info.max_tx_pwr_category = TX_PWR_CATEGORY_DEFAULT;
+
+	afc_update_txpwr_envelope_params(wdev, &(txpwr_env.tx_pwr_bw[0]), pwr_cnt,
+		txpwr_env.tx_pwr_info.max_tx_pwr_interpretation);
+
+	len = 2 + pwr_cnt;
+	NdisMoveMemory(f_buf, &txpwr_env, len);
+	return len;
+}
+#endif
+
+/*
+ * Defined in IEEE 802.11AX
+ * Appeared in Beacon, ProbResp frames
+ */
 INT build_he_txpwr_envelope(struct wifi_dev *wdev, UINT8 *f_buf)
 {
 	INT len = 0, pwr_cnt;
@@ -1155,6 +1209,10 @@ INT build_he_txpwr_envelope(struct wifi_dev *wdev, UINT8 *f_buf)
 	else {
 		u1TxpwrCategory = TX_PWR_CATEGORY_DEFAULT;
 		u1TxPwrInterpretation = TX_PWR_INTERPRET_REG_CLIENT_EIRP_PSD;
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+		if (is_afc_in_run_state((struct _RTMP_ADAPTER *)wdev->sys_handle))
+			he_bw = wlan_operate_get_he_bw(wdev);
+#endif
 	}
 
 	if ((u1TxPwrInterpretation == TX_PWR_INTERPRET_EIRP)
@@ -1182,6 +1240,9 @@ INT build_he_txpwr_envelope(struct wifi_dev *wdev, UINT8 *f_buf)
 
 	else if ((u1TxPwrInterpretation == TX_PWR_INTERPRET_EIRP_PSD)
 		|| (u1TxPwrInterpretation == TX_PWR_INTERPRET_REG_CLIENT_EIRP_PSD)) {
+#ifdef VENDOR10_VLP_FEATURE
+		PRTMP_ADAPTER pAd = (PRTMP_ADAPTER)wdev->sys_handle;
+#endif
 		if ((he_bw == HE_BW_160)
 			|| (he_bw == HE_BW_8080))
 			pwr_cnt = 4;
@@ -1220,8 +1281,21 @@ INT build_he_txpwr_envelope(struct wifi_dev *wdev, UINT8 *f_buf)
 		txpwr_env.tx_pwr_info.max_tx_pwr_interpretation = u1TxPwrInterpretation;
 		txpwr_env.tx_pwr_info.max_tx_pwr_category = u1TxpwrCategory;
 
-		for (len = 0; len <= u1NValue; len++)
+		for (len = 0; len <= u1NValue; len++) {
+#ifdef VENDOR10_VLP_FEATURE
+			if (pAd->root_ap_vlp && pAd->vlp_ctrl)
+				txpwr_env.tx_pwr_bw[len] = 28;
+			else
+				txpwr_env.tx_pwr_bw[len] = 46;
+#else
 			txpwr_env.tx_pwr_bw[len] = 0xFE;
+#endif
+		}
+#if defined(CONFIG_6G_SUPPORT) && defined(CONFIG_6G_AFC_SUPPORT) && defined(DOT11_HE_AX)
+		afc_update_txpwr_envelope_params(wdev, &(txpwr_env.tx_pwr_bw[0]), u1NValue, u1TxPwrInterpretation);
+#endif /*CONFIG_6G_SUPPORT &&*/
+		/*CONFIG_6G_AFC_SUPPORT && DOT11_HE_AX*/
+
 	}
 
 	len = 1 + len;
@@ -1481,6 +1555,14 @@ static VOID peer_he_mac_caps(struct _MAC_TABLE_ENTRY *peer, struct he_mac_capinf
 		peer->cap.he_mac_cap |= HE_OFDMA_RA;
 	peer->cap.ampdu.max_he_ampdu_len_exp =
 		GET_DOT11AX_MAX_AMPDU_LEN_EXP(mac_cap->mac_capinfo_1);
+	if (peer->cap.ampdu.max_he_ampdu_len_exp > 0) {
+		if ((peer->MaxRAmpduFactor >= AMPDU_LEN_128K) && (peer->MaxRAmpduFactor != AMPDU_LEN_1024K)) {
+			MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+					"%s: Peer (wcid %d) AmpduFactor check failed, set AF to AMPDU_LEN_1024K\n",
+					 __func__, peer->wcid);
+			peer->MaxRAmpduFactor = AMPDU_LEN_1024K;
+		}
+	}
 	if (mac_cap->mac_capinfo_1 & DOT11AX_MAC_CAP_AMSDU_FRAG)
 		peer->cap.he_mac_cap |= HE_AMSDU_FRAG;
 	if (mac_cap->mac_capinfo_1 & DOT11AX_MAC_CAP_FLEX_TWT_SCHDL)
@@ -1811,6 +1893,8 @@ static VOID update_peer_he_6g_caps(struct _MAC_TABLE_ENTRY *peer, struct common_
 
 VOID update_peer_he_caps(struct _MAC_TABLE_ENTRY *peer, struct common_ies *cmm_ies)
 {
+	struct wifi_dev *wdev = peer->wdev;
+
 	CLIENT_STATUS_SET_FLAG(peer, fCLIENT_STATUS_HE_CAPABLE);
 	/*mac caps*/
 	peer_he_mac_caps(peer, &cmm_ies->he_caps.mac_cap);
@@ -1823,7 +1907,8 @@ VOID update_peer_he_caps(struct _MAC_TABLE_ENTRY *peer, struct common_ies *cmm_i
 	if (peer->cap.he_phy_cap & HE_PPE_THRESHOLD_PRESENT)
 		peer_he_ppe_threshold(peer, NULL);
 
-	if (HAS_HE_6G_CAP_EXIST(cmm_ies->ie_exists)) {
+	if (HAS_HE_6G_CAP_EXIST(cmm_ies->ie_exists) &&
+		wlan_config_get_ch_band(wdev) == CMD_CH_BAND_6G) {
 		update_peer_he_6g_caps(peer, cmm_ies);
 	}
 }
@@ -1873,6 +1958,9 @@ static UINT32 parse_he_caps(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies *cmm_
 	ie_ptr += partial_ie_len;
 	ch_width = peer_max_bw_cap(GET_DOT11AX_CH_WIDTH(cmm_ies->he_caps.phy_cap.phy_capinfo_1));
 	if (ch_width == HE_BW_160) {
+		if (ie_len < (partial_ie_len + sizeof(cmm_ies->mcs_nss_160)))
+			return partial_ie_len;
+
 		partial_ie_len = sizeof(cmm_ies->mcs_nss_160);
 		NdisMoveMemory((UINT8 *)&cmm_ies->mcs_nss_160, ie_ptr, partial_ie_len);
 #ifdef RT_BIG_ENDIAN
@@ -1884,6 +1972,9 @@ static UINT32 parse_he_caps(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies *cmm_
 		ie_ptr += partial_ie_len;
 	}
 	if (ch_width == HE_BW_8080) {
+		if (ie_len < (partial_ie_len + sizeof(cmm_ies->mcs_nss_8080)))
+			return partial_ie_len;
+
 		partial_ie_len = sizeof(cmm_ies->mcs_nss_8080);
 		NdisMoveMemory((UINT8 *)&cmm_ies->mcs_nss_8080, ie_ptr, partial_ie_len);
 #ifdef RT_BIG_ENDIAN
@@ -1904,6 +1995,7 @@ static UINT32 parse_he_6g_caps(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies *c
 
 	if (ie_len < sizeof(cmm_ies->he6g_caps))
 		return partial_ie_len;
+	SET_HE_6G_CAP_EXIST(cmm_ies->ie_exists);
 	partial_ie_len = sizeof(cmm_ies->he6g_caps);
 	NdisMoveMemory((UINT8 *)&cmm_ies->he6g_caps, ie_ptr, partial_ie_len);
 	ie_ptr += partial_ie_len;
@@ -1913,12 +2005,13 @@ static UINT32 parse_he_6g_caps(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies *c
 
 static UINT32 parse_he_operation(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies *cmm_ies)
 {
-	UINT32 partial_ie_len = 0;
+	UINT32 partial_ie_len = 0, remain_ie_len = 0;
 	UINT8 *ie_ptr = ie_ctx;
 	UCHAR full_ie_len = 0;
 
 	if (ie_len < sizeof(cmm_ies->he_ops))
 		return partial_ie_len;
+	remain_ie_len = ie_len;
 	SET_HE_OP_EXIST(cmm_ies->ie_exists);
 	partial_ie_len = sizeof(cmm_ies->he_ops);
 	NdisMoveMemory((UINT8 *)&cmm_ies->he_ops, ie_ptr, partial_ie_len);
@@ -1929,24 +2022,37 @@ static UINT32 parse_he_operation(UINT8 *ie_ctx, UINT8 ie_len, struct common_ies 
 		= le2cpu16(cmm_ies->he_ops.he_op_param.param1);
 #endif
 	ie_ptr += partial_ie_len;
+	remain_ie_len -= partial_ie_len;
 
 	/*vht_opinfo present*/
 	if (cmm_ies->he_ops.he_op_param.param1 & DOT11AX_OP_VHT_OPINFO_PRESENT) {
+		if (remain_ie_len < sizeof(cmm_ies->he_vht_opinfo))
+			return 0;
+
 		partial_ie_len = sizeof(cmm_ies->he_vht_opinfo);
 		NdisMoveMemory((UINT8 *)&cmm_ies->he_vht_opinfo, ie_ptr, partial_ie_len);
 		ie_ptr += partial_ie_len;
+		remain_ie_len -= partial_ie_len;
 	}
 	/*max co-hosted bssid*/
 	if (cmm_ies->he_ops.he_op_param.param1 & DOT11AX_OP_CO_HOSTED_BSS) {
+		if (remain_ie_len < sizeof(cmm_ies->he_max_co_hosted_bssid_ind))
+			return 0;
+
 		partial_ie_len = sizeof(cmm_ies->he_max_co_hosted_bssid_ind);
 		NdisMoveMemory((UINT8 *)&cmm_ies->he_max_co_hosted_bssid_ind, ie_ptr, partial_ie_len);
 		ie_ptr += partial_ie_len;
+		remain_ie_len -= partial_ie_len;
 	}
 	/*he 6g opinfo present*/
 	if (cmm_ies->he_ops.he_op_param.param2 & DOT11AX_OP_6G_OPINFO_PRESENT) {
+		if (remain_ie_len < sizeof(cmm_ies->he6g_opinfo))
+			return 0;
+
 		partial_ie_len = sizeof(cmm_ies->he6g_opinfo);
 		NdisMoveMemory((UINT8 *)&cmm_ies->he6g_opinfo, ie_ptr, partial_ie_len);
 		ie_ptr += partial_ie_len;
+		remain_ie_len -= partial_ie_len;
 	}
 	full_ie_len = ie_ptr - ie_ctx;
 	if (full_ie_len == ie_len)
@@ -2165,6 +2271,9 @@ UINT32 parse_he_beacon_probe_rsp_ies(UINT8 *ie_head, VOID *ie_list)
 		offset = parse_he_operation(ie_ctx, ie_len, &bcn_ie->cmm_ies);
 		/*dump_he_ies("Recv. peer bcn, he_op", ie_head, ((struct _EID_STRUCT *)ie_head)->Len);*/
 		break;
+	case EID_EXT_HE_6G_CAPS:
+		offset = parse_he_6g_caps(ie_ctx, ie_len, &bcn_ie->cmm_ies);
+		break;
 	case EID_EXT_UORA_PARAM_SET:
 		break;
 	case EID_EXT_MU_EDCA_PARAM:
@@ -2189,10 +2298,17 @@ UINT32 parse_he_beacon_probe_rsp_ies(UINT8 *ie_head, VOID *ie_list)
 UINT32 parse_he_assoc_rsp_ies(UINT8 *ie_head, VOID *ie_list)
 {
 	UINT8 eid_ext = ((struct _EID_STRUCT *)ie_head)->Octet[0];
-	UINT8 ie_len = ((struct _EID_STRUCT *)ie_head)->Len - 1;
+	UINT8 ie_len = ((struct _EID_STRUCT *)ie_head)->Len;
 	UINT8 *ie_ctx = ie_head + sizeof(struct _EID_STRUCT);
 	struct _IE_lists *ie = (struct _IE_lists *)ie_list;
 	UINT32 offset = 0;
+
+	if (ie_len == 0) {
+		MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_WARN,
+			"ie_len should >= 1 (eid_ext)\n");
+		return offset;
+	}
+	ie_len -= 1;
 
 	switch (eid_ext) {
 	case EID_EXT_HE_CAPS:
@@ -2299,9 +2415,15 @@ UCHAR he_bw_2_rf_bw(UCHAR he_bw)
 	return rf_bw;
 }
 
-VOID he_mode_adjust(struct wifi_dev *wdev, struct _MAC_TABLE_ENTRY *peer, UCHAR *bw_from_opclass)
+VOID he_mode_adjust(struct wifi_dev *wdev,
+	struct _MAC_TABLE_ENTRY *peer,
+	UCHAR *bw_from_opclass,
+	BOOLEAN ht_vht_cap)
 {
 	UCHAR PeerMaxBw;
+	struct _RTMP_ADAPTER *pAd;
+
+	pAd = (RTMP_ADAPTER *)wdev->sys_handle;
 
 	if (!WMODE_CAP_AX(wdev->PhyMode))
 		return;
@@ -2311,8 +2433,10 @@ VOID he_mode_adjust(struct wifi_dev *wdev, struct _MAC_TABLE_ENTRY *peer, UCHAR 
 		peer->cap.modes |= HE_24G_SUPPORT;
 	if (WMODE_CAP_AX_5G(wdev->PhyMode))
 		peer->cap.modes |= HE_5G_SUPPORT;
-	if (WMODE_CAP_AX_6G(wdev->PhyMode))
+	if (WMODE_CAP_AX_6G(wdev->PhyMode)) {
 		peer->cap.modes |= HE_6G_SUPPORT;
+		ht_vht_cap = FALSE;
+	}
 	peer->MaxHTPhyMode.field.MODE = MODE_HE;
 
 	PeerMaxBw = BW_20;
@@ -2326,8 +2450,12 @@ VOID he_mode_adjust(struct wifi_dev *wdev, struct _MAC_TABLE_ENTRY *peer, UCHAR 
 				PeerMaxBw = BW_160;
 			if (peer->cap.ch_bw.he_ch_width & SUPP_160M_8080M_CW_IN_5G_BAND)
 				PeerMaxBw = BW_160;
-			if ((PeerMaxBw == BW_80) && (bw_from_opclass != NULL) && ((*bw_from_opclass) < BW_80))
-				PeerMaxBw = BW_40;
+			if (PeerMaxBw == BW_80) {
+				if ((bw_from_opclass != NULL) && (*bw_from_opclass == BW_40))
+					PeerMaxBw = *bw_from_opclass;
+				else if (ht_vht_cap && (PeerMaxBw > peer->MaxHTPhyMode.field.BW))
+					PeerMaxBw = peer->MaxHTPhyMode.field.BW;
+			}
 		}
 	}
 
@@ -2725,8 +2853,10 @@ static struct he_ch_layout he_ch_40M[] = {
 	{140, 144, 142},
 	{149, 153, 151},
 	{157, 161, 159},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{165, 169, 167},
 	{173, 177, 175},
+#endif
 	{0, 0, 0},
 };
 
@@ -2737,14 +2867,18 @@ static struct he_ch_layout he_ch_80M[] = {
 	{116, 128, 122},
 	{132, 144, 138},
 	{149, 161, 155},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{165, 177, 171},
+#endif
 	{0, 0, 0},
 };
 
 static struct he_ch_layout he_ch_160M[] = {
 	{36, 64, 50},
 	{100, 128, 114},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{149, 177, 163},
+#endif
 	{0, 0, 0},
 };
 

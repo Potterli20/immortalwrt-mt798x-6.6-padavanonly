@@ -1785,8 +1785,13 @@ static INT32 HQA_WriteBulkEEPROM(
 				 "allocate memory for read EEPROM fail\n");
 		goto HQA_WriteBulkEEPROM_RET;
 	}
-
-	memcpy_exs(pAd, (UCHAR *)Buffer + Offset, (UCHAR *)HqaCmdFrame->Data + 4, Len);
+	if ((Offset + Len <= cap->EEPROM_DEFAULT_BIN_SIZE) && (Len <= sizeof(HqaCmdFrame->Data) - 4)) {
+		memcpy_exs(pAd, (UCHAR *)Buffer + Offset, (UCHAR *)HqaCmdFrame->Data + 4, Len);
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error: Out-of-bounds access in memcpy_exs\n");
+		goto HQA_WriteBulkEEPROM_RET;
+	}
 #if defined(RTMP_FLASH_SUPPORT)
 
 	if (Len == 16)
@@ -6732,6 +6737,7 @@ static UINT8 mt_ate_translate_ru_allocation(UINT32 user_ru_allocation)
 }
 static INT32 HQA_SetStaRUSetting(PRTMP_ADAPTER ad, RTMP_IOCTL_INPUT_STRUCT *wrq, struct _HQA_CMD_FRAME *hqa_cmd_frame)
 {
+	#define SEG_STA_CNT		16
 	INT32 Ret = 0, tone_idx = 0;
 	UINT32 len = 0, band_idx = 0, seg_sta_cnt[2] = {0}, sta_seq = 0, value = 0;
 	UCHAR *data = hqa_cmd_frame->Data, param_cnt = 0, segment_idx = 0;
@@ -6743,6 +6749,25 @@ static INT32 HQA_SetStaRUSetting(PRTMP_ADAPTER ad, RTMP_IOCTL_INPUT_STRUCT *wrq,
 	EthGetParamAndShiftBuff(TRUE, sizeof(UINT32), &data, (UCHAR *)&band_idx);
 	EthGetParamAndShiftBuff(TRUE, sizeof(UINT32), &data, (UCHAR *)&seg_sta_cnt[0]);
 	EthGetParamAndShiftBuff(TRUE, sizeof(UINT32), &data, (UCHAR *)&seg_sta_cnt[1]);
+
+	if (band_idx >= TEST_DBDC_BAND_NUM) {
+		SERV_LOG(SERV_DBG_CAT_TEST, SERV_DBG_LVL_ERROR,
+		("%s: band_idx=%d, error\n", __func__, band_idx));
+		Ret = SERV_STATUS_AGENT_INVALID_BANDIDX;
+		goto err_out;
+	}
+
+	if ((seg_sta_cnt[0] > SEG_STA_CNT)
+		|| (seg_sta_cnt[1] > SEG_STA_CNT)) {
+		Ret = SERV_STATUS_AGENT_INVALID_PARAM;
+		goto err_out;
+	}
+
+	if (seg_sta_cnt[0] + seg_sta_cnt[1] == 0) {
+		Ret = SERV_STATUS_AGENT_INVALID_LEN;
+		goto err_out;
+	}
+
 	param_cnt = (len-sizeof(UINT32)*3)/(seg_sta_cnt[0]+seg_sta_cnt[1])/sizeof(UINT32);
 
 	MTWF_DBG(ad, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_INFO,
@@ -6759,6 +6784,10 @@ static INT32 HQA_SetStaRUSetting(PRTMP_ADAPTER ad, RTMP_IOCTL_INPUT_STRUCT *wrq,
 	for (segment_idx = 0; segment_idx < 2 ; segment_idx++) {
 		for (sta_seq = 0 ; sta_seq < seg_sta_cnt[segment_idx] ; sta_seq++) {
 			UINT allocation = 0;
+			if (seg_sta_cnt[0] + seg_sta_cnt[1] == 0) {
+				Ret = SERV_STATUS_AGENT_INVALID_LEN;
+				goto err_out;
+			}
 			param_cnt = (len-sizeof(UINT32)*3)/(seg_sta_cnt[0]+seg_sta_cnt[1])/sizeof(UINT32);
 
 			sta_seq += seg_sta_cnt[0]*segment_idx;
@@ -6818,6 +6847,7 @@ static INT32 HQA_SetStaRUSetting(PRTMP_ADAPTER ad, RTMP_IOCTL_INPUT_STRUCT *wrq,
 	for (tone_idx = 0 ; tone_idx < sizeof(*ru_allocation) ; tone_idx++)
 		MTWF_DBG(ad, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_INFO, "allocation[%d] = 0x%x\n", tone_idx, ru_allocation->allocation[tone_idx]);
 
+err_out:
 	ResponseToQA(hqa_cmd_frame, wrq, 2, Ret);
 	return Ret;
 }

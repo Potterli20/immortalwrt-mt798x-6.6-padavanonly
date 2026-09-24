@@ -114,7 +114,7 @@ VOID mbss_fill_per_band_idx(RTMP_ADAPTER *pAd, BSS_STRUCT *pMbss)
 /*
  * create and initialize virtual network interfaces
  */
-VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT32 IdBss)
+VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, UINT8 IdBss)
 {
 	PNET_DEV pDevNew;
 	RTMP_OS_NETDEV_OP_HOOK netDevHook;
@@ -123,7 +123,7 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 	UINT32 MC_RowID = 0, IoctlIF = 0;
 	char *dev_name = NULL;
 	INT32 Ret;
-	UCHAR ifidx = IdBss;
+	UINT8 ifidx = IdBss;
 	UCHAR final_name[32] = "";
 	BOOLEAN autoSuffix = TRUE;
 	int ret;
@@ -146,9 +146,9 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 
 	if (pAd->FlgMbssInit == TRUE) {
 		if (pAd->CommonCfg.wifi_cert) {
-			INT32 idx;
-			INT32 CurBssidNum[DBDC_BAND_NUM] = {0};
-			INT32 CurBssidNumAll = 0;
+			UINT8 idx;
+			UINT8 CurBssidNum[DBDC_BAND_NUM] = {0};
+			UINT8 CurBssidNumAll = 0;
 
 			/* current bss count */
 			for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
@@ -166,7 +166,7 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 				(CurBssidNum[DBDC_BAND0] < pAd->ApCfg.BssidNumPerBand[DBDC_BAND0])) {
 				/* next ifidx to be assigned */
 				ifidx = CurBssidNum[DBDC_BAND0];
-				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "re-assign ifidx %d -> %d\n",
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "re-assign ifidx %u -> %u\n",
 						 IdBss, ifidx);
 			}
 		}
@@ -194,7 +194,7 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 		return;
 	}
 	MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-			 "Register MBSSID IF %d (%s)\n", IdBss, RTMP_OS_NETDEV_GET_DEVNAME(pDevNew));
+			 "Register MBSSID IF %u (%s)\n", IdBss, RTMP_OS_NETDEV_GET_DEVNAME(pDevNew));
 
 	if (!VALID_MBSS(pAd, IdBss))
 		return;
@@ -235,7 +235,7 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 	NdisMoveMemory(&netDevHook.devAddr[0], &wdev->bssid[0], MAC_ADDR_LEN);
 
 #ifdef RT_CFG80211_SUPPORT
-	{
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 		struct wireless_dev *pWdev;
 		CFG80211_CB *p80211CB = pAd->pCfg80211_CB;
 		UINT32 DevType = RT_CMD_80211_IFTYPE_AP;
@@ -266,10 +266,9 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
 	/* register this device to OS */
 	if (RtmpOSNetDevAttach(pAd->OpMode, pDevNew, &netDevHook) != NDIS_STATUS_SUCCESS) {
 		MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-				 "create IF %d (%s) failed!!\n",
+				 "create IF %u (%s) failed!!\n",
 				 IdBss, RTMP_OS_NETDEV_GET_DEVNAME(pDevNew));
 	}
-
 
 }
 
@@ -294,8 +293,8 @@ VOID mbss_create_vif(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps, INT3
  */
 VOID MBSS_Init(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps)
 {
-	INT32 IdBss, MaxNumBss;
-	INT32 CurBssNum = 0;
+	UINT8 IdBss, MaxNumBss;
+	UINT8 CurBssNum = 0;
 
 
 	/* max bss number */
@@ -318,7 +317,7 @@ VOID MBSS_Init(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps)
 			/* add new virtual network interface */
 			for (IdBss = CurBssNum; IdBss < MaxNumBss; IdBss++) {
 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-						 "Add MBSSID IF =%d\n", IdBss);
+						 "Add MBSSID IF =%u\n", IdBss);
 				mbss_create_vif(pAd, pNetDevOps, IdBss);
 			}
 		}
@@ -384,8 +383,10 @@ VOID MBSS_Remove(RTMP_ADAPTER *pAd)
 			RtmpOSNetDevProtect(0);
 			wdev_deinit(pAd, wdev);
 #ifdef RT_CFG80211_SUPPORT
-			os_free_mem(wdev->if_dev->ieee80211_ptr);
-			wdev->if_dev->ieee80211_ptr = NULL;
+			if (!pAd->CommonCfg.bcfg80211Disabled) {
+				os_free_mem(wdev->if_dev->ieee80211_ptr);
+				wdev->if_dev->ieee80211_ptr = NULL;
+			}
 #endif /* RT_CFG80211_SUPPORT */
 			RtmpOSNetDevFree(wdev->if_dev);
 			wdev->if_dev = NULL;

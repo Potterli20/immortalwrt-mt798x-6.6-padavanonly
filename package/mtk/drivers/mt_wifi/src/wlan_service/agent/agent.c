@@ -7760,7 +7760,7 @@ err_out:
 
 s_int32 mt_agent_set_ru_cli(struct service_test *serv_test, u_char *arg)
 {
-	s_int32 ret = SERV_STATUS_AGENT_INVALID_PARAM;
+	s_int32 ret;
 	u_char *value = NULL, i = 0, band_idx, input_cnt = 0;
 	u_int32 seg_sta_cnt[2] = {0}, sumOfSegs = 0, argLen = 0;
 	struct test_ru_info *ru_info = NULL;

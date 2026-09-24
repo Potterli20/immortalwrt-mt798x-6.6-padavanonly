@@ -111,7 +111,6 @@ void warp_atc_set_hw(struct wifi_entry *wifi, struct warp_bus *bus, int idx,
 void warp_wifi_set_hw(struct wed_entry *wed, struct wifi_entry *wifi);
 void warp_bus_set_hw(struct wed_entry *wed, struct warp_bus *bus,
 			int idx, bool msi_enable, u32 hif_type);
-void warp_bus_reset_hw(struct wed_entry *wed, struct warp_bus *bus,int idx);
 void warp_bus_msi_set(u8 idx, u8 *enable);
 void warp_pdma_mask_set_hw(struct wed_entry *wed, u32 int_mask);
 void warp_restore_hw(struct wed_entry *wed, struct wdma_entry *wdma);

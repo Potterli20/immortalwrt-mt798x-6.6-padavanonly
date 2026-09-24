@@ -553,9 +553,10 @@ raWrapperConfigSet(
 {
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
 	UINT8 TxPath = pAd->Antenna.field.TxPath;
+	UINT8 BandIdx = HcGetBandByWdev(wdev);
+
 #ifdef ANTENNA_CONTROL_SUPPORT
 	{
-		UINT8 BandIdx = HcGetBandByWdev(wdev);
 		if (pAd->bAntennaSetAPEnable[BandIdx])
 			TxPath = pAd->TxStream[BandIdx];
 	}
@@ -578,7 +579,7 @@ raWrapperConfigSet(
 	pRaCfg->vht_nss_cap = pAd->CommonCfg.vht_nss_cap;
 #endif /* DOT11_VHT_AC */
 #endif /* DOT11_N_SUPPORT */
-	pRaCfg->fgSeOff = pAd->CommonCfg.bSeOff;
+	pRaCfg->fgSeOff = pAd->CommonCfg.bSeOff[BandIdx];
 	if ((pAd->CommonCfg.dbdc_mode == FALSE) && (TxPath == 4))
 		pRaCfg->ucAntennaIndex = pAd->CommonCfg.ucAntennaIndex;
 	pRaCfg->fgThermalProtectToggle = pAd->fgThermalProtectToggle;

@@ -122,14 +122,15 @@ static UCHAR BuildChannelListFor2G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 			pChCtrl->ChList[ChIdx].Flags = pChannelListFlag[ChIdx];
 
 #ifdef RT_CFG80211_SUPPORT
-			CFG80211OS_ChanInfoInit(
-				pAd->pCfg80211_CB,
-				ChIdx,
-				pChCtrl->ChList[ChIdx].Channel,
-				pChCtrl->ChList[ChIdx].MaxTxPwr,
-				TRUE,
-				TRUE,
-				PhyMode);
+			if (!pAd->CommonCfg.bcfg80211Disabled)
+				CFG80211OS_ChanInfoInit(
+					pAd->pCfg80211_CB,
+					ChIdx,
+					pChCtrl->ChList[ChIdx].Channel,
+					pChCtrl->ChList[ChIdx].MaxTxPwr,
+					TRUE,
+					TRUE,
+					PhyMode);
 #endif /* RT_CFG80211_SUPPORT */
 		}
 
@@ -140,9 +141,11 @@ static UCHAR BuildChannelListFor2G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 	}
 
 #ifdef RT_CFG80211_SUPPORT
-
-	if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, pChDesc, NULL, NULL) != 0)
-		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "Update RegRule failed!\n");
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, pChDesc, NULL, NULL) != 0)
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Update RegRule failed!\n");
+	}
 
 #endif /* RT_CFG80211_SUPPORT */
 done:
@@ -152,23 +155,25 @@ done:
 
 static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USHORT PhyMode)
 {
-	UCHAR ChIdx, ChIdx2, num = 0;
+	UCHAR ChIdx, ChIdx2, num = 0, Radarnum = 0;
 	PCH_DESC pChDesc = NULL;
 	BOOLEAN bRegionFound = FALSE;
 	PUCHAR pChannelList;
 	PUCHAR pChannelListFlag;
 
 #ifdef RT_CFG80211_SUPPORT
-	UCHAR bw;
-	int apidx;
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		UCHAR bw;
+		int apidx;
 
-	for (apidx = 0; apidx < pAd->ApCfg.BssidNum; apidx++) {
-		BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[apidx];
-		struct wifi_dev *wdev = &pMbss->wdev;
+		for (apidx = 0; apidx < pAd->ApCfg.BssidNum; apidx++) {
+			BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[apidx];
+			struct wifi_dev *wdev = &pMbss->wdev;
 
-		bw = HcGetBw(pAd, wdev);
+			bw = HcGetBw(pAd, wdev);
+		}
+		PhyMode = HcGetRadioPhyMode(pAd);
 	}
-	PhyMode = HcGetRadioPhyMode(pAd);
 #endif
 
 	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "[BuildChannelListFor5G] \n");
@@ -195,6 +200,14 @@ static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 #ifdef CONFIG_AP_SUPPORT
 		UCHAR q = 0;
 #endif
+#ifdef MT_BAND4_DFS_SUPPORT /*302502*/
+		UCHAR B4RadarCh[21] = {52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165};
+
+		if (pAd->CommonCfg.DfsParameter.band4DfsEnable)
+			Radarnum = 21;
+		else
+#endif
+			Radarnum = 16;
 		os_alloc_mem(NULL, (UCHAR **)&pChannelList, num * sizeof(UCHAR));
 
 		if (!pChannelList) {
@@ -297,10 +310,15 @@ static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 				pChCtrl->ChList[ChIdx].Flags = pChannelListFlag[ChIdx];
 			}
 
-			for (ChIdx2 = 0; ChIdx2 < 16; ChIdx2++) {
-				if (pChannelList[ChIdx] == RadarCh[ChIdx2]) {
-				pChCtrl->ChList[ChIdx].DfsReq = TRUE;
-				}
+			for (ChIdx2 = 0; ChIdx2 < Radarnum; ChIdx2++) {
+#ifdef MT_BAND4_DFS_SUPPORT /*302502*/
+				if (pAd->CommonCfg.DfsParameter.band4DfsEnable) {
+					if (pChannelList[ChIdx] == B4RadarCh[ChIdx2])
+						pChCtrl->ChList[ChIdx].DfsReq = TRUE;
+				} else
+#endif
+					if (pChannelList[ChIdx] == RadarCh[ChIdx2])
+						pChCtrl->ChList[ChIdx].DfsReq = TRUE;
 			}
 			if (!strncmp((RTMP_STRING *) pAd->CommonCfg.CountryCode, "CN", 2))
 				pChCtrl->ChList[ChIdx].MaxTxPwr = pAd->MaxTxPwr;/*for CN CountryCode*/
@@ -308,6 +326,7 @@ static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 				pChCtrl->ChList[ChIdx].MaxTxPwr = 20;
 
 #ifdef RT_CFG80211_SUPPORT
+		if (!pAd->CommonCfg.bcfg80211Disabled) {
 			CFG80211OS_ChanInfoInit(
 				pAd->pCfg80211_CB,
 				ChIdx,
@@ -316,6 +335,7 @@ static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 				TRUE,
 				TRUE,
 				PhyMode);
+		}
 #endif /*RT_CFG80211_SUPPORT*/
 		}
 
@@ -325,10 +345,11 @@ static UCHAR BuildChannelListFor5G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, USH
 	}
 
 #ifdef RT_CFG80211_SUPPORT
-
-	if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, NULL, pChDesc, NULL) != 0)
-		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "Update RegRule failed!\n");
-
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		if (CFG80211OS_UpdateRegRuleByRegionIdx(pAd->pCfg80211_CB, NULL, pChDesc, NULL) != 0)
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Update RegRule failed!\n");
+	}
 #endif /*RT_CFG80211_SUPPORT*/
 done:
 	return num;
@@ -418,10 +439,12 @@ static UCHAR build_ch_list_for_6G(RTMP_ADAPTER *pAd, CHANNEL_CTRL *pChCtrl, UCHA
 	os_free_mem(pChannelListFlag);
 
 #ifdef RT_CFG80211_SUPPORT
-	if (CFG80211OS_UpdateRegRuleByRegionIdx
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		if (CFG80211OS_UpdateRegRuleByRegionIdx
 			(pAd->pCfg80211_CB, NULL, NULL, pChDesc) != 0)
-		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 						"Update RegRule failed!\n");
+	}
 #endif /*RT_CFG80211_SUPPORT*/
 
 done:
@@ -455,8 +478,11 @@ static bool Set_Diff_Bw(RTMP_ADAPTER *pAd, UINT16 wcid, UCHAR bw, UCHAR ext_ch)
 			CMD_STAREC_AUTO_RATE_UPDATE_T rRaParam;
 			NdisZeroMemory(&rRaParam, sizeof(CMD_STAREC_AUTO_RATE_UPDATE_T));
 
-			if (bw == HT_BW_40)
+			if (bw == HT_BW_40) {
 				rRaParam.u4Field = RA_PARAM_HT_2040_BACK;
+				rRaParam.u1Bw40StaCnt = 1;
+				rRaParam.u2Bw40StaWlanIdx[0] = wcid;
+			}
 			else
 				rRaParam.u4Field = RA_PARAM_HT_2040_COEX;
 
@@ -530,6 +556,20 @@ VOID BuildChannelList(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 #endif /* DOT11_VHT_AC */
 	}
 
+	if (wdev->channel != 0) {
+		for (ChIdx = 0; ChIdx < pChCtrl->ChListNum; ChIdx++) {
+			if (wdev->channel == pChCtrl->ChList[ChIdx].Channel)
+				break;
+		}
+		if (ChIdx == pChCtrl->ChListNum) {
+			wdev->channel = FirstChannel(pAd, wdev);
+			if (pAd->CommonCfg.DfsParameter.OutBandCh != 0)
+				pAd->CommonCfg.DfsParameter.OutBandCh = wdev->channel;
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"channel out of range, use first ch=%d\n", wdev->channel);
+		}
+	}
+
 #endif /* DOT11_N_SUPPORT */
 
 	if (WMODE_CAP_2G(PhyMode)) {
@@ -584,10 +624,14 @@ UCHAR FirstChannel(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	UCHAR BandIdx = HcGetBandByWdev(wdev);
 	CHANNEL_CTRL *pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, BandIdx);
 #ifdef CONFIG_6G_SUPPORT
-	if WMODE_CAP_6G(wdev->PhyMode)
-		return pChCtrl->ChList_6G_scan[0].Channel;
-	else
+	if (WMODE_CAP_6G(wdev->PhyMode)) {
+		if (pChCtrl->ChListNum_6G_scan)
+			return pChCtrl->ChList_6G_scan[0].Channel;
+
 		return pChCtrl->ChList[0].Channel;
+	} else
+		return pChCtrl->ChList[0].Channel;
+
 #else
 	return pChCtrl->ChList[0].Channel;
 #endif
@@ -610,6 +654,7 @@ UCHAR FirstNonDfsChannel(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	CHANNEL_CTRL *pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, BandIdx);
 	UCHAR ch = 0;
 	UCHAR i;
+
 	for (i = 0; i < pChCtrl->ChListNum; i++) {
 		if (pChCtrl->ChList[i].DfsReq != TRUE) {
 			ch = pChCtrl->ChList[i].Channel;
@@ -619,6 +664,20 @@ UCHAR FirstNonDfsChannel(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
 	return ch;
 }
 
+UCHAR FirstNonDfsbyBand(RTMP_ADAPTER *pAd, UCHAR band_idx)
+{
+	CHANNEL_CTRL *pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl, band_idx);
+	UCHAR ch = 0;
+	UCHAR i;
+
+	for (i = 0; i < pChCtrl->ChListNum; i++) {
+		if (pChCtrl->ChList[i].DfsReq != TRUE) {
+			ch = pChCtrl->ChList[i].Channel;
+			break;
+		}
+	}
+	return ch;
+}
 
 #ifdef WIFI_MD_COEX_SUPPORT
 UCHAR FirstSafeChannel(RTMP_ADAPTER *pAd, struct wifi_dev *wdev)
@@ -1149,9 +1208,11 @@ BOOLEAN AdjustBwToSyncAp(RTMP_ADAPTER *pAd, BCN_IE_LIST *ie_list, struct wifi_de
 				if (AP_Operting_BW == VHT_BW_2040) {
 					current_operating_bw = 1; /*40Mhz*/
 				} else if (AP_Operting_BW == VHT_BW_80) {
+#ifndef BW_VENDOR10_CUSTOM_FEATURE
 					if (cfg_vht_bw <= VHT_BW_80)
 						current_operating_bw = 2; /*80Mhz*/
 					else if (cfg_vht_bw > VHT_BW_80) {
+#endif
 						if (s80160ccf == 0)
 							current_operating_bw = 2; /*80Mhz*/
 						else if (ch_offset_abs(s80160ccf, p80ccf) == 8) {
@@ -1165,7 +1226,9 @@ BOOLEAN AdjustBwToSyncAp(RTMP_ADAPTER *pAd, BCN_IE_LIST *ie_list, struct wifi_de
 								force_ra_update = TRUE;
 							}
 						}
+#ifndef BW_VENDOR10_CUSTOM_FEATURE
 					}
+#endif
 #ifdef BW_VENDOR10_CUSTOM_FEATURE
 					/* Current Op BW = 20/40 */
 					else if (op_vht_bw == VHT_BW_2040)
@@ -1229,8 +1292,13 @@ BOOLEAN AdjustBwToSyncAp(RTMP_ADAPTER *pAd, BCN_IE_LIST *ie_list, struct wifi_de
 
 			/* If IE VHT BW is 80, then need to check our prim channel has support for 80 in that region */
 			/* 80 MHz operation is prevented in CE and JAP for channel 132~144 */
-			if (cfg_vht_bw >= AP_Operting_BW)
-					wlan_operate_set_vht_bw(&pStaCfg->wdev, AP_Operting_BW);
+			if (cfg_vht_bw >= AP_Operting_BW) {
+#ifdef DFS_VENDOR10_CUSTOM_FEATURE
+				if (wlan_config_get_vht_bw(wdev) != AP_Operting_BW)
+					DfsV10ConfigSetVHTbw(pAd, wdev, AP_Operting_BW);
+#endif
+				wlan_operate_set_vht_bw(&pStaCfg->wdev, AP_Operting_BW);
+			}
 
 			/**
 			 * It is seen that as a part of change in BW notification some AP
@@ -1333,17 +1401,40 @@ BOOLEAN AdjustBwToSyncAp(RTMP_ADAPTER *pAd, BCN_IE_LIST *ie_list, struct wifi_de
 				&& IS_SYNC_BW_POLICY_VALID(pAd, FALSE, VHT_2040_80_UP_CHK, Bandidx)) {
 				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Enter 2040-80 VHT Sync\n");
 				bAdjustVHTBW = TRUE;
+			} else if (pwdev && ((prev_operating_bw <= 1 || softap_prev_op_bw <= 1) && current_operating_bw == 3)
+				&& IS_SYNC_BW_POLICY_VALID(pAd, FALSE, VHT_2040_160_UP_CHK, Bandidx)) {
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO,
+					"Enter 2040-160 VHT Sync\n");
+				bAdjustVHTBW = TRUE;
+			} else if (pwdev && ((prev_operating_bw <= 2 || softap_prev_op_bw <= 2) && current_operating_bw == 3)
+				&& IS_SYNC_BW_POLICY_VALID(pAd, FALSE, VHT_80_160_UP_CHK, Bandidx)) {
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Enter 80-160 VHT Sync\n");
+				bAdjustVHTBW = TRUE;
+			} else if (pwdev && ((prev_operating_bw == 3 || softap_prev_op_bw == 3) && current_operating_bw == 2)
+				&& IS_SYNC_BW_POLICY_VALID(pAd, FALSE, VHT_160_80_DOWN_CHK, Bandidx)) {
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Enter 160-80 VHT Sync\n");
+				bAdjustVHTBW = TRUE;
+			} else if (pwdev && ((prev_operating_bw == 3 || softap_prev_op_bw == 3) && current_operating_bw <= 1)
+				&& IS_SYNC_BW_POLICY_VALID(pAd, FALSE, VHT_160_2040_DOWN_CHK, Bandidx)) {
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO,
+					"Enter 160-2040 VHT Sync\n");
+				bAdjustVHTBW = TRUE;
 			}
 
 			if (bAdjustHTBW)
 				wdev_sync_ht_bw(pAd, pwdev, &cmm_ies->ht_op.AddHtInfo);
-			if (bAdjustVHTBW)
-				wdev_sync_vht_bw(pAd, pwdev, AP_Operting_BW, p80ccf);
+			if (bAdjustVHTBW) {
+				if (AP_Operting_BW >= 2)
+					wdev_sync_vht_bw(pAd, pwdev, AP_Operting_BW, s80160ccf);
+				else
+					wdev_sync_vht_bw(pAd, pwdev, AP_Operting_BW, p80ccf);
+			}
 #endif
 			pStaCfg->MlmeAux.force_op_mode = pEntry->force_op_mode;
 			NdisMoveMemory(&pStaCfg->MlmeAux.op_mode, &pEntry->operating_mode, 1);
 			NdisZeroMemory(&rRaParam, sizeof(CMD_STAREC_AUTO_RATE_UPDATE_T));
 			rRaParam.u4Field = RA_PARAM_VHT_OPERATING_MODE;
+			pEntry->operating_mode.ch_width = current_operating_bw;
 			RAParamUpdate(pAd, pEntry, &rRaParam);
 			bAdjust = TRUE;
 			}
@@ -1428,7 +1519,7 @@ VOID WidiSendProbeRequest(
 	wdev->channel = channel;
 	wlan_operate_set_prim_ch(wdev, channel);
 	IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
-		if (pAd->MlmeAux.Channel > 14) {
+		if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
 			if ((pAd->CommonCfg.bIEEE80211H == 1) &&
 				RadarChannelCheck(pAd, pAd->MlmeAux.Channel)) {
 				ScanType = SCAN_PASSIVE;
@@ -1537,7 +1628,8 @@ VOID Handle_BSS_Width_Trigger_Events(RTMP_ADAPTER *pAd, UCHAR Channel)
 			UCHAR ht_bw;
 			wdev = pAd->wdev_list[i];
 
-			if (!wdev || (wdev->channel != Channel) || (wdev->wdev_type != WDEV_TYPE_AP))
+			if (!wdev || (WDEV_BSS_STATE(wdev) < BSS_READY) || (wlan_operate_get_prim_ch(wdev) != Channel)
+				|| (wdev->wdev_type != WDEV_TYPE_AP))
 				continue;
 
 			ht_bw = wlan_operate_get_ht_bw(wdev);

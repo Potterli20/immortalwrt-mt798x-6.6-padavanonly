@@ -1486,6 +1486,8 @@ VOID NotifyChSwAnnToPeerAPs(
 {
 #ifdef WDS_SUPPORT
 
+	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+		"Send CSA NewChannel:%d\n", Channel);
 	if (!((pRA[0] & 0xff) == 0xff)) { /* is pRA a broadcase address.*/
 		INT i;
 
@@ -1511,8 +1513,8 @@ VOID NotifyChSwAnnToPeerAPs(
 static VOID StartDFSProcedure(RTMP_ADAPTER *pAd, UCHAR Channel, UINT8 ChSwMode)
 {
 	/* start DFS procedure*/
-	pAd->Dot11_H[0].RDMode = RD_SWITCHING_MODE;
-	pAd->Dot11_H[0].CSCount = 0;
+	pAd->CommonCfg.DfsParameter.is_radar_emu = TRUE;
+	mtRddControl(pAd, RDD_RADAR_EMULATE, HW_RDD0, 0, 0);
 }
 
 
@@ -1538,7 +1540,7 @@ static VOID StartDFSProcedure(RTMP_ADAPTER *pAd, UCHAR Channel, UINT8 ChSwMode)
   +----+-----+-----------+------------+-----------+
     1    1        1           1            1
 */
-static BOOLEAN PeerChSwAnnSanity(
+BOOLEAN PeerChSwAnnSanity(
 	IN RTMP_ADAPTER *pAd,
 	IN VOID *pMsg,
 	IN ULONG MsgLen,
@@ -1599,7 +1601,7 @@ static BOOLEAN PeerChSwAnnSanity(
 	Return	: None.
 	==========================================================================
  */
-static BOOLEAN PeerMeasureReqSanity(
+BOOLEAN PeerMeasureReqSanity(
 	IN RTMP_ADAPTER *pAd,
 	IN VOID *pMsg,
 	IN ULONG MsgLen,
@@ -1695,7 +1697,7 @@ len_error:
   +-----+---------------+---------------------+-------+------------+----------+
      0          1                  2              3         4          5-7
 */
-static BOOLEAN PeerMeasureReportSanity(
+BOOLEAN PeerMeasureReportSanity(
 	IN RTMP_ADAPTER *pAd,
 	IN VOID *pMsg,
 	IN ULONG MsgLen,
@@ -1790,7 +1792,7 @@ len_error:
 	Return	: None.
 	==========================================================================
  */
-static BOOLEAN PeerTpcReqSanity(
+BOOLEAN PeerTpcReqSanity(
 	IN RTMP_ADAPTER *pAd,
 	IN VOID *pMsg,
 	IN ULONG MsgLen,
@@ -1845,7 +1847,7 @@ static BOOLEAN PeerTpcReqSanity(
 	Return	: None.
 	==========================================================================
  */
-static BOOLEAN PeerTpcRepSanity(
+BOOLEAN PeerTpcRepSanity(
 	IN RTMP_ADAPTER *pAd,
 	IN VOID *pMsg,
 	IN ULONG MsgLen,
@@ -2051,7 +2053,7 @@ static VOID PeerMeasureReqAction(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 	Return	: None.
 	==========================================================================
  */
-static VOID PeerMeasureReportAction(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
+VOID PeerMeasureReportAction(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 {
 	MEASURE_REPORT_INFO MeasureReportInfo;
 	PFRAME_802_11 pFr = (PFRAME_802_11)Elem->Msg;
@@ -3086,7 +3088,7 @@ INT apcli_peer_csa_sanity(
 		break;
 
 		default:
-			MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s: Unknown IE=%d\n", IE_ID);
+			MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s: Unknown IE=%d\n", __func__, IE_ID);
 		break;
 		}
 		Length += Elem->Msg[Length+1] + 2;

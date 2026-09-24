@@ -45,6 +45,23 @@ static BOOLEAN sta_rx_peer_response_allowed(struct _RTMP_ADAPTER *pAd,
 	is_my_bssid = MAC_ADDR_EQUAL(bcn_ie_list->Bssid, pStaCfg->Bssid) ? TRUE : FALSE;
 	is_my_ssid = SSID_EQUAL(bcn_ie_list->Ssid, bcn_ie_list->SsidLen, pStaCfg->Ssid, pStaCfg->SsidLen) ? TRUE : FALSE;
 
+#ifdef DFS_SLAVE_SUPPORT
+	if (SLAVE_MODE_EN(pAd, HcGetBandByWdev(wdev))) {
+		if (SSID_EQUAL(bcn_ie_list->Ssid, bcn_ie_list->SsidLen, pStaCfg->CfgSsid, pStaCfg->CfgSsidLen) ||
+			(bcn_ie_list->SsidLen == 0))
+			is_my_ssid = TRUE;
+#ifdef WSC_INCLUDED
+		if (!is_my_ssid) {
+			WSC_CTRL *pWscControl = &pStaCfg->wdev.WscControl;
+
+			if (pWscControl->bWscTrigger
+				&& SSID_EQUAL(bcn_ie_list->Ssid, bcn_ie_list->SsidLen, pWscControl->WscSsid.Ssid, pWscControl->WscSsid.SsidLength))
+				is_my_ssid = TRUE;
+		}
+#endif /* WSC_INCLUDED */
+	}
+#endif /* DFS_SLAVE_SUPPORT */
+
 	/* ignore BEACON not for my SSID */
 	if ((!is_my_ssid) && (!is_my_bssid))
 		return FALSE;
@@ -182,22 +199,23 @@ static BOOLEAN sta_rx_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 				channel_switch_action_1(pAd, &bcn_ie_list->CsaInfo);
 			} else
 #endif
-#ifdef ZERO_LOSS_CSA_SUPPORT
-			{
-				/* CSA SYNC / TSF SYNC */
-				if (pAd->Zero_Loss_Enable && bcn_ie_list->CsaInfo.ChSwAnnIE.ChSwCnt
-					&& (pDot11h->RootApCSCountFlag == FALSE)) {
-					pDot11h->OriCSCount = pDot11h->CSPeriod;
-					pDot11h->CSPeriod = bcn_ie_list->CsaInfo.ChSwAnnIE.ChSwCnt - 1;
-					pDot11h->RootApCSCountFlag = TRUE;
+#if defined(ZERO_LOSS_CSA_SUPPORT) && defined (HOSTAPD_MAP_SUPPORT)
+				if (!pAd->CommonCfg.bHostapdMapDisabled) {
+					/* CSA SYNC / TSF SYNC */
+					if (pAd->Zero_Loss_Enable && bcn_ie_list->CsaInfo.ChSwAnnIE.ChSwCnt
+						&& (pDot11h->RootApCSCountFlag == FALSE)) {
+						pDot11h->OriCSCount = pDot11h->CSPeriod;
+						pDot11h->CSPeriod = bcn_ie_list->CsaInfo.ChSwAnnIE.ChSwCnt - 1;
+						pDot11h->RootApCSCountFlag = TRUE;
 
-					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-						"SYNC - CSA Count Orig = %d, Updated CSA Count = %d\n",
-						pDot11h->OriCSCount, pDot11h->CSPeriod);
-				}
+						MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+							"SYNC - CSA Count Orig = %d, Updated CSA Count = %d\n",
+							pDot11h->OriCSCount, pDot11h->CSPeriod);
+					}
 
-				ApCliPeerCsaAction(pAd, pEntry->wdev, bcn_ie_list);
-			}
+					ApCliPeerCsaAction(pAd, pEntry->wdev, bcn_ie_list);
+				} else
+					ApCliPeerCsaAction(pAd, pEntry->wdev, bcn_ie_list);
 #else
 				ApCliPeerCsaAction(pAd, pEntry->wdev, bcn_ie_list);
 #endif
@@ -256,13 +274,15 @@ static BOOLEAN sta_rx_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 		}
 
 #ifdef RT_CFG80211_SUPPORT
+		if (!pAd->CommonCfg.bcfg80211Disabled) {
+			/* Determine primary channel by IE's DSPS
+			 * rather than channel of received frame */
+			if (bcn_ie_list->Channel != 0)
+				Elem->Channel = bcn_ie_list->Channel;
 
-		/* Determine primary channel by IE's DSPS rather than channel of received frame */
-		if (bcn_ie_list->Channel != 0)
-			Elem->Channel = bcn_ie_list->Channel;
-
-		RT_CFG80211_SCANNING_INFORM(pAd, Bssidx, Elem->Channel, Elem->Msg,
+			RT_CFG80211_SCANNING_INFORM(pAd, Bssidx, Elem->Channel, Elem->Msg,
 									Elem->MsgLen, RealRssi);
+		}
 #endif /* RT_CFG80211_SUPPORT */
 	}
 	NdisGetSystemUpTime(&Now);
@@ -954,6 +974,10 @@ static BOOLEAN sta_join_peer_response_matched(struct _RTMP_ADAPTER *pAd,
 			 ) {
 		Bssidx = BssTableSearch(ScanTab, ie_list->Bssid, ie_list->Channel);
 		if (Bssidx != BSS_NOT_FOUND) {
+			if (Bssidx >= MAX_LEN_OF_BSS_TABLE) {
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "Bssidx Overflow\n");
+				return FALSE;
+			}
 			pInBss = &ScanTab->BssEntry[Bssidx];
 #ifdef CONFIG_OWE_SUPPORT
 			if (matchFlag) {
@@ -1223,7 +1247,8 @@ static BOOLEAN sta_join_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 #endif /* WSC_INCLUDED */
 
 #ifdef APCLI_CFG80211_SUPPORT
-			if (!(pStaCfg->wpa_supplicant_info.WpaSupplicantUP & WPA_SUPPLICANT_ENABLE_WPS))
+			if (!(pStaCfg->wpa_supplicant_info.WpaSupplicantUP & WPA_SUPPLICANT_ENABLE_WPS) ||
+				(pAd->CommonCfg.bApcliCfg80211Disabled))
 #endif /* APCLI_CFG80211_SUPPORT */
 
 			{
@@ -1363,7 +1388,8 @@ static BOOLEAN sta_join_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 					|| (wdev->WscControl.bWscTrigger == FALSE))
 #endif /* WSC_INCLUDED */
 #ifdef APCLI_CFG80211_SUPPORT
-				if (!(pStaCfg->wpa_supplicant_info.WpaSupplicantUP & WPA_SUPPLICANT_ENABLE_WPS))
+				if (!(pStaCfg->wpa_supplicant_info.WpaSupplicantUP & WPA_SUPPLICANT_ENABLE_WPS) ||
+					(pAd->CommonCfg.bApcliCfg80211Disabled))
 #endif /* WPA_SUPPLICANT_SUPPORT */
 
 				{
@@ -1728,7 +1754,12 @@ static BOOLEAN sta_join_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 		if (bssidEqualFlag == TRUE) {
 #ifdef APCLI_AUTO_CONNECT_SUPPORT
 #ifdef APCLI_CFG80211_SUPPORT
-			if (1)
+			if ((!pAd->CommonCfg.bApcliCfg80211Disabled) ||
+				(pStaCfg->ApCliAutoConnectRunning == TRUE)
+#ifdef BT_APCLI_SUPPORT
+			|| (pAd->ApCfg.ApCliAutoBWBTSupport == TRUE)
+#endif
+			)
 #else
 			/* follow root ap setting while ApCliAutoConnectRunning is active */
 			if ((pStaCfg->ApCliAutoConnectRunning == TRUE)
@@ -1770,6 +1801,9 @@ static BOOLEAN sta_join_peer_response_updated(struct _RTMP_ADAPTER *pAd,
 #endif /* APCLI_AUTO_CONNECT_SUPPORT */
 			{
 #ifndef APCLI_CFG80211_SUPPORT
+			isGoingToConnect = TRUE;
+#else
+			if (pAd->CommonCfg.bApcliCfg80211Disabled)
 				isGoingToConnect = TRUE;
 #endif
 			}

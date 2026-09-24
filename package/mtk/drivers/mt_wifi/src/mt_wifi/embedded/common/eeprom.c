@@ -233,37 +233,6 @@ INT rtmp_read_txpwr_from_eeprom(RTMP_ADAPTER *pAd)
 
 	========================================================================
 */
-#if defined(LINUX)
-extern int mt_wifi_get_band_mac(int band, unsigned char *mac);
-
-/*
- * The factory EEPROM of some boards only carries the MediaTek reference MAC
- * (e.g. 00:0C:43:xx:xx:xx) while the real address is stored elsewhere (like
- * the "product_info" volume of Ruijie boards). OpenWrt describes such an
- * address in the device tree - as it also does for the mt76 driver - so try
- * to pick it up here.
- *
- * Only the first band is requested: this driver keeps a single
- * pAd->CurrentAddress (the two bands share one card, see the profile merge in
- * multi_profile_merge_mac_address()) and derives the MAC of the secondary
- * interface / other BSSes from it (first byte + 2).
- */
-static BOOLEAN RTMPGetMacFromDT(PRTMP_ADAPTER pAd, UCHAR *mac)
-{
-	USHORT i;
-
-	if (mt_wifi_get_band_mac(0, mac) != 0)
-		return FALSE;
-
-	for (i = 0; i < MAC_ADDR_LEN; i++) {
-		if (mac[i] != 0x00)
-			return TRUE;
-	}
-
-	return FALSE;
-}
-#endif /* LINUX */
-
 INT NICReadEEPROMParameters(RTMP_ADAPTER *pAd, RTMP_STRING *mac_addr)
 {
 	USHORT i, value = 0;
@@ -677,15 +646,6 @@ INT NICReadEEPROMParameters(RTMP_ADAPTER *pAd, RTMP_STRING *mac_addr)
 	MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO, "E2PROM MAC: ="MACSTR"\n",
 			 MAC2STR(pAd->PermanentAddress));
 
-#if defined(LINUX)
-	/* Unconditional so the chosen MAC source can always be verified */
-	pr_info("mt_wifi: MAC sources: local_admin=%d module_param=%s e2p="MACSTR"\n",
-			pAd->bLocalAdminMAC,
-			(mac_addr && strlen((RTMP_STRING *)mac_addr) == 17) ?
-				(RTMP_STRING *)mac_addr : "(none)",
-			MAC2STR(pAd->PermanentAddress));
-#endif /* LINUX */
-
 	/* Assign the actually working MAC Address */
 	if (pAd->bLocalAdminMAC) {
 		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
@@ -709,13 +669,6 @@ INT NICReadEEPROMParameters(RTMP_ADAPTER *pAd, RTMP_STRING *mac_addr)
 		}
 
 		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Use the MAC address what is assigned from Moudle Parameter.\n");
-#if defined(LINUX)
-	} else if (RTMPGetMacFromDT(pAd, pAd->CurrentAddress) == TRUE) {
-		COPY_MAC_ADDR(pAd->PermanentAddress, pAd->CurrentAddress);
-		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-				 "Use the MAC address what is assigned from Device Tree: "MACSTR"\n",
-				 MAC2STR(pAd->CurrentAddress));
-#endif /* LINUX */
 	} else {
 		COPY_MAC_ADDR(pAd->CurrentAddress, pAd->PermanentAddress);
 		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Use the MAC address what is assigned from EEPROM.\n");
@@ -1232,6 +1185,12 @@ UCHAR RtmpEepromGetDefault(RTMP_ADAPTER *pAd)
 
 static NDIS_STATUS rtmp_ee_bin_init(PRTMP_ADAPTER pAd)
 {
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+	struct wifi_dev  *wdev = NULL;
+	RTMP_STRING src[128] = {'\0'};
+	int idx = 0;
+	USHORT doCal1 = 0;
+#endif
 	rtmp_ee_load_from_bin(pAd);
 #ifdef PRE_CAL_TRX_SET1_SUPPORT
 	{
@@ -1267,6 +1226,36 @@ static NDIS_STATUS rtmp_ee_bin_init(PRTMP_ADAPTER pAd)
 		pAd->PreCalImageInfo = pAd->EEPROMImage + cap->EEPROM_DEFAULT_BIN_SIZE;
 		pAd->PreCalImage     = pAd->EEPROMImage + prek_ee_offset;
 		pAd->TxDPDImage      = pAd->EEPROMImage + dpdk_ee_offset;
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+		if (pAd->E2pAccessMode == E2P_BIN_MODE) {
+			for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
+				wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, idx)].wdev;
+				if (WMODE_CAP_6G(wdev->PhyMode)) {
+					l1get_GroupPrek6G_bin(pAd, &src[0]);
+					break;
+				} else if (WMODE_CAP_5G(wdev->PhyMode)) {
+					l1get_GroupPrek5G_bin(pAd, &src[0]);
+					break;
+				}
+			}
+			if (strlen(src)) {
+				MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+						"Use Group Prek BIN from:%s\n", src);
+				if (rtmp_group_prek_write_to_buffer(pAd, &src[0]) != NDIS_STATUS_SUCCESS)
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+							"Group prek data write to buffer failed\n");
+				else {
+					rtmp_ee_bin_read16(pAd, PRECAL_INDICATION_BYTE, &doCal1);
+
+					/* raise group pre-cal indication bit */
+					doCal1 |= (1 << GROUP_PRECAL_INDN_BIT);
+					rtmp_ee_bin_write16(pAd, PRECAL_INDICATION_BYTE, doCal1);
+					MTWF_DBG(pAd, DBG_CAT_INIT, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+							"load Group prek data from Bin Done!\n");
+				}
+			}
+		}
+#endif
 		MTWF_DBG(pAd, DBG_CAT_TEST, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 				"\x1b[42m[EEPROMImage - PreCalImageInfo - PreCalImage - TxDPDImage]\x1b[m\n"
 				"\x1b[42m[0x%p - 0x%p - 0x%p - 0x%p]\x1b[m\n",
@@ -2253,4 +2242,377 @@ INT Set_CheckCalFree_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
 
 #endif
 
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+INT rtmp_group_prek_write_to_bin(RTMP_ADAPTER *pAd)
+{
+	int idx = 0;
+	RTMP_STRING src[128] = {'\0'};
+	INT ret_val = NDIS_STATUS_FAILURE;
+	RTMP_OS_FD srcf;
+	RTMP_OS_FS_INFO osFSInfo;
+	struct wifi_dev  *wdev = NULL;
+	struct _RTMP_CHIP_CAP *chip_cap = hc_get_chip_cap(pAd->hdev_ctrl);
 
+	for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
+		wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, idx)].wdev;
+		if (WMODE_CAP_6G(wdev->PhyMode)) {
+			l1get_GroupPrek6G_bin(pAd, &src[0]);
+			break;
+		} else if (WMODE_CAP_5G(wdev->PhyMode)) {
+			l1get_GroupPrek5G_bin(pAd, &src[0]);
+			break;
+		}
+	}
+
+	RtmpOSFSInfoChange(&osFSInfo, TRUE);
+	if (strlen(src)) {
+		srcf = RtmpOSFileOpen(src, O_WRONLY | O_CREAT, 0);
+		if (IS_FILE_OPEN_ERR(srcf)) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Error opening %s\n", src);
+			RtmpOSFSInfoChange(&osFSInfo, FALSE);
+			return ret_val;
+		}
+		RtmpOSFileSeek(srcf, 0);
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->PreCalImage),
+				chip_cap->prek_ee_info.pre_cal_total_size);
+
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.pre_cal_total_size);
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->PreCalImageInfo), 16);
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Group prek bin src or srcf is null\n");
+		RtmpOSFSInfoChange(&osFSInfo, FALSE);
+		return ret_val;
+	}
+
+	ret_val = RtmpOSFileClose(srcf);
+	if (ret_val)
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error %d closing %s\n", -ret_val, src);
+
+	RtmpOSFSInfoChange(&osFSInfo, FALSE);
+	return ret_val;
+}
+
+INT rtmp_group_prek_write_to_buffer(RTMP_ADAPTER *pAd, RTMP_STRING *src)
+{
+	INT ret_val = NDIS_STATUS_FAILURE;
+	RTMP_OS_FD srcf;
+	RTMP_OS_FS_INFO osFSInfo;
+	struct _RTMP_CHIP_CAP *chip_cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	RtmpOSFSInfoChange(&osFSInfo, TRUE);
+	srcf = RtmpOSFileOpen(src, O_RDONLY, 0);
+	if (IS_FILE_OPEN_ERR(srcf)) {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error opening %s\n", src);
+		RtmpOSFSInfoChange(&osFSInfo, FALSE);
+		return ret_val;
+	}
+
+	NdisZeroMemory((RTMP_STRING *)pAd->PreCalImage,
+			chip_cap->prek_ee_info.pre_cal_total_size);
+
+	NdisZeroMemory((RTMP_STRING *)pAd->PreCalImageInfo, 16);
+	RtmpOSFileSeek(srcf, 0);
+	ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)pAd->PreCalImage,
+			chip_cap->prek_ee_info.pre_cal_total_size);
+	if (ret_val > 0) {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Load from %s (Read = %d)\n", src, ret_val);
+		ret_val = NDIS_STATUS_SUCCESS;
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+	}
+
+	RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.pre_cal_total_size);
+	ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)pAd->PreCalImageInfo, 16);
+	if (ret_val > 0) {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+				"Load from %s (Read = %d)\n", src, ret_val);
+		ret_val = NDIS_STATUS_SUCCESS;
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+	}
+
+	ret_val = RtmpOSFileClose(srcf);
+	if (ret_val)
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error %d closing %s\n", -ret_val, src);
+
+	RtmpOSFSInfoChange(&osFSInfo, FALSE);
+	return ret_val;
+}
+#endif
+
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+static INT rtmp_dpd_cal_write_to_bin(RTMP_ADAPTER *pAd)
+{
+	RTMP_STRING src[128] = {'\0'};
+	INT ret_val = NDIS_STATUS_FAILURE;
+	RTMP_OS_FD srcf;
+	RTMP_OS_FS_INFO osFSInfo;
+	struct _RTMP_CHIP_CAP *chip_cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	l1get_dpd_bin_file(pAd, &src[0]);
+	RtmpOSFSInfoChange(&osFSInfo, TRUE);
+	if (strlen(src)) {
+		srcf = RtmpOSFileOpen(src, O_WRONLY | O_CREAT, 0);
+		if (IS_FILE_OPEN_ERR(srcf)) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Error opening %s\n", src);
+			RtmpOSFSInfoChange(&osFSInfo, FALSE);
+			return ret_val;
+		}
+		RtmpOSFileSeek(srcf, 0);
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->TxDPDImage +
+					chip_cap->prek_ee_info.dpd_flash_offset_a6_begin),
+				chip_cap->prek_ee_info.dpd_cal_total_size);
+
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size);
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->OndemandDPDPreCal6G),
+				sizeof(pAd->OndemandDPDPreCal6G));
+
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size
+				+ sizeof(pAd->OndemandDPDPreCal6G));
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->OndemandDPDPreCal5G),
+				sizeof(pAd->OndemandDPDPreCal5G));
+
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size
+				+ sizeof(pAd->OndemandDPDPreCal6G)
+				+ sizeof(pAd->OndemandDPDPreCal5G));
+		RtmpOSFileWrite(srcf, (RTMP_STRING *)(pAd->OndemandDPDPreCal2G),
+				sizeof(pAd->OndemandDPDPreCal2G));
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error src or srcf is null\n");
+		RtmpOSFSInfoChange(&osFSInfo, FALSE);
+		return ret_val;
+	}
+
+	ret_val = RtmpOSFileClose(srcf);
+	if (ret_val)
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error %d closing %s\n", -ret_val, src);
+
+	RtmpOSFSInfoChange(&osFSInfo, FALSE);
+	return ret_val;
+}
+
+INT rtmp_cal_write_to_buffer(RTMP_ADAPTER *pAd)
+{
+	RTMP_STRING src[128] = {'\0'};
+	INT ret_val = NDIS_STATUS_FAILURE;
+	RTMP_OS_FD srcf;
+	RTMP_OS_FS_INFO osFSInfo;
+	USHORT doCal1 = 0;
+	RTMP_CHIP_OP *chip_ops = NULL;
+	struct _RTMP_CHIP_CAP *chip_cap = hc_get_chip_cap(pAd->hdev_ctrl);
+
+	chip_ops = hc_get_chip_ops(pAd->hdev_ctrl);
+	chip_ops->eeread(pAd, PRECAL_INDICATION_BYTE, &doCal1);
+
+	if ((((doCal1 & (1 << DPD5G_PRECAL_INDN_BIT)) == 0) ||
+				((doCal1 & (1 << DPD6G_PRECAL_INDN_BIT)) == 0)) &&
+			((doCal1 & (1 << DPD2G_PRECAL_INDN_BIT)) == 0)) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s : DPD Calibration data is not cached!! Please Check!!!\n", __func__);
+		return ret_val;
+	}
+
+	l1get_dpd_bin_file(pAd, &src[0]);
+	RtmpOSFSInfoChange(&osFSInfo, TRUE);
+	if (strlen(src)) {
+		srcf = RtmpOSFileOpen(src, O_RDONLY, 0);
+		if (IS_FILE_OPEN_ERR(srcf)) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Error opening %s\n", src);
+			RtmpOSFSInfoChange(&osFSInfo, FALSE);
+			return ret_val;
+		}
+		NdisZeroMemory((RTMP_STRING *)(pAd->TxDPDImage +
+					chip_cap->prek_ee_info.dpd_flash_offset_a6_begin),
+				chip_cap->prek_ee_info.dpd_cal_total_size);
+
+		RtmpOSFileSeek(srcf, 0);
+		ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)(pAd->TxDPDImage +
+					chip_cap->prek_ee_info.dpd_flash_offset_a6_begin),
+				chip_cap->prek_ee_info.dpd_cal_total_size);
+
+		if (ret_val > 0) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Load from %s (Read = %d)\n", src, ret_val);
+			ret_val = NDIS_STATUS_SUCCESS;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+		}
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size);
+		ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)pAd->OndemandDPDPreCal6G,
+				sizeof(pAd->OndemandDPDPreCal6G));
+		if (ret_val > 0) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Load from %s (Read = %d)\n", src, ret_val);
+			ret_val = NDIS_STATUS_SUCCESS;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+		}
+
+		ret_val = 0;
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size
+				+ sizeof(pAd->OndemandDPDPreCal6G));
+		ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)pAd->OndemandDPDPreCal5G,
+				sizeof(pAd->OndemandDPDPreCal5G));
+		if (ret_val > 0) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Load from %s (Read = %d)\n", src, ret_val);
+			ret_val = NDIS_STATUS_SUCCESS;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+		}
+
+		ret_val = 0;
+		RtmpOSFileSeek(srcf, chip_cap->prek_ee_info.dpd_cal_total_size
+				+ sizeof(pAd->OndemandDPDPreCal6G)
+				+ sizeof(pAd->OndemandDPDPreCal5G));
+		ret_val = RtmpOSFileRead(srcf, (RTMP_STRING *)pAd->OndemandDPDPreCal2G,
+				sizeof(pAd->OndemandDPDPreCal2G));
+		if (ret_val > 0) {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"Load from %s (Read = %d)\n", src, ret_val);
+			ret_val = NDIS_STATUS_SUCCESS;
+		} else {
+			MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Read file \"%s\" failed(errCode=%d)!\n", src, ret_val);
+		}
+	} else {
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error src or srcf is null\n");
+		RtmpOSFSInfoChange(&osFSInfo, FALSE);
+		return ret_val;
+	}
+
+	ret_val = RtmpOSFileClose(srcf);
+	if (ret_val)
+		MTWF_DBG(pAd, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Error %d closing %s\n", -ret_val, src);
+
+	RtmpOSFSInfoChange(&osFSInfo, FALSE);
+	return ret_val;
+}
+
+INT Set_DPDBinWriteBack_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT e2p_mode = (UCHAR) os_str_tol(arg, 0, 10);
+
+	if (pAd->E2pAccessMode != E2P_BIN_MODE) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Currently not in BIN MODE,return.\n");
+		return FALSE;
+	}
+
+	if (e2p_mode >= NUM_OF_E2P_MODE)
+		return FALSE;
+
+	switch (e2p_mode) {
+	case E2P_BIN_MODE:
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Write DPD buffer back to BIN\n");
+		if (rtmp_dpd_cal_write_to_bin(pAd) != NDIS_STATUS_SUCCESS) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"ERROR !!! DPD data to BIN write failed\n");
+			return FALSE;
+		}
+		break;
+
+	default:
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"do not support this DPD access mode\n");
+		return FALSE;
+	}
+	return TRUE;
+}
+
+INT Set_DPDCalStatus_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT status = (UCHAR) os_str_tol(arg, 0, 10);
+	int i = 0;
+
+	if (pAd->E2pAccessMode != E2P_BIN_MODE) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Currently not in BIN MODE,return.\n");
+		return FALSE;
+	}
+
+	if ((status != 0) && (status != 1))
+		return FALSE;
+
+	for (i = 0; i < DPD2GCHANNEL; i++)
+		pAd->OndemandDPDPreCal2G[i] = status;
+
+	for (i = 0; i < DPD5GCHANNEL; i++)
+		pAd->OndemandDPDPreCal5G[i] = status;
+
+	for (i = 0; i < DPD6GCHANNEL; i++)
+		pAd->OndemandDPDPreCal6G[i] = status;
+
+	return TRUE;
+}
+
+INT Show_DPDCalStatusDump_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+{
+	UINT BandIdx = -1;
+	int i = 0;
+	UINT CentralCh = -1;
+
+	if (arg == NULL) {
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"BandIdx empty!\n");
+		return FALSE;
+	}
+	BandIdx = (UCHAR) os_str_tol(arg, 0, 10);
+
+	switch (BandIdx) {
+	case 0:
+		MTWF_PRINT("DPD Status Dump 2G\n");
+		MTWF_PRINT("Channel\t Status\n");
+		for (i = 0; i < (DPD2GCHANNEL); i++) {
+			if (i == 0)
+				CentralCh = 1;
+			else if (i == 1)
+				CentralCh = 7;
+			else
+				CentralCh = 13;
+
+			MTWF_PRINT("%d\t %d\n", CentralCh, pAd->OndemandDPDPreCal2G[i]);
+		}
+		break;
+	case 1:
+		MTWF_PRINT("DPD Status Dump 5G\n");
+		MTWF_PRINT("Channel\t Status\n");
+		for (i = 0; i < (MT7916_PER_CH_A5_BW20_BW160_SIZE); i++) {
+			MTWF_PRINT("%d\t %d\n", MT7916_PER_CH_A5_BW20_BW160[i],
+					pAd->OndemandDPDPreCal5G[i]);
+		}
+		break;
+	case 2:
+		MTWF_PRINT("DPD Status Dump 6G\n");
+		MTWF_PRINT("Channel\t Status\n");
+		for (i = 0; i < (MT7916_PER_CH_A6_BW20_BW160_SIZE); i++) {
+			MTWF_PRINT("%d\t %d\n", MT7916_PER_CH_A6_BW20_BW160[i],
+					pAd->OndemandDPDPreCal6G[i]);
+		}
+		break;
+	default:
+		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"Unknown Band: %d!\n", BandIdx);
+		return FALSE;
+	}
+	return TRUE;
+}
+#endif

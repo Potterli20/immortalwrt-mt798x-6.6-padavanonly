@@ -91,7 +91,8 @@ VOID WscApCliLinkDown(
 #endif /* APCLI_SUPPORT */
 #endif /* CONFIG_AP_SUPPORT */
 
-static BOOLEAN WscCheckNonce(
+
+BOOLEAN WscCheckNonce(
 	IN  PRTMP_ADAPTER pAdapter,
 	IN  MLME_QUEUE_ELEM * Elem,
 	IN  BOOLEAN bFlag,
@@ -103,7 +104,8 @@ static VOID WscEapActionDisabled(
 	IN  PWSC_CTRL pWscControl);
 #endif /* CONFIG_STA_SUPPORT */
 
-static VOID WscGetConfigErrFromNack(
+
+VOID WscGetConfigErrFromNack(
 	IN  PRTMP_ADAPTER pAdapter,
 	IN  MLME_QUEUE_ELEM * pElem,
 	OUT USHORT * pConfigError);
@@ -6725,6 +6727,12 @@ VOID WscSelectedRegistrar(
 
 	pData = (PUCHAR)pReginfo;
 
+
+	if ((pAd == NULL) || (pReginfo == NULL)) {
+		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "Invalid ptr\n");
+		return;
+	}
+
 	if (Length < 4) {
 		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "WscSelectedRegistrar --> Unknown IE\n");
 		return;
@@ -6781,13 +6789,9 @@ VOID WscSelectedRegistrar(
 				}
 
 				NdisZeroMemory(pAuthorizedMACs, WscLen);
+				AuthorizedMACsLen = WscLen;
 				WscParseV2SubItem(WFA_EXT_ID_AUTHORIZEDMACS, pData, WscLen, pAuthorizedMACs, &AuthorizedMACsLen);
 
-				if ((AuthorizedMACsLen > 30) || strlen(pAuthorizedMACs) > 30) {
-					MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "WscSelectedRegistrar --> AuthorizedMACsLen parse fail!\n");
-					os_free_mem(pAuthorizedMACs);
-					return;
-				}
 			}
 
 #endif /* WSC_V2_SUPPORT */
@@ -8712,7 +8716,8 @@ VOID WscWriteWpaPskToDatFile(
 #endif /* CONFIG_AP_SUPPORT */
 }
 
-static BOOLEAN WscCheckNonce(
+
+BOOLEAN WscCheckNonce(
 	IN  PRTMP_ADAPTER pAdapter,
 	IN  MLME_QUEUE_ELEM * pElem,
 	IN  BOOLEAN bFlag,
@@ -8858,7 +8863,8 @@ static VOID WscEapActionDisabled(
 }
 #endif /* CONFIG_STA_SUPPORT */
 
-static VOID WscGetConfigErrFromNack(
+
+VOID WscGetConfigErrFromNack(
 	IN RTMP_ADAPTER *pAdapter,
 	IN MLME_QUEUE_ELEM * pElem,
 	OUT USHORT *pConfigError)
@@ -9973,6 +9979,10 @@ BOOLEAN WscBssWpsIESearchForPIN(
 		while (Len > 0) {
 			/* Check for WSC IEs */
 			pWscIE = (PWSC_IE) pData;
+
+			if ((be2cpu16(pWscIE->Length) + 4) == 0 ||
+				(be2cpu16(pWscIE->Length) + 4) > MAX_VIE_LEN)
+				return ret;
 
 			if (Len < (be2cpu16(pWscIE->Length) + 4)) {
 				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
@@ -11290,7 +11300,7 @@ VOID WscCheckWpsIeFromWpsAP(
 	   ) {
 		pData = (PUCHAR) pEid->Octet + 4;
 		Len = (SHORT)(pEid->Len - 4);
-		if (Len <= 0 || (Len > sizeof(DevicePasswordID) + 5))
+		if (Len <= 0 || (Len > MAX_LEN_OF_WSC_IE))
 			return;
 
 		while (Len > 0) {
@@ -11644,14 +11654,26 @@ static VOID WscWriteAuthToDAT(
 {
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	INT index;
+	UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+
+	if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+		BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+		index = 0;
+	}
+#ifdef DBDC_MODE
+	else {
+		BssidNumIdx = pAd->ApCfg.BssidNum;
+		index = pAd->ApCfg.BssidNumPerBand[0];
+	}
+#endif
 
 	if (CurOpMode == AP_MODE) {
-		INT index;
-
-		for (index = 0; index < pAd->ApCfg.BssidNum; index++) {
+		for (; index < BssidNumIdx; index++) {
 			if (pAd->ApCfg.MBSSID[index].SsidLen) {
 				tmp_buf_left = 512 - strlen(pTempStr);
-				if (index == 0)
+				if (index == 0 || index == pAd->ApCfg.BssidNumPerBand[0])
 					ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%s",
 										GetAuthModeStr(pAd->ApCfg.MBSSID[index].wdev.SecConfig.AKMMap));
 				else
@@ -11685,13 +11707,25 @@ static VOID WscWriteEncrToDAT(
 {
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	INT index;
+	UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+
+	if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+		BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+		index = 0;
+	}
+#ifdef DBDC_MODE
+	else {
+		BssidNumIdx = pAd->ApCfg.BssidNum;
+		index = pAd->ApCfg.BssidNumPerBand[0];
+	}
+#endif
 
 	if (CurOpMode == AP_MODE) {
-		INT index;
-
-		for (index = 0; index < pAd->ApCfg.BssidNum; index++) {
+		for (; index < BssidNumIdx; index++) {
 			tmp_buf_left = 512 - strlen(pTempStr);
-			if (index == 0)
+			if (index == 0 || index == pAd->ApCfg.BssidNumPerBand[0])
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%s",
 						GetEncryModeStr(pAd->ApCfg.MBSSID[index].wdev.SecConfig.PairwiseCipher));
 			else
@@ -11724,14 +11758,26 @@ static VOID WscWriteWscConfModeToDAT(
 	WSC_CTRL *wsc_ctrl;
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	INT index;
+	UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+
+	if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+		BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+		index = 0;
+	}
+#ifdef DBDC_MODE
+	else {
+		BssidNumIdx = pAd->ApCfg.BssidNum;
+		index = pAd->ApCfg.BssidNumPerBand[0];
+	}
+#endif
 
 	if (CurOpMode == AP_MODE) {
-		INT index;
-
-		for (index = 0; index < pAd->ApCfg.BssidNum; index++) {
+		for (; index < BssidNumIdx; index++) {
 			wsc_ctrl = &pAd->ApCfg.MBSSID[index].wdev.WscControl;
 			tmp_buf_left = 512 - strlen(pTempStr);
-			if (index == 0)
+			if (index == 0 || index == pAd->ApCfg.BssidNumPerBand[0])
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%d", wsc_ctrl->WscConfMode);
 			else
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, ";%d", wsc_ctrl->WscConfMode);
@@ -11763,14 +11809,26 @@ static VOID WscWriteWscConfStatusToDAT(
 	WSC_CTRL *wsc_ctrl;
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	INT index;
+	UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+
+	if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+		BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+		index = 0;
+	}
+#ifdef DBDC_MODE
+	else {
+		BssidNumIdx = pAd->ApCfg.BssidNum;
+		index = pAd->ApCfg.BssidNumPerBand[0];
+	}
+#endif
 
 	if (CurOpMode == AP_MODE) {
-		INT index;
-
-		for (index = 0; index < pAd->ApCfg.BssidNum; index++) {
+		for (; index < pAd->ApCfg.BssidNum; index++) {
 			wsc_ctrl = &pAd->ApCfg.MBSSID[index].wdev.WscControl;
 			tmp_buf_left = 512 - strlen(pTempStr);
-			if (index == 0)
+			if (index == 0 || index == pAd->ApCfg.BssidNumPerBand[0])
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%d", wsc_ctrl->WscConfStatus);
 			else
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, ";%d", wsc_ctrl->WscConfStatus);
@@ -11800,13 +11858,25 @@ static VOID WscWriteDefaultKeyIdToDAT(
 {
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	INT index;
+	UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+
+	if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+		BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+		index = 0;
+	}
+#ifdef DBDC_MODE
+	else {
+		BssidNumIdx = pAd->ApCfg.BssidNum;
+		index = pAd->ApCfg.BssidNumPerBand[0];
+	}
+#endif
 
 	if (CurOpMode == AP_MODE) {
-		INT index;
-
-		for (index = 0; index < pAd->ApCfg.BssidNum; index++) {
+		for (; index < BssidNumIdx; index++) {
 			tmp_buf_left = 512 - strlen(pTempStr);
-			if (index == 0)
+			if (index == 0 || index == pAd->ApCfg.BssidNumPerBand[0])
 				ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%d",
 							pAd->ApCfg.MBSSID[index].wdev.SecConfig.PairwiseKeyId + 1);
 			else
@@ -11850,6 +11920,7 @@ static BOOLEAN WscWriteWEPKeyToDAT(
 	INT tempStrLen = 0;
 	INT ret, tmp_buf_left;
 #ifdef CONFIG_AP_SUPPORT
+	int BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
 
 	if (CurOpMode == AP_MODE) {
 		UCHAR apidx = (pAd->WriteWscCfgToDatFile & 0x0F);
@@ -11884,8 +11955,18 @@ static BOOLEAN WscWriteWEPKeyToDAT(
 				pTempStr = temp_ptr;
 				NdisZeroMemory(pTempStr, 512);
 				NdisMoveMemory(pTempStr, WepKeyFormatName, strlen(WepKeyFormatName));
+				if (apidx < pAd->ApCfg.BssidNumPerBand[0]) {
+					BssidNumIdx = pAd->ApCfg.BssidNumPerBand[0];
+					idx = 0;
+				}
+#ifdef DBDC_MODE
+				else {
+					BssidNumIdx = pAd->ApCfg.BssidNum;
+					idx = pAd->ApCfg.BssidNumPerBand[0];
+				}
+#endif
 
-				for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
+				for (; idx < BssidNumIdx; idx++) {
 					tmp_buf_left = 512 - strlen(pTempStr);
 					if (idx == apidx)
 						ret = snprintf(pTempStr + strlen(pTempStr), tmp_buf_left, "%d", 0);
@@ -13249,55 +13330,56 @@ VOID WscCheckPeerDPID(
 
 #endif /* CONFIG_AP_SUPPORT */
 
-	if (Len <= 0 || (Len > sizeof(DevicePasswordID) + 4))
+	if (Len == 0 || Len > MAX_LEN_OF_WSC_IE)
 		return;
 
-	while (Len > 0) {
+	while (Len > 4) {
 		WSC_IE	WscIE;
 
 		NdisMoveMemory(&WscIE, pData, sizeof(WSC_IE));
 		/* Check for WSC IEs*/
 		pWscIE = &WscIE;
 
-		if (Len < (be2cpu16(pWscIE->Length) + 4)) {
-			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
-				"unexpected WSC IE Length(%u)\n", be2cpu16(pWscIE->Length));
-			break;
-		}
+
+		if ((be2cpu16(pWscIE->Length) == 0) ||
+			(be2cpu16(pWscIE->Length) > MAX_VIE_LEN))
+			return;
 
 		/* Check for device password ID, PBC = 0x0004*/
 		if (be2cpu16(pWscIE->Type) == WSC_ID_DEVICE_PWD_ID) {
-			/* Found device password ID*/
-			NdisMoveMemory(&DevicePasswordID, pData + 4, sizeof(DevicePasswordID));
-			DevicePasswordID = be2cpu16(DevicePasswordID);
 
-			if (DevicePasswordID == DEV_PASS_ID_PBC) {	/* Check for PBC value*/
-				WscPBC_DPID_FromSTA(pAd, Fr->Hdr.Addr2, current_band);
-				hex_dump("PBC STA:", Fr->Hdr.Addr2, MAC_ADDR_LEN);
-				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "\n");
-			} else if (DevicePasswordID == DEV_PASS_ID_PIN) {
+			if (Len >= (4 + sizeof(DevicePasswordID))) {
+				/* Found device password ID*/
+				NdisMoveMemory(&DevicePasswordID, (pData + 4), sizeof(DevicePasswordID));
+				DevicePasswordID = be2cpu16(DevicePasswordID);
+
+				if (DevicePasswordID == DEV_PASS_ID_PBC) {	/* Check for PBC value*/
+					WscPBC_DPID_FromSTA(pAd, Fr->Hdr.Addr2, current_band);
+					hex_dump("PBC STA:", Fr->Hdr.Addr2, MAC_ADDR_LEN);
+					MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "\n");
+				} else if (DevicePasswordID == DEV_PASS_ID_PIN) {
 				/*
 				*	WSC 2.0 STA will send probe request with WPS IE anyway.
 				*	Do NOT add this STA to WscPeerList after AP is triggered to do PBC.
 				*/
-				if (pWscCtrl &&
-					(!pWscCtrl->bWscTrigger || (pWscCtrl->WscMode != WSC_PBC_MODE))) {
-					RTMP_SEM_LOCK(&pWscCtrl->WscPeerListSemLock);
-					WscInsertPeerEntryByMAC(&pWscCtrl->WscPeerList, Fr->Hdr.Addr2);
-					RTMP_SEM_UNLOCK(&pWscCtrl->WscPeerListSemLock);
+					if (pWscCtrl &&
+						(!pWscCtrl->bWscTrigger || (pWscCtrl->WscMode != WSC_PBC_MODE))) {
+						RTMP_SEM_LOCK(&pWscCtrl->WscPeerListSemLock);
+						WscInsertPeerEntryByMAC(&pWscCtrl->WscPeerList, Fr->Hdr.Addr2);
+						RTMP_SEM_UNLOCK(&pWscCtrl->WscPeerListSemLock);
+					}
 				}
-			}
 
 #ifdef IWSC_SUPPORT
-			else if (DevicePasswordID == DEV_PASS_ID_SMPBC)
-				IWSC_AddSmpbcEnrollee(pAd, Fr->Hdr.Addr2);
+				else if (DevicePasswordID == DEV_PASS_ID_SMPBC)
+					IWSC_AddSmpbcEnrollee(pAd, Fr->Hdr.Addr2);
 
 #endif /* IWSC_SUPPORT */
-			else {
-				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "%s : DevicePasswordID = 0x%04x\n",
-						 __func__, DevicePasswordID);
+				else {
+					MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+						"%s : DevicePasswordID = 0x%04x\n",  __func__, DevicePasswordID);
+				}
 			}
-
 			break;
 		}
 
@@ -13370,6 +13452,7 @@ PWSC_PEER_ENTRY	WscFindPeerEntry(
 	pPeerEntry = (PWSC_PEER_ENTRY)pListEntry;
 
 	while (pPeerEntry != NULL) {
+
 		if (NdisEqualMemory(pPeerEntry->mac_addr, pMacAddr, MAC_ADDR_LEN))
 			return pPeerEntry;
 

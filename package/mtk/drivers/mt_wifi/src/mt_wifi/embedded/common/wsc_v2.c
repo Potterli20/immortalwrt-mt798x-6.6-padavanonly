@@ -336,12 +336,17 @@ BOOLEAN	WscParseV2SubItem(
 	PEID_STRUCT   pEid;
 	USHORT		  Length = 0;
 
+
+	if (DataLen < 5) // 3 + Eid + Len
+		return FALSE;
+
 	pEid = (PEID_STRUCT) (pData + 3);
-	hex_dump("WscParseV2SubItem - pData", (pData + 3), DataLen - 3);
-	if ((Length + 2 + pEid->Len) > MAX_VIE_LEN || (DataLen - 3) > MAX_VIE_LEN) {
+	if ((pEid->Len + 2) > MAX_VIE_LEN || (Length + 2 + pEid->Len) > MAX_VIE_LEN || (DataLen - 3) > MAX_VIE_LEN) {
 		MTWF_DBG(NULL, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR, "pEid->Len or DataLen error!\n");
 		return FALSE;
 	}
+
+	hex_dump("WscParseV2SubItem - pData", (pData + 3), DataLen - 3);
 	while ((Length + 2 + pEid->Len) <= (DataLen - 3)) {
 		switch (pEid->Eid) {
 		case WFA_EXT_ID_VERSION2:
@@ -355,12 +360,23 @@ BOOLEAN	WscParseV2SubItem(
 			break;
 		}
 		if (pEid->Eid == SubID) {
-			*pOutBufLen = pEid->Len;
-			NdisMoveMemory(pOutBuf, &pEid->Octet[0], pEid->Len);
+			if (pOutBufLen) {
+				if (((*pOutBufLen) != 0)
+					&& ((*pOutBufLen) < pEid->Len))
+					return FALSE;
+
+				*pOutBufLen = pEid->Len;
+				if (pOutBuf)
+					NdisMoveMemory(pOutBuf, &pEid->Octet[0], pEid->Len);
+			}
 			return TRUE;
 		}
 
 		Length = Length + 2 + pEid->Len;
+
+		if ((Length + 2) > (DataLen - 3))
+			return FALSE;
+
 		pEid = (PEID_STRUCT)((UCHAR *)pEid + 2 + pEid->Len);
 	}
 

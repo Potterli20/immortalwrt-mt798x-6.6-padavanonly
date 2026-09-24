@@ -678,7 +678,8 @@ VOID UserCfgExit(RTMP_ADAPTER *pAd)
 {
 #ifdef RT_CFG80211_SUPPORT
 	/* Reset the CFG80211 Internal Flag */
-	RTMP_DRIVER_80211_RESET(pAd);
+	if (!pAd->CommonCfg.bcfg80211Disabled)
+		RTMP_DRIVER_80211_RESET(pAd);
 #endif /* RT_CFG80211_SUPPORT */
 #ifdef RATE_PRIOR_SUPPORT
 	INT idx;
@@ -688,6 +689,10 @@ VOID UserCfgExit(RTMP_ADAPTER *pAd)
 #endif /*RATE_PRIOR_SUPPORT*/
 	entrytb_aid_bitmap_free(&pAd->MacTab.aid_info);
 	NdisFreeSpinLock(&pAd->MacTabLock);
+
+#ifdef CONFIG_RA_CEILING_SUPPORT
+	NdisFreeSpinLock(&pAd->RCeilingTabLock);
+#endif
 #ifdef CONFIG_AP_SUPPORT
 	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
 #ifdef BAND_STEERING
@@ -939,7 +944,7 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 	if (arch_ops && arch_ops->arch_txpower_sku_cfg_para)
 		arch_ops->arch_txpower_sku_cfg_para(pAd);
 #endif /* SINGLE_SKU_V2 */
-
+	pAd->CommonCfg.SKU_DUP_Patch_enable = TRUE;
 #ifdef TX_POWER_CONTROL_SUPPORT
 	os_zero_mem(pAd->CommonCfg.PowerBoostParamV0,
 		sizeof(POWER_BOOST_PARA_V0));
@@ -1071,7 +1076,7 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 	pAd->EepromAccess = FALSE;
 	pAd->Antenna.word = 0;
 #ifdef RTMP_MAC_PCI
-#if defined(LED_CONTROL_SUPPORT) && defined(WSC_INCLUDED)
+#if defined (LED_CONTROL_SUPPORT) && defined (WSC_INCLUDED)
 	pAd->LedCntl.LedIndicatorStrength = 0;
 	RTMPInitTimer(pAd, &pAd->LedCntl.LEDControlTimer, GET_TIMER_FUNCTION(LEDControlTimer), pAd, FALSE);
 #endif /* LED_CONTROL_SUPPORT */
@@ -1298,6 +1303,7 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 #endif /* CONFIG_MAP_SUPPORT */
 #ifdef DPP_R2_SUPPORT
 		NdisZeroMemory(wdev->DPPCfg.cce_ie_buf, 6);
+		wdev->DPPCfg.cce_ie_len = 0;
 #endif
 #ifdef DOT1X_SUPPORT
 			/* PMK cache setting*/
@@ -1568,22 +1574,24 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 			apcli_entry->wdev.UapsdInfo.bAPSDCapable = FALSE;
 			apcli_entry->bBlockAssoc = FALSE;
 #if defined(APCLI_CFG80211_SUPPORT) || defined(WPA_SUPPLICANT_SUPPORT)
+			if (!pAd->CommonCfg.bApcliCfg80211Disabled) {
 #if defined(DOT1X_SUPPORT) || defined(WPA_SUPPLICANT_SUPPORT)
-			apcli_entry->wdev.SecConfig.IEEE8021X = FALSE;
+				apcli_entry->wdev.SecConfig.IEEE8021X = FALSE;
 #endif
-			apcli_entry->wpa_supplicant_info.IEEE8021x_required_keys = FALSE;
-			apcli_entry->wpa_supplicant_info.bRSN_IE_FromWpaSupplicant = FALSE;
-			apcli_entry->wpa_supplicant_info.bLostAp = FALSE;
-			apcli_entry->bConfigChanged = FALSE;
-			apcli_entry->wpa_supplicant_info.DesireSharedKeyId = 0;
-			apcli_entry->wpa_supplicant_info.WpaSupplicantUP = WPA_SUPPLICANT_DISABLE;
-			apcli_entry->wpa_supplicant_info.WpaSupplicantScanCount = 0;
-			apcli_entry->wpa_supplicant_info.pWpsProbeReqIe = NULL;
-			apcli_entry->wpa_supplicant_info.WpsProbeReqIeLen = 0;
-			apcli_entry->wpa_supplicant_info.pWpaAssocIe = NULL;
-			apcli_entry->wpa_supplicant_info.WpaAssocIeLen = 0;
-			apcli_entry->SavedPMKNum = 0;
-			RTMPZeroMemory(apcli_entry->SavedPMK, (PMKID_NO * sizeof(BSSID_INFO)));
+				apcli_entry->wpa_supplicant_info.IEEE8021x_required_keys = FALSE;
+				apcli_entry->wpa_supplicant_info.bRSN_IE_FromWpaSupplicant = FALSE;
+				apcli_entry->wpa_supplicant_info.bLostAp = FALSE;
+				apcli_entry->bConfigChanged = FALSE;
+				apcli_entry->wpa_supplicant_info.DesireSharedKeyId = 0;
+				apcli_entry->wpa_supplicant_info.WpaSupplicantUP = WPA_SUPPLICANT_DISABLE;
+				apcli_entry->wpa_supplicant_info.WpaSupplicantScanCount = 0;
+				apcli_entry->wpa_supplicant_info.pWpsProbeReqIe = NULL;
+				apcli_entry->wpa_supplicant_info.WpsProbeReqIeLen = 0;
+				apcli_entry->wpa_supplicant_info.pWpaAssocIe = NULL;
+				apcli_entry->wpa_supplicant_info.WpaAssocIeLen = 0;
+				apcli_entry->SavedPMKNum = 0;
+				RTMPZeroMemory(apcli_entry->SavedPMK, (PMKID_NO * sizeof(BSSID_INFO)));
+			}
 #endif/*WPA_SUPPLICANT_SUPPORT*/
 #ifdef APCLI_CONNECTION_TRIAL
 			apcli_entry->TrialCh = 0;/* if the channel is 0, AP will connect the rootap is in the same channel with ra0. */
@@ -1624,9 +1632,9 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 		pAd->vow_cfg.mcli_sch_cfg.mcli_tcp_num[i] = 0;
 		pAd->vow_cfg.mcli_sch_cfg.dl_wrr_en = TRUE;
 		pAd->vow_cfg.mcli_sch_cfg.apply_cnt = 0;
-		pAd->vow_cfg.mcli_sch_cfg.cwmin[VOW_MCLI_DL_MODE][i] = DL_MULTI_CLIENT_CWMAX;
-		pAd->vow_cfg.mcli_sch_cfg.cwmax[VOW_MCLI_DL_MODE][i] = DL_MULTI_CLIENT_CWMIN;
-		pAd->vow_cfg.mcli_sch_cfg.cwmin[VOW_MCLI_UL_MODE][i] = UL_MULTI_CLIENT_CWMAX;
+		pAd->vow_cfg.mcli_sch_cfg.cwmin[VOW_MCLI_DL_MODE][i] = DL_MULTI_CLIENT_CWMIN;
+		pAd->vow_cfg.mcli_sch_cfg.cwmax[VOW_MCLI_DL_MODE][i] = DL_MULTI_CLIENT_CWMAX;
+		pAd->vow_cfg.mcli_sch_cfg.cwmin[VOW_MCLI_UL_MODE][i] = UL_MULTI_CLIENT_CWMIN;
 		pAd->vow_cfg.mcli_sch_cfg.cwmax[VOW_MCLI_UL_MODE][i] = UL_MULTI_CLIENT_CWMAX;
 	}
 #endif
@@ -1663,11 +1671,31 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 	NdisAllocateSpinLock(pAd, &pAd->MacTabLock);
 	entrytb_aid_bitmap_init(cap, &pAd->MacTab.aid_info);
 
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+	NdisZeroMemory(&pAd->OndemandDPDPreCal2G, sizeof(pAd->OndemandDPDPreCal2G));
+	NdisZeroMemory(&pAd->OndemandDPDPreCal5G, sizeof(pAd->OndemandDPDPreCal5G));
+	NdisZeroMemory(&pAd->OndemandDPDPreCal6G, sizeof(pAd->OndemandDPDPreCal6G));
+#endif
+
+#ifdef CONFIG_RA_CEILING_SUPPORT
+	/* initialize Rate Ceiling table and allocate spin lock*/
+	NdisZeroMemory(&pAd->RCeilingTab, sizeof(struct RATE_CEILING_TABLE));
+	NdisAllocateSpinLock(pAd, &pAd->RCeilingTabLock);
+	pAd->RCeilingTab.curIndex = 0;
+#endif
 	/*RTMPInitTimer(pAd, &pAd->RECBATimer, RECBATimerTimeout, pAd, TRUE);*/
 	/*RTMPSetTimer(&pAd->RECBATimer, REORDER_EXEC_INTV);*/
 	pAd->CommonCfg.bWiFiTest = FALSE;
 #ifdef CONFIG_AP_SUPPORT
+#ifdef ZERO_LOSS_CSA_SUPPORT
+	pAd->ApCfg.ContTxFailLimit = CONTD_TX_FAIL_CNT_LIMIT;
+	pAd->ApCfg.ContTxFailOccurLimit = CONTD_TX_FAIL_SAMPLE_LIMIT;
+	pAd->ApCfg.ContTxFailCnt300msLimit = TX_FAIL_CNT_LIMIT_PER_SAMPLE;
+	/* Time Limit to disconnect sta in units of 300ms*/
+	pAd->ApCfg.ContFailTimeLimit = CONTD_PER_ERR_CNT_MC;
+#else
 	pAd->ApCfg.EntryLifeCheck = MAC_ENTRY_LIFE_CHECK_CNT;
+#endif /* ZERO_LOSS_CSA_SUPPORT */
 	pAd->ApCfg.per_err_total = CONTD_PER_ERR_CNT_UC;
 	pAd->ApCfg.tx_contd_fail_total = CONTD_TX_FAIL_CNT * CONTD_PER_ERR_CNT_UC;
 #ifdef DOT11R_FT_SUPPORT
@@ -2001,7 +2029,8 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 						  pStaCfg->wdev.pEapolPktFromAP));
 
 #ifdef EXT_BUILD_CHANNEL_LIST
-			pStaCfg->IEEE80211dClientMode = Rt802_11_D_None;
+			if (!pAd->CommonCfg.bExtChListDisabled)
+				pStaCfg->IEEE80211dClientMode = Rt802_11_D_None;
 #endif /* EXT_BUILD_CHANNEL_LIST */
 			STA_STATUS_CLEAR_FLAG(pStaCfg, fSTA_STATUS_INFRA_ON);
 			/* user desired power mode*/
@@ -2015,7 +2044,10 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 			pStaCfg->bShowHiddenSSID = FALSE;       /* Default no show*/
 			/* Nitro mode control*/
 #if defined(NATIVE_WPA_SUPPLICANT_SUPPORT) || defined(RT_CFG80211_SUPPORT)
-			pStaCfg->bAutoReconnect = FALSE;
+			if (!pAd->CommonCfg.bcfg80211Disabled)
+				pStaCfg->bAutoReconnect = FALSE;
+			else
+				pStaCfg->bAutoReconnect = TRUE;
 #else
 			pStaCfg->bAutoReconnect = TRUE;
 #endif /* NATIVE_WPA_SUPPLICANT_SUPPORT || RT_CFG80211_SUPPORT*/
@@ -2033,10 +2065,12 @@ VOID UserCfgInit(RTMP_ADAPTER *pAd)
 			pStaCfg->wpa_supplicant_info.WpaSupplicantUP = WPA_SUPPLICANT_DISABLE;
 			pStaCfg->wpa_supplicant_info.bRSN_IE_FromWpaSupplicant = FALSE;
 #if defined(NATIVE_WPA_SUPPLICANT_SUPPORT) || defined(RT_CFG80211_SUPPORT)
-			pStaCfg->wpa_supplicant_info.WpaSupplicantUP = WPA_SUPPLICANT_ENABLE;
+			if (!pAd->CommonCfg.bcfg80211Disabled) {
+				pStaCfg->wpa_supplicant_info.WpaSupplicantUP = WPA_SUPPLICANT_ENABLE;
 #ifdef PROFILE_STORE
-			pAd->bWriteDat = TRUE;
+				pAd->bWriteDat = TRUE;
 #endif /* PROFILE_STORE */
+			}
 #endif /* NATIVE_WPA_SUPPLICANT_SUPPORT || RT_CFG80211_SUPPORT */
 			pStaCfg->wpa_supplicant_info.bLostAp = FALSE;
 			pStaCfg->wpa_supplicant_info.pWpsProbeReqIe = NULL;
@@ -2318,16 +2352,19 @@ if (IS_MT7626(pAd))
 #ifdef AIR_MONITOR
 	pAd->MntRuleBitMap = DEFAULT_MNTR_RULE;
 #endif /* AIR_MONITOR */
-#ifdef MBO_SUPPORT
+#if defined(MBO_SUPPORT) || defined(DOT11_SAE_SUPPORT)
 	pAd->reg_domain = REG_GLOBAL;
 #endif /* MBO_SUPPORT */
 #ifdef HOSTAPD_MAP_SUPPORT
-	pAd->reg_domain = REG_GLOBAL;
+	if (!pAd->CommonCfg.bHostapdMapDisabled)
+		pAd->reg_domain = REG_GLOBAL;
 #endif /* HOSTAPD_MAP_SUPPORT */
 
 #ifdef WAPP_SUPPORT
-	for (i = 0; i < DBDC_BAND_NUM; i++)
-		pAd->bss_load_info.high_thrd[i] = MAX_BSSLOAD_THRD;
+	if (!pAd->CommonCfg.bWappSupportDisabled) {
+		for (i = 0; i < DBDC_BAND_NUM; i++)
+			pAd->bss_load_info.high_thrd[i] = MAX_BSSLOAD_THRD;
+	}
 #endif /* WAPP_SUPPORT */
 #ifdef FW_LOG_DUMP
 	for (i = 0; i < BIN_DBG_LOG_NUM; i++)
@@ -2387,7 +2424,7 @@ if (IS_MT7626(pAd))
 #endif
 
 #ifdef DELAY_TCP_ACK_V2 /*for panther or cheetah*/
-	if (IS_MT7986(pAd) || IS_MT7981(pAd))
+	if (IS_MT7986(pAd) || IS_MT7981(pAd) || IS_MT7916(pAd))
 		mt_cmd_wo_query(pAd, WO_CMD_RXCNT_CTRL, 0x1, PEAK_TP_WO_REPORT_TIME); /*only need do one time, 6*150ms report*/
 #endif /* DELAY_TCP_ACK_V2 */
 #ifdef TPC_SUPPORT
@@ -2424,6 +2461,13 @@ if (IS_MT7626(pAd))
 	pAd->rxd_scat_log_idx = 0;
 	pAd->rxd_scat_drop_cnt = 0;
 #endif /* RXD_WED_SCATTER_SUPPORT */
+
+#ifdef MLR_SUPPORT
+	pAd->CommonCfg.is_mlr_support[BAND0] = 0;
+#ifdef DBDC_MODE
+	pAd->CommonCfg.is_mlr_support[BAND1] = 1;
+#endif /* DBDC_MODE */
+#endif
 
 #ifdef SW_CONNECT_SUPPORT
 	pAd->bSw_sta = FALSE;
@@ -3143,15 +3187,6 @@ VOID AntCfgInit(RTMP_ADAPTER *pAd)
 			 pAd->RxAnt.Pair1SecondaryRxAnt);
 }
 #ifdef CFG_SUPPORT_CSI
-/*csi family*/
-static struct genl_family csi_genl_family = {
-	  .id = GENL_ID_GENERATE,
-	  .hdrsize = 0,
-	  .name = CSI_GENL_NAME,
-	  .version = 1,
-	  .maxattr = CSI_ATTR_MAX,
-};
-
 /*csi policy*/
 static struct nla_policy csi_genl_policy[CSI_ATTR_MAX + 1] = {
 	[CSI_ATTR_REPORT_MSG] = { .type = NLA_STRING },
@@ -3162,10 +3197,31 @@ static struct genl_ops csi_genl_ops[] = {
 	{
 		.cmd = CSI_OPS_REPORT,
 		.flags = 0,
+#if KERNEL_VERSION(5, 2, 0) > LINUX_VERSION_CODE
 		.policy = csi_genl_policy,
+#endif
 		.doit = csi_genl_recv_doit,
 		.dumpit = NULL,
 	}
+};
+
+/*csi family*/
+static struct genl_family csi_genl_family = {
+#if KERNEL_VERSION(4, 9, 300) >= LINUX_VERSION_CODE
+	.id = GENL_ID_GENERATE,
+#endif
+#if KERNEL_VERSION(5, 2, 0) <= LINUX_VERSION_CODE
+	.policy = csi_genl_policy,
+#endif
+	.hdrsize = 0,
+	.name = CSI_GENL_NAME,
+	.version = 1,
+	.maxattr = CSI_ATTR_MAX,
+#if KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE
+	.ops = csi_genl_ops,
+	.n_ops = ARRAY_SIZE(csi_genl_ops),
+	.module = THIS_MODULE,
+#endif
 };
 
 static int send_msg_reply(PRTMP_ADAPTER pAd, struct genl_info *info, char *cmd_msg)
@@ -3217,8 +3273,12 @@ int csi_genl_recv_doit(struct sk_buff *skb_temp, struct genl_info *info)
 	PRTMP_ADAPTER pAd = NULL;
 	char cmd_msg[32] = {0};
 	char dev_string[16] = {0};
+	char req_type[16] = {0}; /*chain or pkt*/
 	struct CSI_INFO_T *prCSIInfo;
-	UINT32 loop_cnt = 0;
+	UINT32 usr_loop_cnt = 0;
+	UINT32 pkt_total_chain = 0;
+	UINT32 pkt_chain_idx = 0;
+	char new_pkt_flag = 0;
 
 	if (!info || !skb_temp) {
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
@@ -3235,8 +3295,12 @@ int csi_genl_recv_doit(struct sk_buff *skb_temp, struct genl_info *info)
 		return -1;
 	}
 
-
-	if (nla_validate(na, na->nla_len, CSI_ATTR_MAX, csi_genl_policy)) {
+#if KERNEL_VERSION(4, 12, 0) <= LINUX_VERSION_CODE
+	if (nla_validate(na, na->nla_len, CSI_ATTR_MAX, csi_genl_policy, NULL))
+#else
+	if (nla_validate(na, na->nla_len, CSI_ATTR_MAX, csi_genl_policy))
+#endif
+	{
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 		"nla_validate fail!!!\n");
 		return -1;
@@ -3244,10 +3308,13 @@ int csi_genl_recv_doit(struct sk_buff *skb_temp, struct genl_info *info)
 
 	os_move_mem(cmd_msg, (char *)nla_data(na), na->nla_len);
 	MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-	"from usr space: %s .\n", cmd_msg);
+	"csi nl get msg from usr space: %s .\n", cmd_msg);
 
+	/*msg ex: rax0-pkt, rax0-chain-n, rax0-chain-0*/
 	strncpy(dev_string, rstrtok(cmd_msg, "-"), sizeof(dev_string));
-	recvd_dump_num = simple_strtol(rstrtok(NULL, "-"), 0, 10);
+	strncpy(req_type, rstrtok(NULL, "-"), sizeof(req_type));
+	if (!strcmp(req_type, "chain"))
+		recvd_dump_num = kstrtol(rstrtok(NULL, "-"), 0, 10);
 
 	/*get our pAd*/
 	dev = dev_get_by_name(genl_info_net(info), dev_string);
@@ -3255,16 +3322,19 @@ int csi_genl_recv_doit(struct sk_buff *skb_temp, struct genl_info *info)
 	prCSIInfo = &pAd->rCSIInfo;
 
 	/*step2: send our status: used buffer*/
-	if (recvd_dump_num == 0) {
+	/*step2:  Or start reporting csi data*/
+	/*TBD: put make_csi_nlmsg_complete(pAd) as 3rd op*/
+	if ((!strcmp(req_type, "chain")) && (recvd_dump_num == 0)) {
 		os_zero_mem(cmd_msg, sizeof(cmd_msg));
 		snprintf(cmd_msg, sizeof(cmd_msg), "%s-%d", dev_string, prCSIInfo->u4CSIBufferUsed);
 		send_msg_reply(pAd, info, cmd_msg);
-	} else {
-		/*step2:  Or start reporting csi data*/
-		/*TBD: make_csi_nlmsg_complete(pAd)*/
-		loop_cnt = recvd_dump_num;
+	} else if ((!strcmp(req_type, "chain")) && (recvd_dump_num != 0)) {
+		/*user request/ pkt total chain num/ left chains after fix*/
+		/*select the less num to send pkt.*/
+		/*TBD: need to check if fw will fix the total num with chain filter */
+		usr_loop_cnt = recvd_dump_num;
 
-		while (loop_cnt--) {
+		while (usr_loop_cnt--) {
 			if (make_csi_nlmsg_fragment(pAd)) {
 				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				"make nl msg fail!!!\n");
@@ -3273,6 +3343,39 @@ int csi_genl_recv_doit(struct sk_buff *skb_temp, struct genl_info *info)
 			if(genlmsg_reply(prCSIInfo->pnl_skb, info)) {
 				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 				"genl reply data fail!!!\n");
+				break;
+			}
+		}
+	} else if (!strcmp(req_type, "pkt")) {
+		while (true) {
+			if (make_csi_nlmsg_fragment(pAd)) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"make nl msg fail!!!\n");
+				break;
+			}
+
+			pkt_chain_idx = GET_CSI_INFO_FROM_SKB(prCSIInfo->pnl_skb, CB_CHAIN_IDX);
+			if (!pkt_chain_idx)
+				new_pkt_flag = 1;
+
+			if (new_pkt_flag == 0) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+				"drop csi fragment chain, wait for first chain of a pkt.\n");
+				kfree_skb(prCSIInfo->pnl_skb);
+				continue;
+			} else
+				if (genlmsg_reply(prCSIInfo->pnl_skb, info)) {
+					MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"genl reply data fail!!!\n");
+					break;
+				}
+
+			pkt_total_chain = GET_CSI_INFO_FROM_SKB(prCSIInfo->pnl_skb, CB_CHAIN_NUM);
+
+			/*the last chain of the pkt*/
+			if (pkt_chain_idx == (pkt_total_chain - 1)) {
+				MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+				"send total(%d) chains for a whole pkt.\n", pkt_total_chain);
 				break;
 			}
 		}
@@ -3289,7 +3392,11 @@ VOID csi_support_init(RTMP_ADAPTER *pAd)
 	pAd->rCSIInfo.csi_genl_ops = csi_genl_ops;
 	pAd->rCSIInfo.csi_genl_policy = csi_genl_policy;
 
+#if KERNEL_VERSION(4, 10, 0) <= LINUX_VERSION_CODE
+	ret = genl_register_family(&csi_genl_family);
+#else
 	ret = genl_register_family_with_ops(&csi_genl_family, csi_genl_ops);
+#endif
 
 	if (ret) {
 		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,

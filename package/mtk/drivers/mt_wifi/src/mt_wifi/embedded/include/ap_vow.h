@@ -251,7 +251,7 @@ typedef struct _VOW_MCLI_SCH_CFG_T {
 	UINT8	sch_type;	/* record default sch_type */
 	UINT8	sch_policy;	/* record default sch_policy */
 	UINT8	apply_cnt;	/* for DBDC case, record sch apply cnt */
-	BOOLEAN schedule_cond_running[DBDC_BAND_NUM];	/* Indicate that the mcli schedule mechanism is running */
+	UINT8	schedule_cond_running[DBDC_BAND_NUM];/* mclisch running status*/
 	UINT8	cwmin[VOW_TRAFFIC_MODE_MAX][DBDC_BAND_NUM];	/* mcli shcedule DL/UL BE cwmin param */
 	UINT8	cwmax[VOW_TRAFFIC_MODE_MAX][DBDC_BAND_NUM];	/* mcli shcedule DL/UL BE cwmax param */
 } VOW_MCLI_SCH_CFG_T, *PVOW_MCLI_SCH_CFG_T;

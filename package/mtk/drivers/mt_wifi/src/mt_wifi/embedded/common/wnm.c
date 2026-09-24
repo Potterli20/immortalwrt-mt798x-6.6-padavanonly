@@ -33,6 +33,9 @@
 #define IP_PROTO_FRAGMENT       44      /* IP6 fragmentation header */
 #define IP_PROTO_AH             51      /* Authentication Header for IPv6 - RFC2402*/
 #define IP_PROTO_DSTOPTS        60      /* IP6 destination options - RFC1883 */
+#define IP_PROTO_ICMP           58      /* ICMP header type */
+#define IP_PROTO_V6TCP          6       /* TCP header type */
+#define IP_PROTO_V6UDP          17      /* UDP header type */
 
 #ifdef CONFIG_DOT11V_WNM
 #ifndef MAT_SUPPORT
@@ -449,95 +452,133 @@ BOOLEAN IsIPv4ProxyARPCandidate(IN PRTMP_ADAPTER pAd,
 
 BOOLEAN IsIpv6DuplicateAddrDetect(PRTMP_ADAPTER pAd,
 								  PUCHAR pData,
+								  PUCHAR pDataEnd,
 								  PUCHAR pOffset)
-{
-	UCHAR SolicitedMulticastAddr[] = {
-		0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x01, 0xff};
-	UCHAR *Pos = pData;
-	UINT16 ProtoType;
-	RT_IPV6_ADDR *pIPv6Addr;
-	UCHAR *pData_offset = Pos;
-	NdisMoveMemory(&ProtoType, pData, 2);
-	ProtoType = OS_NTOHS(ProtoType);
-	Pos += 2;
-
-	if (ProtoType == ETH_P_IPV6) {
-		INT32	PayloadLen = 0;/* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
-		UCHAR	NextHeader = *(Pos + 6);
+	{
+		UCHAR SolicitedMulticastAddr[] = {
+			0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x01, 0xff};
+		UCHAR *Pos = pData;
+		UINT16 ProtoType;
+		RT_IPV6_ADDR *pIPv6Addr;
+		INT32	PayloadLen = 0;
+		UCHAR	NextHeader;
 		UCHAR	IsExtenHeader = 0;
+		UCHAR *pData_offset = Pos;
+
+		NdisMoveMemory(&PayloadLen, (Pos + 4), 2);
+		NdisMoveMemory(&ProtoType, pData, 2);
+		ProtoType = OS_NTOHS(ProtoType);
+		Pos += 2;
+
+		if (ProtoType != ETH_P_IPV6)
+			return FALSE;
+
+		NextHeader = *(Pos + 6);
 		NdisMoveMemory(&PayloadLen, (Pos + 4), 2);
 		PayloadLen = OS_NTOHS(PayloadLen);
+
 		if (PayloadLen <= 0 || PayloadLen > MAX_RX_PKT_LEN)
 			return FALSE;
 
 		Pos += 8;
 		pIPv6Addr = (RT_IPV6_ADDR *)Pos;
 
-		if (IS_UNSPECIFIED_IPV6_ADDR(*pIPv6Addr)) {
-			Pos += 16;
+		if (!IS_UNSPECIFIED_IPV6_ADDR(*pIPv6Addr))
+			return FALSE;
 
-			if (RTMPEqualMemory(Pos, SolicitedMulticastAddr, 13)) {
-				Pos += 16;
+		Pos += 16;
 
-				if ((NextHeader == IP_PROTO_HOPOPTS) || (NextHeader == IP_PROTO_ROUTING) || (NextHeader == IP_PROTO_FRAGMENT) || (NextHeader == IP_PROTO_AH) || (NextHeader == IP_PROTO_DSTOPTS)) {
-					IsExtenHeader = 1;
+		if (!RTMPEqualMemory(Pos, SolicitedMulticastAddr, 13))
+			return FALSE;
 
-					do {
-						printk("IsIpv6DuplicateAddrDetect: nextheader=0x%x, %d, %d\n", NextHeader, PayloadLen, IsExtenHeader);
+		Pos += 16;
 
-						switch (NextHeader) {
-						case IP_PROTO_HOPOPTS:
-						case IP_PROTO_ROUTING:
-						case IP_PROTO_DSTOPTS: {
-							UCHAR HdrExtLen = *(Pos + 1);
-							NextHeader = *Pos;
-							PayloadLen -= ((HdrExtLen + 1) << 3);
-							Pos += ((HdrExtLen + 1) << 3);
-						}
-						break;
+		if ((NextHeader == IP_PROTO_HOPOPTS) ||
+			(NextHeader == IP_PROTO_ROUTING) ||
+			(NextHeader == IP_PROTO_FRAGMENT) ||
+			(NextHeader == IP_PROTO_AH) ||
+			(NextHeader == IP_PROTO_DSTOPTS)) {
+			IsExtenHeader = 1;
 
-						case IP_PROTO_FRAGMENT: {
-							NextHeader = *Pos;
-							PayloadLen -= 8;
-							Pos += 8;
-						}
-						break;
+			do {
+				MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+					"%s: nextheader=0x%x, %d, %d\n",
+					__func__, NextHeader, PayloadLen, IsExtenHeader);
 
-						case IP_PROTO_AH: {
-							UCHAR AHPayloadLen = *(Pos + 1);
-							UCHAR AHLen = (8 + (AHPayloadLen << 2));
-							NextHeader = *Pos;
-							PayloadLen -= AHLen;
-							Pos += AHLen;
-						}
-						break;
+				switch (NextHeader) {
+				case IP_PROTO_HOPOPTS:
+				case IP_PROTO_ROUTING:
+				case IP_PROTO_DSTOPTS: {
+					UCHAR HdrExtLen;
 
-						default:
-							IsExtenHeader = 0;
-							break;
-						}
-					} while ((PayloadLen > 0) && (IsExtenHeader == 1));
-
-					if (PayloadLen <= 0)
+					if ((Pos + 1) >= pDataEnd)
 						return FALSE;
+					HdrExtLen = *(Pos + 1);
+					NextHeader = *Pos;
+					PayloadLen -= ((HdrExtLen + 1) << 3);
+					Pos += ((HdrExtLen + 1) << 3);
 				}
+				break;
 
-				/* Check if neighbor solicitation */
-				if (*Pos == 0x87) {
-					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "THe Packet is for Ipv6DuplicateAddrDetect\n");
-					*pOffset = Pos - pData_offset + 8;
-					return TRUE;
+				case IP_PROTO_FRAGMENT: {
+					if (Pos >= pDataEnd)
+						return FALSE;
+					NextHeader = *Pos;
+					PayloadLen -= 8;
+					Pos += 8;
 				}
-			}
+				break;
+
+				case IP_PROTO_AH: {
+					UCHAR AHPayloadLen;
+					UCHAR AHLen;
+
+					if ((Pos + 1) >= pDataEnd)
+						return FALSE;
+					AHPayloadLen = *(Pos + 1);
+					AHLen = (8 + (AHPayloadLen << 2));
+					if (!AHLen) {
+						MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_DEBUG,
+							"Invalid packet\n");
+						return FALSE;
+					}
+					NextHeader = *Pos;
+					PayloadLen -= AHLen;
+					Pos += AHLen;
+				}
+				break;
+				case IP_PROTO_ICMP:
+					IsExtenHeader = 0;/* found */
+				break;
+				default:
+					return FALSE;
+				}
+			} while ((PayloadLen > 0) && (IsExtenHeader == 1));
+
+			if (PayloadLen <= 0)
+				return FALSE;
+		} else if (NextHeader != IP_PROTO_ICMP)
+			return FALSE;
+
+		/* Check if neighbor solicitation */
+		if (Pos >= pDataEnd)
+			return FALSE;
+
+		if (*Pos == 0x87) {
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+				"The Packet is for %s\n", __func__);
+			*pOffset = Pos - pData_offset + 8;
+			return TRUE;
 		}
+
+		return FALSE;
 	}
 
-	return FALSE;
-}
 
 BOOLEAN IsIPv6ProxyARPCandidate(IN PRTMP_ADAPTER pAd,
-								IN PUCHAR pData)
+								IN PUCHAR pData,
+								IN PUCHAR pDataEnd)
 {
 	UCHAR SolicitedMulticastAddr[] = {
 		0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -545,96 +586,143 @@ BOOLEAN IsIPv6ProxyARPCandidate(IN PRTMP_ADAPTER pAd,
 	UCHAR *Pos = pData;
 	UINT16 ProtoType;
 	RT_IPV6_ADDR *pIPv6Addr;
+	UINT16 ProtoType_temp;/* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
+	INT16 PayloadLen;
+	UCHAR NextHeader;
+	UCHAR IsExtenHeader = 0;
+
 	NdisMoveMemory(&ProtoType, pData, 2);
 	ProtoType = OS_NTOHS(ProtoType);
 	Pos += 2;
 
-	if (ProtoType == ETH_P_IPV6) {
-		UINT16  ProtoType_temp;/* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
-		INT16   PayloadLen;
-		UCHAR   NextHeader = *(Pos + 6);
-		UCHAR   IsExtenHeader = 0;
-		NdisMoveMemory(&ProtoType_temp, (Pos + 4), 2);
-		ProtoType_temp = OS_NTOHS(ProtoType_temp);
-		if (ProtoType_temp > (1500 - IPV6_HDR_LEN))
-			return FALSE;
-		PayloadLen = (INT16)ProtoType_temp;
-		if (PayloadLen <= 0 || PayloadLen > MAX_RX_PKT_LEN)
-			return FALSE;
+	if (ProtoType != ETH_P_IPV6)
+		return FALSE;
 
-		Pos += 8;
-		pIPv6Addr = (RT_IPV6_ADDR *)Pos;
-		/* if (!IS_UNSPECIFIED_IPV6_ADDR(*pIPv6Addr)) */
-		/* { */
-		Pos += 16;
+	NextHeader = *(Pos + 6);
 
-		if (RTMPEqualMemory(Pos, SolicitedMulticastAddr, 13)) {
-			Pos += 16;
+	NdisMoveMemory(&ProtoType_temp, (Pos + 4), 2);
+	ProtoType_temp = OS_NTOHS(ProtoType_temp);
+	if (ProtoType_temp > (1500 - IPV6_HDR_LEN))
+		return FALSE;
 
-			if ((NextHeader == IP_PROTO_HOPOPTS) || (NextHeader == IP_PROTO_ROUTING) || (NextHeader == IP_PROTO_FRAGMENT) || (NextHeader == IP_PROTO_AH) || (NextHeader == IP_PROTO_DSTOPTS)) {
-				IsExtenHeader = 1;
+	PayloadLen = (INT16)ProtoType_temp;
+	if (PayloadLen <= 0 || PayloadLen > MAX_RX_PKT_LEN)
+		return FALSE;
 
-				do {
-					printk("IsIPv6ProxyARPCandidate: nextheader=0x%x, %d, %d\n", NextHeader, PayloadLen, IsExtenHeader);
+	Pos += 8;
+	pIPv6Addr = (RT_IPV6_ADDR *)Pos;
+	/* if (!IS_UNSPECIFIED_IPV6_ADDR(*pIPv6Addr)) */
+	/* { */
+	Pos += 16;
 
-					switch (NextHeader) {
-					case IP_PROTO_HOPOPTS:
-					case IP_PROTO_ROUTING:
-					case IP_PROTO_DSTOPTS: {
-						UCHAR HdrExtLen = *(Pos + 1);
-						NextHeader = *Pos;
-						PayloadLen -= ((HdrExtLen + 1) << 3);
-						Pos += ((HdrExtLen + 1) << 3);
-					}
-					break;
+	if (!RTMPEqualMemory(Pos, SolicitedMulticastAddr, 13))
+		return FALSE;
+	Pos += 16;
 
-					case IP_PROTO_FRAGMENT: {
-						NextHeader = *Pos;
-						PayloadLen -= 8;
-						Pos += 8;
-					}
-					break;
+	if ((NextHeader == IP_PROTO_HOPOPTS) ||
+		(NextHeader == IP_PROTO_ROUTING) ||
+		(NextHeader == IP_PROTO_FRAGMENT) ||
+		(NextHeader == IP_PROTO_AH) ||
+		(NextHeader == IP_PROTO_DSTOPTS)) {
+		IsExtenHeader = 1;
 
-					case IP_PROTO_AH: {
-						UCHAR AHPayloadLen = *(Pos + 1);
-						UCHAR AHLen = (8 + (AHPayloadLen << 2));
-						NextHeader = *Pos;
-						PayloadLen -= AHLen;
-						Pos += AHLen;
-					}
-					break;
+		do {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+				"%s: nextheader=0x%x, %d, %d\n",
+				__func__, NextHeader, PayloadLen, IsExtenHeader);
 
-					default:
-						IsExtenHeader = 0;
-						break;
-					}
-				} while ((PayloadLen > 0) && (IsExtenHeader == 1));
+			switch (NextHeader) {
+			case IP_PROTO_HOPOPTS:
+			case IP_PROTO_ROUTING:
+			case IP_PROTO_DSTOPTS: {
+				UCHAR HdrExtLen;
 
-				if (PayloadLen <= 0)
+				if ((Pos + 1) >= pDataEnd)
 					return FALSE;
+				HdrExtLen = *(Pos + 1);
+				NextHeader = *Pos;
+				PayloadLen -= ((HdrExtLen + 1) << 3);
+				Pos += ((HdrExtLen + 1) << 3);
 			}
+			break;
 
-			/* Check if neighbor solicitation */
-			if (*Pos == 0x87) {
-				MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "The Packet is IPv6ProxyARPCandidate\n");
-				return TRUE;
+			case IP_PROTO_FRAGMENT: {
+				if (Pos >= pDataEnd)
+					return FALSE;
+				NextHeader = *Pos;
+				PayloadLen -= 8;
+				Pos += 8;
 			}
-		}
+			break;
 
-		/* } */
+			case IP_PROTO_AH: {
+				UCHAR AHPayloadLen;
+				UCHAR AHLen;
+
+				if ((Pos + 1) >= pDataEnd)
+					return FALSE;
+				AHPayloadLen = *(Pos + 1);
+				AHLen = (8 + (AHPayloadLen << 2));
+				if (!AHLen) {
+					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_DEBUG,
+						"Invalid packet\n");
+					return FALSE;
+				}
+				NextHeader = *Pos;
+				PayloadLen -= AHLen;
+				Pos += AHLen;
+			}
+			break;
+			case IP_PROTO_ICMP:
+				IsExtenHeader = 0;/* found */
+			break;
+			default:
+				return FALSE;
+			}
+		} while ((PayloadLen > 0) && (IsExtenHeader == 1));
+
+		if (PayloadLen <= 0)
+			return FALSE;
+	} else if (NextHeader != IP_PROTO_ICMP)
+		return FALSE;
+
+	/* Check if neighbor solicitation */
+	if (Pos >= pDataEnd)
+		return FALSE;
+
+	if (*Pos == 0x87) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
+			"The Packet is IPv6ProxyARPCandidate\n");
+		return TRUE;
 	}
 
 	return FALSE;
 }
 
+
 BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
-								 IN PUCHAR pData)
+								 IN PUCHAR pData,
+								 IN PUCHAR pDataEnd)
 {
 	UCHAR *Pos = pData;
 	UINT16 ProtoType, SrcPort, DstPort;
+	INT32 PayloadLen = 0; /* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
+	UCHAR NextHeader;
+	UCHAR IsExtenHeader = 0;
+
 	NdisMoveMemory(&ProtoType, pData, 2);
 	ProtoType = OS_NTOHS(ProtoType);
 	Pos += 2;
+
+	if (ProtoType != ETH_P_IPV6)
+		return FALSE;
+
+	NextHeader = *(Pos + 6);
+	NdisMoveMemory(&PayloadLen, (Pos + 4), 2);
+	PayloadLen = OS_NTOHS(PayloadLen);
+	if (PayloadLen <= 0 || PayloadLen > MAX_RX_PKT_LEN)
+		return FALSE;
+
 
 	if (ProtoType == ETH_P_IPV6) {
 		INT32   PayloadLen = 0; /* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
@@ -646,7 +734,7 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 			return FALSE;
 
 		if ((NextHeader != IP_PROTO_HOPOPTS) && (NextHeader != IP_PROTO_ROUTING) &&  (NextHeader != IP_PROTO_FRAGMENT) &&  (NextHeader != IP_PROTO_AH) && (NextHeader != IP_PROTO_DSTOPTS)) {
-			if (NextHeader == 0x11)
+			if (NextHeader == IP_PROTO_V6UDP)
 				Pos += 40;
 			else
 				return FALSE;
@@ -661,7 +749,10 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 				case IP_PROTO_HOPOPTS:
 				case IP_PROTO_ROUTING:
 				case IP_PROTO_DSTOPTS: {
-					UCHAR HdrExtLen = *(Pos + 1);
+				UCHAR HdrExtLen;
+					if ((Pos + 1) >= pDataEnd)
+						return FALSE;
+					HdrExtLen = *(Pos + 1);
 					NextHeader = *Pos;
 					PayloadLen -= ((HdrExtLen + 1) << 3);
 					Pos += ((HdrExtLen + 1) << 3);
@@ -669,6 +760,8 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 				break;
 
 				case IP_PROTO_FRAGMENT: {
+					if (Pos >= pDataEnd)
+						return FALSE;
 					NextHeader = *Pos;
 					PayloadLen -= 8;
 					Pos += 8;
@@ -676,17 +769,30 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 				break;
 
 				case IP_PROTO_AH: {
-					UCHAR AHPayloadLen = *(Pos + 1);
-					UCHAR AHLen = (8 + (AHPayloadLen << 2));
+					UCHAR AHPayloadLen;
+					UCHAR AHLen;
+
+					if ((Pos + 1) >= pDataEnd)
+						return FALSE;
+					AHPayloadLen = *(Pos + 1);
+					AHLen = (8 + (AHPayloadLen << 2));
+					if (!AHLen) {
+						MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_DEBUG,
+							"Invalid packet\n");
+						return FALSE;
+					}
 					NextHeader = *Pos;
 					PayloadLen -= AHLen;
 					Pos += AHLen;
+					if (Pos > pDataEnd)
+						return FALSE;
 				}
 				break;
-
+				case IP_PROTO_V6UDP:
+					IsExtenHeader = 0;/* found */
+				break;
 				default:
-					IsExtenHeader = 0;
-					break;
+					return FALSE;
 				}
 			} while ((PayloadLen > 0) && (IsExtenHeader == 1));
 
@@ -696,7 +802,10 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 
 		/* Check if DHCPv6 solicitation */
 		{
+
 			unsigned char *type = (unsigned char *)(Pos + 8);
+			if (type >= pDataEnd)
+				return FALSE;
 
 			if ((*type == 1) || (*type == 4)) {
 				NdisMoveMemory(&SrcPort, Pos, 2);
@@ -716,13 +825,22 @@ BOOLEAN IsIPv6DHCPv6Solicitation(IN PRTMP_ADAPTER pAd,
 }
 
 BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
-								 IN PUCHAR pData)
+								 IN PUCHAR pData,
+								 IN PUCHAR pDataEnd)
 {
 	UCHAR *Pos = pData;
 	UINT16 ProtoType;
+	INT32 PayloadLen = 0; /* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
+	UCHAR NextHeader;
+	UCHAR IsExtenHeader = 0;
+
 	NdisMoveMemory(&ProtoType, pData, 2);
 	ProtoType = OS_NTOHS(ProtoType);
 	Pos += 2;
+
+	if (ProtoType != ETH_P_IPV6)
+		return FALSE;
+
 
 	if (ProtoType == ETH_P_IPV6) {
 		INT32	PayloadLen = 0; /* ((*(Pos+5) & 0xff) << 8) | (*(Pos+4) & 0xff); */
@@ -733,9 +851,16 @@ BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
 		if (PayloadLen <= 0 || PayloadLen > MAX_RX_PKT_LEN)
 			return FALSE;
 
-		if ((NextHeader != IP_PROTO_HOPOPTS) && (NextHeader != IP_PROTO_ROUTING) &&  (NextHeader != IP_PROTO_FRAGMENT) &&  (NextHeader != IP_PROTO_AH) && (NextHeader != IP_PROTO_DSTOPTS))
+		if ((NextHeader != IP_PROTO_HOPOPTS) &&
+			(NextHeader != IP_PROTO_ROUTING) &&
+			(NextHeader != IP_PROTO_FRAGMENT) &&
+			(NextHeader != IP_PROTO_AH) &&
+			(NextHeader != IP_PROTO_DSTOPTS)) {
+			/* This maybe new EXT header and return FALSE */
+			if (NextHeader != IP_PROTO_ICMP)
+				return FALSE;
 			Pos += 40;
-		else {
+		} else {
 			IsExtenHeader = 1;
 			Pos += 40;
 
@@ -746,7 +871,11 @@ BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
 				case IP_PROTO_HOPOPTS:
 				case IP_PROTO_ROUTING:
 				case IP_PROTO_DSTOPTS: {
-					UCHAR HdrExtLen = *(Pos + 1);
+					UCHAR HdrExtLen;
+
+					if ((Pos + 1) >= pDataEnd)
+						return FALSE;
+					HdrExtLen = *(Pos + 1);
 					NextHeader = *Pos;
 					PayloadLen -= ((HdrExtLen + 1) << 3);
 					Pos += ((HdrExtLen + 1) << 3);
@@ -754,6 +883,8 @@ BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
 				break;
 
 				case IP_PROTO_FRAGMENT: {
+					if (Pos >= pDataEnd)
+						return FALSE;
 					NextHeader = *Pos;
 					PayloadLen -= 8;
 					Pos += 8;
@@ -761,17 +892,28 @@ BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
 				break;
 
 				case IP_PROTO_AH: {
-					UCHAR AHPayloadLen = *(Pos + 1);
-					UCHAR AHLen = (8 + (AHPayloadLen << 2));
+					UCHAR AHPayloadLen;
+					UCHAR AHLen;
+
+					if ((Pos + 1) >= pDataEnd)
+						return FALSE;
+					AHPayloadLen = *(Pos + 1);
+					AHLen = (8 + (AHPayloadLen << 2));
+					if (!AHLen) {
+						MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_DEBUG,
+							"Invalid packet\n");
+						return FALSE;
+					}
 					NextHeader = *Pos;
 					PayloadLen -= AHLen;
 					Pos += AHLen;
 				}
 				break;
-
+				case IP_PROTO_ICMP:
+					IsExtenHeader = 0;/* found */
+				break;
 				default:
-					IsExtenHeader = 0;
-					break;
+					return FALSE;
 				}
 			} while ((PayloadLen > 0) && (IsExtenHeader == 1));
 
@@ -780,6 +922,9 @@ BOOLEAN IsIPv6RouterSolicitation(IN PRTMP_ADAPTER pAd,
 		}
 
 		/* Check if router solicitation */
+		if (Pos >= pDataEnd)
+			return FALSE;
+
 		if (*Pos == 0x85) {
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO, "The Packet is IPv6 Router Solicitation\n");
 			return TRUE;
@@ -816,6 +961,9 @@ BOOLEAN IsIPv6RouterAdvertisement(IN PRTMP_ADAPTER pAd,
 			(NextHeader != IP_PROTO_FRAGMENT) &&
 			(NextHeader != IP_PROTO_AH) &&
 			(NextHeader != IP_PROTO_DSTOPTS)) {
+			/* This maybe new EXT header and return FALSE */
+			if (NextHeader != IP_PROTO_ICMP)
+				return FALSE;
 			Pos += 40;
 			pData_offset = Pos;
 		} else {
@@ -852,10 +1000,11 @@ BOOLEAN IsIPv6RouterAdvertisement(IN PRTMP_ADAPTER pAd,
 					Pos += AHLen;
 				}
 				break;
-
+				case IP_PROTO_ICMP:
+					IsExtenHeader = 0;/* found */
+				break;
 				default:
-					IsExtenHeader = 0;
-					break;
+					return FALSE;
 				}
 			} while ((PayloadLen > 0) && (IsExtenHeader == 1));
 
@@ -1390,9 +1539,15 @@ VOID WNMIPv6ProxyARPCheck(
 
 			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
 					"RouterAdvertisement offset= %d PayloadLen %d\n", Offset, PayloadLen);
-			while (PayloadLen > 0) {
+			while (PayloadLen > 0 && (PayloadLen <= (1500 - IPV6_HDR_LEN))) { /* copy upper bound as ProtoType_temp again, to prevent PayloadLen is tainted within while loop */
 				UINT8 OptionsLen = (*(Pos + 1)) * 8;
 
+				/* FATAL error, OUT to avoid infinite loop */
+				if (OptionsLen == 0) {
+					MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_ERROR,
+							"RouterAdvertisement len is 0!\n");
+					break;
+				}
 				/* Prefix information */
 				if (*Pos == 0x03) {
 					UCHAR *Prefix;
@@ -1599,9 +1754,16 @@ static VOID ReceiveBTMRsp(IN PRTMP_ADAPTER pAd, IN MLME_QUEUE_ELEM * Elem)
 		(sizeof(HEADER_802_11) + 1 + sizeof(WNMFrame->u.BTM_RSP)) + 1;
 
 #ifdef WAPP_SUPPORT
-	SendBTMConfirmEvent(NetDev,
+	if (!pAd->CommonCfg.bWappSupportDisabled)
+		SendBTMConfirmEvent(NetDev,
 					WNMFrame->Hdr.Addr2,
 					(PUCHAR)&(WNMFrame->u.BTM_RSP.Variable),
+					VarLen,
+					RA_WEXT);
+	else
+		SendBTMConfirmEvent(NetDev,
+					WNMFrame->Hdr.Addr2,
+					(PUCHAR)&(WNMFrame->u.BTM_RSP.DialogToken),
 					VarLen,
 					RA_WEXT);
 #else
@@ -2762,26 +2924,30 @@ enum BTM_STATE BTMPeerCurrentState(
 	PBTM_EVENT_DATA Event = (PBTM_EVENT_DATA)Elem->Msg;
 	INT32 Ret;
 #ifdef CONFIG_AP_SUPPORT
-	pWNMCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].WNMCtrl;
-	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
-	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
-		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr)) {
-			RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
-			return BTMPeerEntry->CurrentState;
+	if (Elem && Event && Event->ControlIndex < MAX_BEACON_NUM) {
+		pWNMCtrl = &pAd->ApCfg.MBSSID[Event->ControlIndex].WNMCtrl;
+		RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+		DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
+			if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr)) {
+				RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+				return BTMPeerEntry->CurrentState;
+			}
 		}
+		RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
 	}
-	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
 #endif /* CONFIG_AP_SUPPORT */
 #ifdef CONFIG_STA_SUPPORT
-	pWNMCtrl = &pAd->StaCfg[Event->ControlIndex].WNMCtrl;
-	RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
-	DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
-		if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr)) {
-			RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
-			return BTMPeerEntry->CurrentState;
+	if (Elem && Event && Event->ControlIndex < MAX_MULTI_STA) {
+		pWNMCtrl = &pAd->StaCfg[Event->ControlIndex].WNMCtrl;
+		RTMP_SEM_EVENT_WAIT(&pWNMCtrl->BTMPeerListLock, Ret);
+		DlListForEach(BTMPeerEntry, &pWNMCtrl->BTMPeerList, BTM_PEER_ENTRY, List) {
+			if (MAC_ADDR_EQUAL(BTMPeerEntry->PeerMACAddr, Event->PeerMACAddr)) {
+				RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
+				return BTMPeerEntry->CurrentState;
+			}
 		}
+		RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
 	}
-	RTMP_SEM_EVENT_UP(&pWNMCtrl->BTMPeerListLock);
 #endif /* CONFIG_STA_SUPPORT */
 	return BTM_UNKNOWN;
 }
@@ -3351,7 +3517,7 @@ VOID ReceiveWNMNotifyReq(IN PRTMP_ADAPTER pAd,
 
 	WNM_FRAME *WNMFrame = (WNM_FRAME *)Elem->Msg;
 	UINT	pos = 0;
-	UINT	OptionalElementLen = (UINT)Elem->MsgLen - sizeof(HEADER_802_11) - 4; /* skip  category, action, DialogToken, type */
+	UINT	OptionalElementLen = 0;
 	UINT	ElementID = 0, ElementLen = 0;
 #ifdef MAP_R2
 	PNET_DEV NetDev = NULL;
@@ -3376,6 +3542,13 @@ VOID ReceiveWNMNotifyReq(IN PRTMP_ADAPTER pAd,
 
 	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "MsgLen %ld MBSS "MACSTR"\n",
 		Elem->MsgLen, MAC2STR(WNMFrame->Hdr.Addr1));
+
+if (Elem->MsgLen <= sizeof(HEADER_802_11) + 4) /* 4: category, action, DialogToken, type */
+	return;
+/* skip  category, action, DialogToken, type */
+OptionalElementLen = (UINT)Elem->MsgLen - sizeof(HEADER_802_11) - 4;
+
+
 #ifdef MAP_R2
 	for (APIndex = 0; APIndex < MAX_MBSSID_NUM(pAd); APIndex++) {
 		if (MAC_ADDR_EQUAL(WNMFrame->Hdr.Addr3, pAd->ApCfg.MBSSID[APIndex].wdev.bssid)) {
@@ -3392,7 +3565,7 @@ VOID ReceiveWNMNotifyReq(IN PRTMP_ADAPTER pAd,
 	NetDev = pAd->ApCfg.MBSSID[APIndex].wdev.if_dev;
 
 	VarLen = Elem->MsgLen -
-		(sizeof(HEADER_802_11));
+		(sizeof(HEADER_802_11) + sizeof(WNMFrame->Category));
 
 	SendWNMNotifyEvent(NetDev,
 							 WNMFrame->Hdr.Addr2,
@@ -3407,6 +3580,9 @@ VOID ReceiveWNMNotifyReq(IN PRTMP_ADAPTER pAd,
 		MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "pos %d OptionalElementLen %d ElementID %d ElementLen %d\n", pos, OptionalElementLen, ElementID, ElementLen);
 
 		pos += 2;
+
+		if ((pos + ElementLen) > OptionalElementLen)
+			break;
 
 		switch (ElementID) {
 		case IE_VENDOR_SPECIFIC:

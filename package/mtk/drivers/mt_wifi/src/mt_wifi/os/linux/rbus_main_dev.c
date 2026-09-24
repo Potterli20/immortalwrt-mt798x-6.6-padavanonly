@@ -189,8 +189,10 @@ VOID __exit wbsys_module_exit(void)
 /** @} */
 
 #ifndef MULTI_INF_SUPPORT
+
 module_init(wbsys_module_init);
 module_exit(wbsys_module_exit);
+
 #endif /* MULTI_INF_SUPPORT */
 
 #endif /* RTMP_RBUS_SUPPORT */

@@ -516,6 +516,10 @@ ULONG build_vendor_ie(struct _RTMP_ADAPTER *pAd,
 
 #ifdef MT_MAC
 	struct _mediatek_ie mtk_ie;
+#ifdef MLR_SUPPORT
+	struct _mtk_tlv mtk_tlv;
+	ULONG mtk_tlv_len = 0;
+#endif /* MLR_SUPPORT */
 	ULONG mtk_ie_len = 0;
 	struct _mediatek_vht_ie mtk_vht_ie;
 	ULONG mtk_vht_ie_len = 0;
@@ -580,6 +584,7 @@ ULONG build_vendor_ie(struct _RTMP_ADAPTER *pAd,
 
 
 		NdisZeroMemory(&mtk_ie, sizeof(struct _mediatek_ie));
+
 		NdisZeroMemory(&mtk_vht_ie, sizeof(struct _mediatek_vht_ie));
 		mtk_vht_ie_len = sizeof(mtk_vht_cap) + sizeof(mtk_vht_op) + sizeof(mtk_vht_txpwr_env);
 		mtk_ie.ie_hdr.eid = IE_VENDOR_SPECIFIC;
@@ -599,15 +604,18 @@ ULONG build_vendor_ie(struct _RTMP_ADAPTER *pAd,
 			&& WMODE_CAP(wdev->PhyMode, WMODE_GN))
 			mtk_ie.cap0 |= MEDIATEK_256QAM_CAP;
 
+
 #ifdef MWDS
-        if(wdev->bSupportMWDS) {
-            mtk_ie.cap0 |= MEDIATEK_MWDS_CAP;
-        }
+		if (wdev->bSupportMWDS) {
+			mtk_ie.cap0 |= MEDIATEK_MWDS_CAP;
+		}
 #endif /* MWDS */
+
 		MakeOutgoingFrame((frame_buffer + vendor_ie_len),
 						  &mtk_ie_len, sizeof(struct _mediatek_ie), &mtk_ie,
 						  END_OF_ARGS);
 		vendor_ie_len += mtk_ie_len;
+
 		MakeOutgoingFrame((frame_buffer + vendor_ie_len),
 						  &mtk_vht_ie_len,
 						  (sizeof(mtk_vht_cap) + sizeof(mtk_vht_op) + sizeof(mtk_vht_txpwr_env)),
@@ -616,6 +624,39 @@ ULONG build_vendor_ie(struct _RTMP_ADAPTER *pAd,
 		/* hex_dump ("build vendor_ie: MediaTek_OUI", */
 		/* (frame_buffer+vendor_ie_len-mtk_ie_len), (mtk_ie.ie_hdr.len + 2)); */
 		vendor_ie_len += mtk_vht_ie_len;
+
+#ifdef MLR_SUPPORT
+		if (pAd->CommonCfg.is_mlr_support[HcGetBandByWdev(wdev)]) {
+			if (vie_frm_type == VIE_BEACON || vie_frm_type == VIE_PROBE_RESP) {
+				NdisZeroMemory(&mtk_ie, sizeof(struct _mediatek_ie));
+				mtk_ie_len = 0;
+				mtk_ie.ie_hdr.eid = IE_VENDOR_SPECIFIC;
+				mtk_ie.ie_hdr.len = 0x7;
+				mtk_ie.oui[0] = 0x00;
+				mtk_ie.oui[1] = 0x0C;
+				mtk_ie.oui[2] = 0xE7;
+				/* mtk_ie */
+				mtk_ie.cap0 |= MEDIATEK_TLV;
+				mtk_ie.ie_hdr.len += sizeof(struct _mtk_tlv);
+
+				MakeOutgoingFrame((frame_buffer + vendor_ie_len),
+						&mtk_ie_len, sizeof(struct _mediatek_ie), &mtk_ie,
+						END_OF_ARGS);
+				vendor_ie_len += mtk_ie_len;
+
+				/* mtk_tlv */
+				NdisZeroMemory(&mtk_tlv, sizeof(struct _mtk_tlv));
+				mtk_tlv.type = MTK_TLV_TYPE;
+				mtk_tlv.len = sizeof(mtk_tlv.val);
+				mtk_tlv.val |= MTK_TLV_VALUE_MLR;
+
+				MakeOutgoingFrame((frame_buffer + vendor_ie_len),
+						&mtk_tlv_len, sizeof(struct _mtk_tlv), &mtk_tlv,
+						END_OF_ARGS);
+				vendor_ie_len += mtk_tlv_len;
+			}
+		}
+#endif /* MLR_SUPPORT */
 
 #ifdef WH_EVENT_NOTIFIER
         if(wdev->custom_vie.ie_hdr.len > 0)
@@ -675,7 +716,11 @@ end:
 #ifdef CONFIG_MAP_SUPPORT
 void map_parse_vendor_ie(struct _RTMP_ADAPTER *pAd, struct _vendor_ie_cap *vendor_ie, PEID_STRUCT info_elem)
 {
+#ifdef MAP_MLO_UPLINK
+	unsigned int *rate;
+#else
 	short *rate;
+#endif
 	char *ptr = &info_elem->Octet[7];
 
 	vendor_ie->map_info.type = *ptr;
@@ -686,9 +731,17 @@ void map_parse_vendor_ie(struct _RTMP_ADAPTER *pAd, struct _vendor_ie_cap *vendo
 	ptr++;
 	vendor_ie->map_info.connectivity_to_controller = *ptr;
 	ptr++;
+#ifdef MAP_MLO_UPLINK
+	rate = (unsigned int *)ptr;
+#else
 	rate = (short *)ptr;
+#endif
 	vendor_ie->map_info.uplink_rate = *rate;
+#ifdef MAP_MLO_UPLINK
+	ptr += 4;
+#else
 	ptr += 2;
+#endif
 	NdisCopyMemory(vendor_ie->map_info.uplink_bssid, ptr, MAC_ADDR_LEN);
 	ptr += MAC_ADDR_LEN;
 	NdisCopyMemory(vendor_ie->map_info.bssid_5g, ptr, MAC_ADDR_LEN);
@@ -739,8 +792,6 @@ VOID check_vendor_ie(struct _RTMP_ADAPTER *pAd,
 				vendor_ie->mtk_cap_found = TRUE;
 				if (MWDS_SUPPORT(vendor_ie->mtk_cap))
 					vendor_ie->support_mwds = TRUE;
-				else
-					vendor_ie->support_mwds = FALSE;
 			}
 #endif /* MWDS */
 		} else {

@@ -311,6 +311,31 @@ INT APSecInit(
 		sae_derive_pt(wdev, &pAd->SaeCfg, pSecConfig->PSK, pMbss->Ssid, pMbss->SsidLen, &pSecConfig->pwd_id_list_head, &pSecConfig->pt_list);
 	}
 #endif
+#else
+if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef DOT11_SAE_SUPPORT
+	if (pSecConfig->pwd_id_cnt == 0) {
+		pSecConfig->sae_cap.pwd_id_only = FALSE;
+		DlListInit(&pSecConfig->pwd_id_list_head.list);
+	}
+
+	if (IS_AKM_SAE(pSecConfig->AKMMap)) {
+		BSS_STRUCT *pMbss = &pAd->ApCfg.MBSSID[wdev->func_idx];
+
+		if (pSecConfig->sae_cap.sae_pk_en != SAE_PK_DISABLE) {
+			if (pSecConfig->sae_pk.group_id != 19 &&
+				pSecConfig->sae_pk.group_id != 20 &&
+				pSecConfig->sae_pk.group_id != 21)
+				pSecConfig->sae_pk.group_id = SAE_DEFAULT_GROUP;
+
+			if (sae_pk_init(pAd, &pSecConfig->sae_pk, pMbss->Ssid, pMbss->SsidLen, SAE_PK_ROLE_AUTHENICATOR, pSecConfig->PSK) == FALSE)
+				pSecConfig->sae_cap.sae_pk_en = SAE_PK_DISABLE;
+		}
+
+		sae_derive_pt(wdev, &pAd->SaeCfg, pSecConfig->PSK, pMbss->Ssid, pMbss->SsidLen, &pSecConfig->pwd_id_list_head, &pSecConfig->pt_list);
+	}
+#endif
+}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 	/* Generate the corresponding RSNIE */
 	WPAMakeRSNIE(wdev->wdev_type, &wdev->SecConfig, NULL);
@@ -335,6 +360,17 @@ INT ap_sec_deinit(
 		sae_pk_deinit(&sec_cfg->sae_pk);
 	}
 #endif
+#else
+	if (wdev->SecConfig.bHostapdDisabled) {
+#ifdef DOT11_SAE_SUPPORT
+		struct _SECURITY_CONFIG *sec_cfg = &wdev->SecConfig;
+
+		if (IS_AKM_SAE(sec_cfg->AKMMap)) {
+			sae_pt_list_deinit(wdev, &sec_cfg->pt_list);
+			sae_pk_deinit(&sec_cfg->sae_pk);
+		}
+#endif
+	}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 
 	return TRUE;
@@ -392,6 +428,18 @@ INT ap_key_table_init(
 					 wdev->bssid,
 					 (UCHAR *) pSecConfig->GTK,
 					 LEN_MAX_GTK);
+#else
+	if (pAd->CommonCfg.bcfg80211Disabled) {
+		/* Generate GMK and GNonce randomly per MBSS */
+		GenRandom(pAd, wdev->bssid, pSecConfig->GMK);
+		GenRandom(pAd, wdev->bssid, pSecConfig->Handshake.GNonce);
+		/* Derive GTK per BSSID */
+		WpaDeriveGTK(pSecConfig->GMK,
+					 (UCHAR  *) pSecConfig->Handshake.GNonce,
+					 wdev->bssid,
+					 (UCHAR *) pSecConfig->GTK,
+					 LEN_MAX_GTK);
+	}
 #endif
 #ifdef DOT11W_PMF_SUPPORT
 		if (pSecConfig->PmfCfg.MFPC == TRUE) {
@@ -476,7 +524,7 @@ INT ap_set_key_for_sta_rec(
 		struct _SEC_KEY_INFO *pGroupKey = &asic_sec_info->Key;
 		/* Install Shared key */
 #ifdef RT_CFG80211_SUPPORT
-		if (wdev->Is_hostapd_gtk) {
+		if (wdev->Is_hostapd_gtk && !pAd->CommonCfg.bcfg80211Disabled) {
 			os_move_mem(pGroupKey->Key, wdev->Hostapd_GTK, LEN_MAX_GTK);
 			os_move_mem(pSecConfig->GTK, wdev->Hostapd_GTK, LEN_MAX_GTK);
 		} else
@@ -520,6 +568,46 @@ INT ap_set_key_for_sta_rec(
 	return TRUE;
 }
 
+VOID group_key_update(
+	struct _RTMP_ADAPTER *ad,
+	struct wifi_dev *wdev)
+{
+	struct _SECURITY_CONFIG *sec_cfg_group = &wdev->SecConfig;
+
+	sec_cfg_group->Handshake.GTKState = REKEY_NEGOTIATING;
+	/* change key index */
+	sec_cfg_group->GroupKeyId = (sec_cfg_group->GroupKeyId == 1) ? 2 : 1;
+	/* Generate GNonce randomly per MBSS */
+	GenRandom(ad, wdev->bssid, sec_cfg_group->Handshake.GNonce);
+	/* Derive GTK per BSSID */
+	WpaDeriveGTK(sec_cfg_group->GMK,
+				 (UCHAR	*) sec_cfg_group->Handshake.GNonce,
+				 wdev->bssid,
+				 (UCHAR *) sec_cfg_group->GTK,
+				 LEN_MAX_GTK);
+#ifdef DOT11W_PMF_SUPPORT
+	if (sec_cfg_group->PmfCfg.MFPC == TRUE) {
+		UCHAR idx;
+
+		sec_cfg_group->PmfCfg.IGTK_KeyIdx = (sec_cfg_group->PmfCfg.IGTK_KeyIdx == 4) ? 5 : 4;
+		idx = (sec_cfg_group->PmfCfg.IGTK_KeyIdx == 4) ? 0 : 1;
+		/* Derive IGTK */
+		PMF_DeriveIGTK(ad, &sec_cfg_group->PmfCfg.IGTK[idx][0]);
+	}
+
+#endif /* DOT11W_PMF_SUPPORT */
+#ifdef BCN_PROTECTION_SUPPORT
+	if (sec_cfg_group->bcn_prot_cfg.bcn_prot_en == TRUE) {
+		UCHAR idx;
+
+		sec_cfg_group->bcn_prot_cfg.bigtk_key_idx = (sec_cfg_group->bcn_prot_cfg.bigtk_key_idx == 6) ? 7 : 6;
+		idx = get_bigtk_table_idx(&sec_cfg_group->bcn_prot_cfg);
+		/* Derive BIGTK */
+		PMF_DeriveIGTK(ad, &sec_cfg_group->bcn_prot_cfg.bigtk[idx][0]);
+	}
+#endif
+}
+
 VOID GroupRekeyExec(
 	IN PVOID SystemSpecific1,
 	IN PVOID FunctionContext,
@@ -531,7 +619,7 @@ VOID GroupRekeyExec(
 	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)FunctionContext;
 	PRALINK_TIMER_STRUCT pTimer = (PRALINK_TIMER_STRUCT) SystemSpecific3;
 	struct wifi_dev *wdev = NULL;
-	struct _SECURITY_CONFIG *pSecConfig = NULL;
+	struct _SECURITY_CONFIG *sec_cfg_group = NULL;
 
 	for (apidx = 0; apidx < pAd->ApCfg.BssidNum; apidx++) {
 		if (&pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.GroupRekeyTimer == pTimer)
@@ -542,96 +630,73 @@ VOID GroupRekeyExec(
 		return;
 
 	wdev = &pAd->ApCfg.MBSSID[apidx].wdev;
-	pSecConfig = &wdev->SecConfig;
+	sec_cfg_group = &wdev->SecConfig;
 
-	if (pSecConfig->GroupReKeyMethod != SEC_GROUP_REKEY_DISCONNECT) {
+	if (sec_cfg_group->GroupReKeyMethod != SEC_GROUP_REKEY_DISCONNECT) {
 
-		if (pSecConfig->GroupReKeyInterval == 0)
+		if (sec_cfg_group->GroupReKeyInterval == 0)
 			return;
 
-		if (pSecConfig->Handshake.GTKState == REKEY_NEGOTIATING) {
-			pSecConfig->GroupReKeyInstallCountDown--;
+		if (sec_cfg_group->Handshake.GTKState == REKEY_NEGOTIATING &&
+			sec_cfg_group->rekey_count_down_counter) {
+			sec_cfg_group->rekey_count_down_counter--;
 
-			if (pSecConfig->GroupReKeyInstallCountDown == 0)
+			if (sec_cfg_group->rekey_count_down_counter == 0)
 				goto INSTALL_KEY;
 		}
 
-		if (pSecConfig->GroupReKeyMethod == SEC_GROUP_REKEY_TIME)
-			temp_counter = (++pSecConfig->GroupPacketCounter);
-		else if (pSecConfig->GroupReKeyMethod == SEC_GROUP_REKEY_PACKET)
-			temp_counter = pSecConfig->GroupPacketCounter/1000;  /* Packet-based: kilo-packets */
+		if (sec_cfg_group->GroupReKeyMethod == SEC_GROUP_REKEY_TIME)
+			temp_counter = (++sec_cfg_group->GroupPacketCounter);
+		else if (sec_cfg_group->GroupReKeyMethod == SEC_GROUP_REKEY_PACKET)
+			temp_counter = sec_cfg_group->GroupPacketCounter/1000;  /* Packet-based */
 		else
 			return;
 	}
 
-	if (temp_counter > pSecConfig->GroupReKeyInterval ||
-		pSecConfig->GroupReKeyMethod == SEC_GROUP_REKEY_DISCONNECT) {
+	if (temp_counter > sec_cfg_group->GroupReKeyInterval ||
+		sec_cfg_group->GroupReKeyMethod == SEC_GROUP_REKEY_DISCONNECT) {
 		UINT entry_count = 0;
 
-		pSecConfig->GroupPacketCounter = 0;
-		pSecConfig->Handshake.GTKState = REKEY_NEGOTIATING;
-		/* change key index */
-		pSecConfig->GroupKeyId = (pSecConfig->GroupKeyId == 1) ? 2 : 1;
-		/* Generate GNonce randomly per MBSS */
-		GenRandom(pAd, wdev->bssid, pSecConfig->Handshake.GNonce);
-		/* Derive GTK per BSSID */
-		WpaDeriveGTK(pSecConfig->GMK,
-					 (UCHAR	*) pSecConfig->Handshake.GNonce,
-					 wdev->bssid,
-					 (UCHAR *) pSecConfig->GTK,
-					 LEN_MAX_GTK);
-#ifdef DOT11W_PMF_SUPPORT
-		if (pSecConfig->PmfCfg.MFPC == TRUE) {
-			UCHAR idx;
-
-			pSecConfig->PmfCfg.IGTK_KeyIdx = (pSecConfig->PmfCfg.IGTK_KeyIdx == 4) ? 5 : 4;
-			idx = (pSecConfig->PmfCfg.IGTK_KeyIdx == 4) ? 0 : 1;
-			/* Derive IGTK */
-			PMF_DeriveIGTK(pAd, &pSecConfig->PmfCfg.IGTK[idx][0]);
-		}
-
-#endif /* DOT11W_PMF_SUPPORT */
-#ifdef BCN_PROTECTION_SUPPORT
-		if (pSecConfig->bcn_prot_cfg.bcn_prot_en == TRUE) {
-			UCHAR idx;
-
-			pSecConfig->bcn_prot_cfg.bigtk_key_idx = (pSecConfig->bcn_prot_cfg.bigtk_key_idx == 6) ? 7 : 6;
-			idx = get_bigtk_table_idx(&pSecConfig->bcn_prot_cfg);
-			/* Derive BIGTK */
-			PMF_DeriveIGTK(pAd, &pSecConfig->bcn_prot_cfg.bigtk[idx][0]);
-		}
-#endif
+		if (sec_cfg_group->Handshake.GTKState == REKEY_ESTABLISHED)
+			group_key_update(pAd, wdev);
 
 		/* Process 2-way handshaking */
 		for (i = 0; VALID_UCAST_ENTRY_WCID(pAd, i); i++) {
 			MAC_TABLE_ENTRY  *pEntry = &pAd->MacTab.Content[i];
+			struct _SECURITY_CONFIG *sec_cfg_pair = &pEntry->SecConfig;
 
 			if (IS_ENTRY_CLIENT(pEntry)
-				&& (pEntry->SecConfig.Handshake.WpaState == AS_PTKINITDONE)
+				&& (sec_cfg_pair->Handshake.WpaState == AS_PTKINITDONE)
 				&& (pEntry->func_tb_idx == apidx)) {
 #ifdef A4_CONN
 				if (IS_ENTRY_A4(pEntry))
 					continue;
 #endif /* A4_CONN */
-				entry_count++;
-				RTMPSetTimer(&pEntry->SecConfig.StartFor2WayTimer, ENQUEUE_EAPOL_2WAY_START_TIMER);
-				MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_INFO,
-					"Rekey interval excess, Update Group Key for "MACSTR", DefaultKeyId= %x\n",
-					MAC2STR(pEntry->Addr), pSecConfig->GroupKeyId);
+				if (sec_cfg_pair->Handshake.GTKState == REKEY_ESTABLISHED
+					&& sec_cfg_pair->GroupKeyId != sec_cfg_group->GroupKeyId) {
+					entry_count++;
+					RTMPSetTimer(&pEntry->SecConfig.StartFor2WayTimer, ENQUEUE_EAPOL_2WAY_START_TIMER);
+					MTWF_DBG(pAd, DBG_CAT_SEC, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Rekey interval excess, Update Group Key for  %02X:%02X:%02X:%02X:%02X:%02X , DefaultKeyId= %x\n",
+					 PRINT_MAC(pEntry->Addr), sec_cfg_group->GroupKeyId);
+				} else if (sec_cfg_pair->Handshake.GTKState == REKEY_NEGOTIATING)
+					entry_count++;
 			}
 		}
 
+		if (sec_cfg_group->rekey_count_down_counter == 0)
+			sec_cfg_group->rekey_count_down_counter = sec_cfg_group->rekey_install_count_down;
+
+		sec_cfg_group->rekeying_sta_cnt = entry_count;
+
 		if (entry_count == 0)
 			goto INSTALL_KEY;
-		else
-			pSecConfig->GroupReKeyInstallCountDown = 1; /* 1 seconds */
 	}
 
 	return;
 INSTALL_KEY:
 	/* If no sta connect, directly install group rekey, else install key after 2 way completed or 1 seconds */
 	group_key_install(pAd, wdev);
-	pSecConfig->Handshake.GTKState = REKEY_ESTABLISHED;
 }
 
 

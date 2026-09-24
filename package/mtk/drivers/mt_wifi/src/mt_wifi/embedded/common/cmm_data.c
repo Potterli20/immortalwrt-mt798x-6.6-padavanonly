@@ -353,6 +353,25 @@ static int ap_fp_tx_pkt_vlan_tag_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev
 		ASSERT(pSrcBuf);
 		TypeLen = ETH_TYPE_VLAN;
 	}
+#else
+	/*insert 802.1Q tag if required*/
+	if (pAd->CommonCfg.bEnableVlan && wdev->bVLAN_Tag && (TypeLen != ETH_TYPE_VLAN)
+		&& (wdev->VLAN_Policy[TX_VLAN] != VLAN_TX_ALLOW) && (TypeLen != ETH_TYPE_EAPOL) &&
+		(pAd->CommonCfg.bMBSSASWDSAPDisabled) && (pAd->CommonCfg.bApcliASWDSSTADisabled)) {
+		UINT16 tci = (wdev->VLAN_Priority<<(CFI_LEN + VID_LEN)) | wdev->VLAN_VID;/*CFI = 0*/
+
+		pkt = RtmpOsVLANInsertTag(pkt, tci);
+		if (pkt == NULL) {
+			MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"%s():vlan insert tag fail!!\n", __func__);
+			return FALSE;
+		}
+		skb = (struct sk_buff *)pkt;
+		skb->vlan_tci = tci;
+		pSrcBuf = GET_OS_PKT_DATAPTR(pkt);
+		ASSERT(pSrcBuf);
+		TypeLen = ETH_TYPE_VLAN;
+	}
 #endif
 
 	/*skip the Ethernet Header*/
@@ -395,6 +414,7 @@ static int ap_fp_tx_pkt_vlan_tag_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev
 				case VLAN_TX_REPLACE_VID:
 					MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
 						 "Replace the packet VLAN ID\n");
+					*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_PCP);
 					*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_VID);
 					*(USHORT *)pSrcBuf |= be2cpu16(wdev->VLAN_VID);
 					break;
@@ -413,8 +433,10 @@ static int ap_fp_tx_pkt_vlan_tag_handle(RTMP_ADAPTER *pAd, struct wifi_dev *wdev
 				}
 			} else {
 				/* align PCP*/
-				*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_PCP);
-				*(USHORT *)pSrcBuf |= be2cpu16((wdev->VLAN_Priority)<<(CFI_LEN + VID_LEN));
+				if (wdev->VLAN_Policy[TX_VLAN] == VLAN_TX_REPLACE_ALL) {
+					*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_PCP);
+					*(USHORT *)pSrcBuf |= be2cpu16((wdev->VLAN_Priority)<<(CFI_LEN + VID_LEN));
+				}
 			}
 		}
 		/*TxPath Efficiency consideration:DoubleVLAN driver untag 1st,SingleVlan MDP untag 1st.*/
@@ -2013,6 +2035,7 @@ BOOLEAN RTMPCheckEtherType(
 					case VLAN_TX_REPLACE_VID:
 						MTWF_DBG(pAd, DBG_CAT_TX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
 							 "Replace the packet VLAN ID\n");
+						*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_PCP);
 						*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_VID);
 						*(USHORT *)pSrcBuf |= be2cpu16(wdev->VLAN_VID);
 						break;
@@ -2038,7 +2061,8 @@ BOOLEAN RTMPCheckEtherType(
 			}
 #ifdef VLAN_SUPPORT
 			else {
-				if (pAd->CommonCfg.bEnableVlan) {
+				if (pAd->CommonCfg.bEnableVlan
+				&& (wdev->VLAN_Policy[TX_VLAN] == VLAN_TX_REPLACE_ALL)) {
 					/* align PCP*/
 					*(USHORT *)pSrcBuf &= be2cpu16(MASK_CLEAR_TCI_PCP);
 					*(USHORT *)pSrcBuf |= be2cpu16((wdev->VLAN_Priority)<<(CFI_LEN + VID_LEN));
@@ -2285,7 +2309,7 @@ BOOLEAN RTMPCheckEtherType(
 
 			if (pMbss->WNMCtrl.ProxyARPEnable) {
 				/* Check if IPv6 Proxy ARP Candidate from DS */
-				if (IsIPv6ProxyARPCandidate(pAd, pSrcBuf - 2)) {
+				if (IsIPv6ProxyARPCandidate(pAd, pSrcBuf - 2, GET_OS_PKT_DATATAIL(pPacket))) {
 					BOOLEAN FoundProxyARPEntry;
 
 					FoundProxyARPEntry = IPv6ProxyARP(pAd, pMbss, pSrcBuf - 2, TRUE, 0);
@@ -2357,8 +2381,10 @@ BOOLEAN RTMPCheckEtherType(
 		RTMP_SET_PACKET_HIGH_PRIO(pPacket, 1);
 		RTMP_SET_PACKET_TXTYPE(pPacket, TX_LEGACY_FRAME);
 #ifdef RT_CFG80211_SUPPORT
-		bClearFrame = (tr_entry->PortSecured == WPA_802_1X_PORT_SECURED) ? FALSE : TRUE;
-		RTMP_SET_PACKET_CLEAR_EAP_FRAME(pPacket, (bClearFrame ? 1 : 0));
+		if (!pAd->CommonCfg.bcfg80211Disabled) {
+			bClearFrame = (tr_entry->PortSecured == WPA_802_1X_PORT_SECURED) ? FALSE : TRUE;
+			RTMP_SET_PACKET_CLEAR_EAP_FRAME(pPacket, (bClearFrame ? 1 : 0));
+		}
 #endif
 		break;
 #if defined(DOT11Z_TDLS_SUPPORT) || defined(CFG_TDLS_SUPPORT)
@@ -2556,24 +2582,33 @@ INT tx_sw_encrypt(RTMP_ADAPTER *pAd, TX_BLK *pTxBlk, UCHAR *pHeaderBufPtr, HEADE
 	}
 
 
-	/* Construct and insert specific IV header to MPDU header */
-	RTMPSoftConstructIVHdr(pTxBlk->CipherAlg,
-						   pTxBlk->KeyIdx,
-						   pTxBlk->pKey->TxTsc,
-						   pHeaderBufPtr, &iv_offset);
-	pHeaderBufPtr += iv_offset;
-	/* TODO: shiang-MT7603, for header Len, shall we take care that?? */
-	pTxBlk->MpduHeaderLen += iv_offset;
-	/* Encrypt the MPDU data by software */
-	RTMPSoftEncryptionAction(pAd,
-							 pTxBlk->CipherAlg,
-							 (UCHAR *)wifi_hdr,
-							 pTxBlk->pSrcBufData,
-							 pTxBlk->SrcBufLen,
-							 pTxBlk->KeyIdx,
-							 pTxBlk->pKey, &ext_offset);
-	pTxBlk->SrcBufLen += ext_offset;
-	pTxBlk->TotalFrameLen += ext_offset;
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+	if (pTxBlk->CipherAlg == CIPHER_AES)
+		(void)ccmp_encrypt(pTxBlk, pHeaderBufPtr, (UCHAR *)wifi_hdr);
+	else
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
+	{
+		/* Construct and insert specific IV header to MPDU header */
+		RTMPSoftConstructIVHdr(pTxBlk->CipherAlg,
+							   pTxBlk->KeyIdx,
+							   pTxBlk->pKey->TxTsc,
+							   pHeaderBufPtr, &iv_offset);
+		pHeaderBufPtr += iv_offset;
+		/* TODO: shiang-MT7603, for header Len, shall we take care that?? */
+		pTxBlk->MpduHeaderLen += iv_offset;
+		/* Encrypt the MPDU data by software */
+		RTMPSoftEncryptionAction(pAd,
+								 pTxBlk->CipherAlg,
+								 (UCHAR *)wifi_hdr,
+								 pTxBlk->pSrcBufData,
+								 pTxBlk->SrcBufLen,
+								 pTxBlk->KeyIdx,
+								 pTxBlk->pKey, &ext_offset);
+		pTxBlk->SrcBufLen += ext_offset;
+		pTxBlk->TotalFrameLen += ext_offset;
+	}
 	return TRUE;
 }
 #endif /* SOFT_ENCRYPT */
@@ -3787,6 +3822,7 @@ VOID indicate_802_11_pkt(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk, UCHAR wdev_idx)
 	}
 
 	STATS_INC_RX_PACKETS(pAd, wdev_idx);
+
 #ifdef CONFIG_AP_SUPPORT
 	WDEV_VLAN_INFO_GET(pAd, VLAN_VID, VLAN_Priority, wdev);
 #endif /* CONFIG_AP_SUPPORT */
@@ -3897,6 +3933,90 @@ VOID indicate_802_11_pkt(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk, UCHAR wdev_idx)
 #endif /* MAC_REPEATER_SUPPORT */
 	}
 #endif /* CONFIG_AP_SUPPORT */
+#else
+if (pAd->CommonCfg.bApcliASWDSSTADisabled) {
+#ifdef CONFIG_AP_SUPPORT
+	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
+#ifdef MAC_REPEATER_SUPPORT /* This should be moved to some where else */
+
+	if (pRxBlk->pRxInfo->Bcast && (pAd->ApCfg.bMACRepeaterEn) && (pAd->ApCfg.MACRepeaterOuiMode != CASUALLY_DEFINE_MAC_ADDR)) {
+		PUCHAR pPktHdr, pLayerHdr;
+
+		pPktHdr = GET_OS_PKT_DATAPTR(pRxPacket);
+		pLayerHdr = (pPktHdr + MAT_ETHER_HDR_LEN);
+
+		/*For UDP packet, we need to check about the DHCP packet. */
+		if (*(pLayerHdr + 9) == 0x11) {
+			PUCHAR pUdpHdr;
+			UINT16 srcPort, dstPort;
+			BOOLEAN bHdrChanged = FALSE;
+
+			pUdpHdr = pLayerHdr + 20;
+			srcPort = OS_NTOHS(get_unaligned((PUINT16)(pUdpHdr)));
+			dstPort = OS_NTOHS(get_unaligned((PUINT16)(pUdpHdr + 2)));
+
+			if (srcPort == 67 && dstPort == 68) { /*It's a DHCP packet */
+				PUCHAR bootpHdr, dhcpHdr, pCliHwAddr;
+				REPEATER_CLIENT_ENTRY *pReptEntry = NULL;
+
+				bootpHdr = pUdpHdr + 8;
+				dhcpHdr = bootpHdr + 236;
+				pCliHwAddr = (bootpHdr + 28);
+				pReptEntry = RTMPLookupRepeaterCliEntry(pAd, FALSE, pCliHwAddr, TRUE);
+
+				if (pReptEntry) {
+					ASSERT(pReptEntry->CliValid == TRUE);
+					NdisMoveMemory(pCliHwAddr, pReptEntry->OriginalAddress, MAC_ADDR_LEN);
+				}
+
+#if IS_ENABLED(CONFIG_WIFI_PKT_FWD) || IS_ENABLED(CONFIG_WIFI_PKT_FWD_MODULE)
+				else {
+					VOID *opp_band_tbl = NULL;
+					VOID *band_tbl = NULL;
+					VOID *other_band_tbl = NULL;
+
+					if (wf_drv_tbl.wf_fwd_feedback_map_table)
+						wf_drv_tbl.wf_fwd_feedback_map_table(pAd,
+											&band_tbl,
+											&opp_band_tbl,
+											&other_band_tbl);
+
+				if (opp_band_tbl != NULL) {
+				/* check the ReptTable of the opposite band due to dhcp
+				 * packet (BC) may come-in 2/5G band when STA send dhcp
+				 * broadcast to Root AP
+				 */
+					pReptEntry = RTMPLookupRepeaterCliEntry(opp_band_tbl, FALSE, pCliHwAddr, FALSE);
+
+					if (pReptEntry)
+						NdisMoveMemory(pCliHwAddr, pReptEntry->OriginalAddress, MAC_ADDR_LEN);
+				} else
+					MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+						"cannot find the adapter of the oppsite band\n");
+
+				if (other_band_tbl != NULL) {
+					pReptEntry = RTMPLookupRepeaterCliEntry(other_band_tbl, FALSE, pCliHwAddr, FALSE);
+
+					if (pReptEntry)
+						NdisMoveMemory(pCliHwAddr, pReptEntry->OriginalAddress, MAC_ADDR_LEN);
+				} else
+					MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
+						"cannot find the adapter of the othersite band\n");
+			}
+
+#endif /* CONFIG_WIFI_PKT_FWD */
+				bHdrChanged = TRUE;
+			}
+
+			if (bHdrChanged == TRUE)
+				NdisZeroMemory((pUdpHdr + 6), 2); /*modify the UDP chksum as zero */
+		}
+	}
+
+#endif /* MAC_REPEATER_SUPPORT */
+	}
+#endif /* CONFIG_AP_SUPPORT */
+	}
 #endif /* APCLI_AS_WDS_STA_SUPPORT */
 
 #ifdef P2P_SUPPORT
@@ -4261,7 +4381,7 @@ VOID rx_eapol_frm_handle(
 #ifndef APCLI_CFG80211_SUPPORT
 		&& !(pStaCfg)
 #endif
-	) {
+	&& (!pAd->CommonCfg.bcfg80211Disabled)) {
 		MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO, "CFG80211 EAPOL indicate_802_11_pkt\n");
 #ifdef CONFIG_STA_SUPPORT
 
@@ -4708,16 +4828,15 @@ VOID dev_rx_mgmt_frm(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 #endif
 #endif
 #ifdef RT_CFG80211_SUPPORT
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 #ifdef CFG_TDLS_SUPPORT
 
-	if (CFG80211_HandleTdlsDiscoverRespFrame(pAd, pRxBlk, op_mode))
-		goto done;
-
+		if (CFG80211_HandleTdlsDiscoverRespFrame(pAd, pRxBlk, op_mode))
+			goto done;
 #endif /* CFG_TDLS_SUPPORT */
-
-	if (CFG80211_HandleP2pMgmtFrame(pAd, pRxBlk, op_mode))
-		goto done;
-
+		if (CFG80211_HandleP2pMgmtFrame(pAd, pRxBlk, op_mode))
+			goto done;
+	}
 #endif /* RT_CFG80211_SUPPORT */
 
 #ifdef DOT11W_PMF_SUPPORT
@@ -4822,7 +4941,7 @@ VOID dev_rx_ctrl_frm(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 
 #endif
 			} else {
-				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO,
                                          "%s():pEntry(NULL),Cannot found WCID of BAR packet!A1:"MACSTR",A2:"MACSTR"\n",
 					 __func__, MAC2STR(pRxBlk->Addr1), MAC2STR(pRxBlk->Addr2));
 			}
@@ -5144,6 +5263,7 @@ static INT rtmp_chk_rx_err(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 #ifdef A4_CONN
 			if (pRxBlk->Addr1 != NULL) {
 				if (IS_BM_MAC_ADDR(pRxBlk->Addr1)) {
+					MAC_TABLE_ENTRY *pEntry = NULL;
 					pEntry = MacTableLookup(pAd, pRxBlk->Addr2);
 
 					if (pEntry && IS_ENTRY_PEER_AP(pEntry))
@@ -5443,6 +5563,16 @@ static INT rtmp_chk_rx_err(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s: Line(%d) (ToDs Packet not allow in STA Mode)\n", __func__, __LINE__);
 				return NDIS_STATUS_FAILURE;
 			}
+#else
+			if (FC->ToDs && pAd->CommonCfg.bClientWdsDisabled
+#ifdef RT_CFG80211_P2P_SUPPORT
+				/* CFG TODO */
+				/*&& !IS_ENTRY_CLIENT(pEntry)*/ && 0
+#endif /* RT_CFG80211_P2P_SUPPORT */
+			   ) {
+				MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s: Line(%d) (ToDs Packet not allow in STA Mode)\n", __func__, __LINE__);
+				return NDIS_STATUS_FAILURE;
+			}
 
 #endif /* !CLIENT_WDS */
 		}
@@ -5591,14 +5721,16 @@ INT sta_rx_pkt_allow(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxBlk)
 
 	if ((pFmeCtrl->FrDs == 1) && (pFmeCtrl->ToDs == 1)) {
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-		if (IS_ENTRY_PEER_AP(pEntry)) {
+		if (IS_ENTRY_PEER_AP(pEntry) &&
+			!pAd->CommonCfg.bApcliASWDSSTADisabled) {
 			RX_BLK_SET_FLAG(pRxBlk, fRX_WDS);
 			hdr_len = LENGTH_802_11_WITH_ADDR4;
 		}
 #endif /* APCLI_AS_WDS_STA_SUPPORT */
 #ifdef CLIENT_WDS
 		if ((VALID_UCAST_ENTRY_WCID(pAd, pRxBlk->wcid))
-			&& IS_ENTRY_CLIENT(pEntry)) {
+			&& IS_ENTRY_CLIENT(pEntry) &&
+			(!pAd->CommonCfg.bClientWdsDisabled)) {
 			RX_BLK_SET_FLAG(pRxBlk, fRX_WDS);
 			hdr_len = LENGTH_802_11_WITH_ADDR4;
 			pEntry = &pAd->MacTab.Content[pRxBlk->wcid];
@@ -5712,7 +5844,8 @@ INT sta_rx_pkt_allow(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, RX_BLK *pRxBlk)
 #endif /* A4_CONN */
 
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-		if (wdev->wds_enable == 1)
+		if (wdev->wds_enable == 1 &&
+			!pAd->CommonCfg.bApcliASWDSSTADisabled)
 			pRxInfo->MyBss = 1;
 		else
 #endif
@@ -6330,6 +6463,42 @@ VOID rx_data_frm_announce(
 					}
 				}
 #endif
+#else
+		if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef CONFIG_HOTSPOT_R2
+			UCHAR *pData = (UCHAR *)pRxBlk->pData;
+
+			if (pEntry) {
+				BSS_STRUCT *pMbss = pEntry->pMbss;
+
+				if (NdisEqualMemory(SNAP_802_1H, pData, 6) ||
+					/*Some Customer AP may send packet with SNAP_BRIDGE_TUNNEL*/
+					NdisEqualMemory(SNAP_BRIDGE_TUNNEL, pData, 6))
+					pData += 6;
+
+				if (NdisEqualMemory(EAPOL, pData, 2))
+					pData += 2;
+
+				if (IS_ENTRY_CLIENT(pEntry) && pEntry->pMbss) {
+					if (((*(pData + 1) == EAPOLStart)
+					|| (*(pData + 1) == EAPPacket))
+					&& (pMbss->HotSpotCtrl.HotSpotEnable == 1) &&
+					IS_AKM_WPA2(pMbss->wdev.SecConfig.AKMMap) &&
+					(pEntry->hs_info.ppsmo_exist == 1)) {
+						UCHAR HS2_Header[4] = {0x50, 0x6f, 0x9a, 0x12};
+
+						memcpy(&pRxBlk->pData[pRxBlk->DataSize], HS2_Header, 4);
+						memcpy(&pRxBlk->pData[pRxBlk->DataSize + 4], &pEntry->hs_info, sizeof(struct _sta_hs_info));
+						MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "%s: hotspot rcv eapol start, %x:%x:%x:%x\n",
+								__func__, pRxBlk->pData[pRxBlk->DataSize + 4], pRxBlk->pData[pRxBlk->DataSize + 5],
+								pRxBlk->pData[pRxBlk->DataSize + 6], pRxBlk->pData[pRxBlk->DataSize + 7]);
+								pRxBlk->DataSize += 8;
+					}
+				}
+			}
+#endif
+
+		}
 #endif /*HOSTAPD_HS_R2_SUPPORT*/
 				/* Determin the destination of the EAP frame */
 				/*  to WPA state machine or upper layer */
@@ -6582,8 +6751,24 @@ INT rx_chk_duplicate_mgmt_frame(RTMP_ADAPTER *pAd, RX_BLK *pRxBlk)
 
 VOID rx_802_3_data_frm_announce(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry, RX_BLK *pRxBlk, struct wifi_dev *wdev)
 {
+	BOOLEAN eth_frame = FALSE;
+	UCHAR *pData = pRxBlk->pData;
+	UINT data_len = pRxBlk->DataSize;
+	UCHAR wdev_idx = wdev->wdev_idx;
+	MAC_TABLE_ENTRY *pSrcEntry = NULL;
 	FRAME_CONTROL *FC = (FRAME_CONTROL *)pRxBlk->FC;
 
+	if (pEntry && pEntry->Sst == SST_ASSOC) {
+		struct tx_rx_ctl *tr_ctl = &pAd->tr_ctl;
+		pSrcEntry = MacTableLookup(pAd, pRxBlk->Addr2);
+		STA_TR_ENTRY *tr_entry = &tr_ctl->tr_entry[pSrcEntry->tr_tb_idx];
+		if (tr_entry && (tr_entry->PortSecured != WPA_802_1X_PORT_SECURED)) {
+			if (!RTMPCheckWPAframe(pAd, pEntry, pData, data_len, wdev_idx, eth_frame)) {
+				RELEASE_NDIS_PACKET(pAd, pRxBlk->pRxPacket, NDIS_STATUS_FAILURE);
+				return;
+			}
+		}
+	}
 	if (RX_BLK_TEST_FLAG(pRxBlk, fRX_CM) && FC   &&	(FC->Type == FC_TYPE_DATA)) {
 		MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s: CM,	wcid=%d\n", __func__, pRxBlk->wcid);
 		MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Addr1="MACSTR"\t", MAC2STR(pRxBlk->Addr1));
@@ -7026,17 +7211,17 @@ NDIS_STATUS header_packet_process(
 #endif /* AIR_MONITOR */
 
 #ifdef RT_CFG80211_SUPPORT
+if (!pAd->CommonCfg.bcfg80211Disabled) {
 #ifdef RT_CFG80211_P2P_SUPPORT
-
 	if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd) &&
 		(NdisEqualMemory(pAd->cfg80211_ctrl.P2PCurrentAddress, pHeader->Addr1, MAC_ADDR_LEN) ||
 		 (pHeader->FC.SubType == SUBTYPE_PROBE_REQ)))
 		SET_PKT_OPMODE_AP(pRxBlk);
 	else if (RTMP_CFG80211_VIF_P2P_CLI_ON(pAd) &&
-			 (((pHeader->FC.SubType == SUBTYPE_BEACON || pHeader->FC.SubType == SUBTYPE_PROBE_RSP) &&
-			   NdisEqualMemory(pAd->StaCfg[MAIN_MBSSID].CfgApCliBssid, pHeader->Addr2, MAC_ADDR_LEN)) ||
-			  (pHeader->FC.SubType == SUBTYPE_PROBE_REQ) ||
-			  NdisEqualMemory(pAd->StaCfg[MAIN_MBSSID].MlmeAux.Bssid, pHeader->Addr2, MAC_ADDR_LEN))) {
+		 (((pHeader->FC.SubType == SUBTYPE_BEACON || pHeader->FC.SubType == SUBTYPE_PROBE_RSP) &&
+		   NdisEqualMemory(pAd->StaCfg[MAIN_MBSSID].CfgApCliBssid, pHeader->Addr2, MAC_ADDR_LEN)) ||
+		  (pHeader->FC.SubType == SUBTYPE_PROBE_REQ) ||
+		  NdisEqualMemory(pAd->StaCfg[MAIN_MBSSID].MlmeAux.Bssid, pHeader->Addr2, MAC_ADDR_LEN))) {
 		/*
 		   1. Beacon & ProbeRsp for Connecting & Tracking
 			   2. ProbeReq for P2P Search
@@ -7052,7 +7237,7 @@ NDIS_STATUS header_packet_process(
 		else
 			SET_PKT_OPMODE_STA(pRxBlk);
 	}
-
+}
 #endif /* RT_CFG80211_SUPPORT */
 #ifdef CFG80211_MULTI_STA
 
@@ -7093,8 +7278,25 @@ NDIS_STATUS header_packet_process(
 
 	/* Check for all RxD errors */
 	if (rtmp_chk_rx_err(pAd, pRxBlk) != NDIS_STATUS_SUCCESS) {
+#ifdef TXRX_STAT_SUPPORT
+		MAC_TABLE_ENTRY * pEntry = &pAd->MacTab.Content[pRxBlk->wcid];
+
+		if ((pEntry) && (pEntry->wdev != NULL))
+			INC_COUNTER64(pEntry->RxErrorsReceived);
+#endif
 		pAd->Counters8023.RxErrors++;
 		RELEASE_NDIS_PACKET(pAd, pRxPacket, NDIS_STATUS_FAILURE);
+#ifdef A4_CONN
+		/*Avoid error logs in case of 4Address frame*/
+		if (pRxBlk->Addr1 != NULL) {
+			if (IS_BM_MAC_ADDR(pRxBlk->Addr1)) {
+				MAC_TABLE_ENTRY *Entry = NULL;
+				Entry = MacTableLookup(pAd, pRxBlk->Addr2);
+				if (Entry && IS_ENTRY_A4(Entry))
+					return NDIS_STATUS_INVALID_DATA;
+			}
+		}
+#endif /* A4_CONN */
 		MTWF_DBG(pAd, DBG_CAT_RX, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "%s(): CheckRxError!\n", __func__);
 		return NDIS_STATUS_INVALID_DATA;
 	}
@@ -7388,7 +7590,7 @@ INT wdev_tx_pkts(NDIS_HANDLE dev_hnd, PPNDIS_PACKET pkt_list, UINT pkt_cnt, stru
 	PUCHAR pSA = NULL;
 	struct wifi_dev *twdev = NULL;
 	UCHAR idx;
-	BOOLEAN add_entry = FALSE;
+	BOOLEAN add_entry = TRUE;
 #endif
 
 	for (Index = 0; Index < pkt_cnt; Index++) {
@@ -7486,9 +7688,11 @@ INT wdev_tx_pkts(NDIS_HANDLE dev_hnd, PPNDIS_PACKET pkt_list, UINT pkt_cnt, stru
 		if (!ReduceTcpAck(pAd, pPacket))
 #endif /* REDUCE_TCP_ACK_SUPPORT */
 		{
+#ifdef RT_CFG80211_SUPPORT
 #ifdef HOSTAPD_MAP_SUPPORT
 			/* Send Eapol packets Recieved from Hostapd */
-			if (RTMP_CFG80211_HOSTAPD_ON(pAd)) {
+			if (RTMP_CFG80211_HOSTAPD_ON(pAd) && !pAd->CommonCfg.bcfg80211Disabled &&
+				!pAd->CommonCfg.bHostapdMapDisabled) {
 				UCHAR *pSrcBuf = GET_OS_PKT_DATAPTR(pPacket);
 				UINT16 TypeLen = 0;
 
@@ -7506,11 +7710,12 @@ INT wdev_tx_pkts(NDIS_HANDLE dev_hnd, PPNDIS_PACKET pkt_list, UINT pkt_cnt, stru
 			}
 
 #endif
+#endif
 #ifndef A4_CONN
 #ifdef RT_CFG80211_SUPPORT
-			if (RTMP_CFG80211_HOSTAPD_ON(pAd)) {
-			UCHAR *pSrcBuf = GET_OS_PKT_DATAPTR(pPacket);
-			UINT16 TypeLen = 0;
+			if (RTMP_CFG80211_HOSTAPD_ON(pAd) && !pAd->CommonCfg.bcfg80211Disabled) {
+				UCHAR *pSrcBuf = GET_OS_PKT_DATAPTR(pPacket);
+				UINT16 TypeLen = 0;
 				if (pSrcBuf) {
 					TypeLen = (pSrcBuf[12] << 8) | pSrcBuf[13];
 					if (TypeLen == ETH_TYPE_EAPOL) {
@@ -7531,29 +7736,28 @@ INT wdev_tx_pkts(NDIS_HANDLE dev_hnd, PPNDIS_PACKET pkt_list, UINT pkt_cnt, stru
 					a4_send_clone_pkt(pAd, wdev->func_idx, pPacket, NULL);
 			}
 #ifdef CONFIG_MAP_3ADDR_SUPPORT
-			if (pAd->MapAccept3Addr) {
-				if (MAC_ADDR_IS_GROUP(pSrcBufVA)) {
-					PSTA_ADMIN_CONFIG apcli_entry;
-					apcli_entry = &pAd->StaCfg[wdev->func_idx];
-					if (apcli_entry->eth_list_init) {
-						if (wdev->wdev_type == WDEV_TYPE_STA) {
-							pSA = pSrcBufVA + MAC_ADDR_LEN;
-							ptEntry = MacTableLookup(pAd, pSA);
-							if (!ptEntry)
-								add_entry = TRUE;
+		if (pAd->MapAccept3Addr) {
+			if ((wdev->wdev_type == WDEV_TYPE_STA) && MAC_ADDR_IS_GROUP(pSrcBufVA)) {
+				PSTA_ADMIN_CONFIG apcli_entry;
 
-							for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
-								twdev = &pAd->ApCfg.MBSSID[idx].wdev;
-								if (RoutingTabLookup(pAd, twdev->func_idx, pSA, FALSE, &wcid) == NULL)
-									add_entry = TRUE;
-							}
+				apcli_entry = &pAd->StaCfg[wdev->func_idx];
+				if (apcli_entry && apcli_entry->eth_list_init) {
+					pSA = pSrcBufVA + MAC_ADDR_LEN;
+					ptEntry = MacTableLookup(pAd, pSA);
+					if (ptEntry)
+						add_entry = FALSE;
 
-							if (add_entry)
-								eth_add_entry(pAd, wdev->func_idx, pSA);
-						}
+					for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
+						twdev = &pAd->ApCfg.MBSSID[idx].wdev;
+						add_entry = RoutingTabLookup(pAd, twdev->func_idx, pSA, FALSE, &wcid)
+							? FALSE : TRUE;
 					}
+
+					if (add_entry)
+						eth_add_entry(pAd, wdev->func_idx, pSA);
 				}
 			}
+		}
 #endif
 #endif /* A4_CONN */
 			send_data_pkt(pAd, wdev, pPacket);
@@ -8271,13 +8475,18 @@ static void pktloss_chk_hex_dump(PUINT_8 pData, UINT_32 dump_len)
 	UINT_8 buf[256] = {0};
 	UINT32 buf_len = 256;
 	INT_32 i;
+	INT ret;
 
 	for (i = 0; i < dump_len; i++) {
 		len += snprintf(buf + len, buf_len - strlen(buf), "%02X,", *ptr);
 		ptr++;
 		if ((i%16 == 15) || (len >= (dump_len - 1))) {
-			len += snprintf(buf + len, buf_len - strlen(buf), "%s", "\n");
-			MTWF_PRINT("%s", buf);
+			ret = snprintf(buf + len, buf_len - strlen(buf), "%s", "\n");
+			if (os_snprintf_error(buf_len - strlen(buf), ret))
+				MTWF_PRINT("final_name snprintf error!\n");
+			else
+				MTWF_PRINT("%s", buf);
+
 			len = 0;
 		}
 	}

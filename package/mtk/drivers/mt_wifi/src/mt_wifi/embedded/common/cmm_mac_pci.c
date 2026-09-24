@@ -385,11 +385,12 @@ INT mt_ct_mlme_hw_tx(RTMP_ADAPTER *pAd, UCHAR *tmac_info, MAC_TX_INFO *info, HTT
 	UINT16 free_cnt = 1;
 	INT32 ret = NDIS_STATUS_SUCCESS;
 	struct _RTMP_CHIP_CAP *cap = hc_get_chip_cap(pAd->hdev_ctrl);
+	struct wifi_dev *wdev = tx_blk->wdev;
 #ifdef RT_BIG_ENDIAN
 	PHEADER_802_11 pHeader_802_11;
 	pHeader_802_11 = (HEADER_802_11 *)(tx_blk->pSrcBufHeader + cap->tx_hw_hdr_len);
 #endif
-	asic_write_tmac_info_fixed_rate(pAd, tmac_info, info, transmit);
+	asic_write_tmac_info_fixed_rate(pAd, wdev, tmac_info, info, transmit);
 #ifdef RT_BIG_ENDIAN
 	RTMPFrameEndianChange(pAd, (PUCHAR)pHeader_802_11, DIR_WRITE, FALSE);
 	MTMacInfoEndianChange(pAd, tmac_info, TYPE_TMACINFO, sizeof(TMAC_TXD_L));

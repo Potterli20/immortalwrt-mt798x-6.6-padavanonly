@@ -1,3 +1,10 @@
+#ifdef RELEASE_EXCLUDE
+ifeq ($(CONFIG_FUZZ_SUPPORT),y)
+RT28xx_DIR = $(TOP_DIR)
+RT28xx_OS_DIR = $(RT28xx_DIR)/os
+endif
+#endif /* RELEASE_EXCLUDE */
+
 include $(RT28xx_OS_DIR)/linux/config.mk
 
 RT28xx_RPATH = ../..

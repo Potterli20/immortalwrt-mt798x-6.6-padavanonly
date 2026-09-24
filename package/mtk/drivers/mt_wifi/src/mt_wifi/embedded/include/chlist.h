@@ -107,6 +107,8 @@ VOID BuildBeaconChList(
 UCHAR GetCountryRegionFromCountryCode(UCHAR *country_code);
 UINT GetEDCCAStd(IN PUCHAR CountryCode, IN USHORT radioPhy);
 #ifdef DOT11_N_SUPPORT
+BOOLEAN IsValidChannel(PRTMP_ADAPTER pAd, UCHAR channel, struct wifi_dev *wdev);
+UCHAR GetExtCh(UCHAR Channel, UCHAR Direction);
 BOOLEAN ExtChCheck(PRTMP_ADAPTER pAd, UCHAR Channel, UCHAR Direction, struct wifi_dev *wdev);
 UCHAR N_SetCenCh(RTMP_ADAPTER *pAd, UCHAR channel, UCHAR ht_bw);
 BOOLEAN N_ChannelGroupCheck(RTMP_ADAPTER *pAd, UCHAR channel, struct wifi_dev *wdev);

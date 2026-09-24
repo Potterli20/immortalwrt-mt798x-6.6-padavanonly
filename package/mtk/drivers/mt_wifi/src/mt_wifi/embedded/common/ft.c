@@ -37,7 +37,7 @@ static VOID FT_RrbEnqueue(
 	IN UINT16 FtActLen,
 	IN UINT32 ApIdx);
 
-static BOOLEAN FT_ReqActionParse(
+BOOLEAN FT_ReqActionParse(
 	IN PRTMP_ADAPTER pAd,
 	IN UINT16 Len,
 	IN PUCHAR Ptr,
@@ -218,7 +218,7 @@ Note:
 
 ========================================================================
 */
-static BOOLEAN FT_ReqActionParse(
+BOOLEAN FT_ReqActionParse(
 	IN PRTMP_ADAPTER pAd,
 	IN UINT16 Len,
 	IN PUCHAR Ptr,
@@ -227,12 +227,25 @@ static BOOLEAN FT_ReqActionParse(
 	PEID_STRUCT eid_ptr;
 	UCHAR WPA1_OUI[4] = {0x00, 0x50, 0xF2, 0x01};
 	UCHAR WPA2_OUI[3] = {0x00, 0x0F, 0xAC};
+	INT remain_ie_len = Len;
+
 
 	eid_ptr = (PEID_STRUCT) Ptr;
 	NdisZeroMemory(pFtInfo, sizeof(FT_INFO));
 
 	/* get variable fields from payload and advance the pointer */
-	while (((UCHAR *)eid_ptr + eid_ptr->Len + 1) < ((PUCHAR)Ptr + Len)) {
+	while (remain_ie_len >= 2) {
+		if (!eid_ptr->Len) {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO,
+				"Invalid format of IE len ! (ie len = 0)\n");
+			return FALSE;
+		}
+		if ((eid_ptr->Len + 2) > remain_ie_len) {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO,
+				"Malformity IE Len!\n");
+			return FALSE;
+		}
+
 		switch (eid_ptr->Eid) {
 		case IE_FT_MDIE:
 			if (FT_FillMdIeInfo(eid_ptr, &pFtInfo->MdIeInfo) == FALSE) {
@@ -294,7 +307,7 @@ static BOOLEAN FT_ReqActionParse(
 		default:
 			break;
 		}
-
+		remain_ie_len -= (2 + eid_ptr->Len);
 		eid_ptr = (PEID_STRUCT)((UCHAR *)eid_ptr + 2 + eid_ptr->Len);
 	}
 
@@ -461,8 +474,10 @@ VOID FT_CfgInitial(
 		NdisMoveMemory(pFtCfg->FtR0khId, R0khIdBuf, strlen(R0khIdBuf));
 		pFtCfg->FtR0khIdLen = strlen(R0khIdBuf);
 #ifdef HOSTAPD_11R_SUPPORT
-		NdisZeroMemory(pFtCfg->FtR1khId, MAC_ADDR_LEN);
-		NdisMoveMemory(pFtCfg->FtR1khId, pAd->ApCfg.MBSSID[apidx].wdev.bssid, MAC_ADDR_LEN);
+		if (!pAd->CommonCfg.bHostapdDisabled) {
+			NdisZeroMemory(pFtCfg->FtR1khId, MAC_ADDR_LEN);
+			NdisMoveMemory(pFtCfg->FtR1khId, pAd->ApCfg.MBSSID[apidx].wdev.bssid, MAC_ADDR_LEN);
+		}
 #endif
 	}
 }
@@ -550,9 +565,11 @@ USHORT FT_AuthReqHandler(
 			if (result != MLME_SUCCESS)
 				break;
 		} else {
-			/*	FT auth-req with no RSN Ie (OPEN mode).
-				reply auth-rsp with success. */
-			;
+			/*	FT auth-req with no RSN Ie */
+			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR,
+				"No RSN IE Present\n");
+				result = MLME_UNSPECIFY_FAIL;
+				break;
 		}
 
 		NdisMoveMemory(&pEntry->MdIeInfo, &pFtInfo->MdIeInfo,
@@ -823,8 +840,13 @@ USHORT FT_AssocReqHandler(
 				/* Prepare in the R1KHID and its length */
 				pFtInfoBuf->FtIeInfo.R1khIdLen = MAC_ADDR_LEN;
 #ifdef HOSTAPD_11R_SUPPORT
-				NdisMoveMemory(pFtInfoBuf->FtIeInfo.R1khId,
+				if (!pAd->CommonCfg.bHostapdDisabled) {
+					NdisMoveMemory(pFtInfoBuf->FtIeInfo.R1khId,
 								pFtCfg->FtR1khId, MAC_ADDR_LEN);
+				} else {
+					NdisMoveMemory(pFtInfoBuf->FtIeInfo.R1khId,
+						   pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.bssid, MAC_ADDR_LEN);
+				}
 #else
 				NdisMoveMemory(pFtInfoBuf->FtIeInfo.R1khId,
 						   pAd->ApCfg.MBSSID[pEntry->func_tb_idx].wdev.bssid, MAC_ADDR_LEN);
@@ -2537,8 +2559,26 @@ BOOLEAN FT_FillFtIeInfo(
 	/*subEidPtr = (PFT_OPTION_FIELD)(pFtIe->Option); */
 	ptr = pFtIe->Option;
 
-	while (RemainLen > 0) {
+	if (RemainLen <= sizeof(struct _FT_OPTION_FIELD)) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_DEBUG,
+			"Invalid option ie (RemainLen = %d), ignore\n", RemainLen);
+		return TRUE;
+	}
+
+	while (RemainLen >= 2) {
 		subEidPtr = (PFT_OPTION_FIELD)ptr;
+
+		if (!subEidPtr->Len) {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_INFO,
+				"Invalid format of IE len ! (ie len = 0)\n");
+			return FALSE;
+		}
+		/* avoid IE Len more than remainlen. */
+		if ((subEidPtr->Len + 2) > RemainLen) {
+			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_OCE, DBG_LVL_INFO,
+				"Malformity IE Len!\n");
+			return FALSE;
+		}
 
 		switch (subEidPtr->SubElementId) {
 		case FT_R0KH_ID:
@@ -2568,7 +2608,8 @@ BOOLEAN FT_FillFtIeInfo(
 			break;
 
 		case FT_GTK:
-			if (subEidPtr->Len > 0) {
+
+			if ((subEidPtr->Len > 0) && (subEidPtr->Len <= sizeof(pFtIeInfo->GtkSubIE))) {
 				pFtIeInfo->GtkLen = subEidPtr->Len;
 				NdisMoveMemory(pFtIeInfo->GtkSubIE, &subEidPtr->Oct[0], subEidPtr->Len);
 			}
@@ -2576,7 +2617,8 @@ BOOLEAN FT_FillFtIeInfo(
 			break;
 
 		case FT_IGTK_ID:
-			if (subEidPtr->Len > 0) {
+
+			if ((subEidPtr->Len > 0) && (subEidPtr->Len <= sizeof(pFtIeInfo->IGtkSubIE))) {
 				pFtIeInfo->IGtkLen = subEidPtr->Len;
 				NdisMoveMemory(pFtIeInfo->IGtkSubIE, &subEidPtr->Oct[0], subEidPtr->Len);
 			}
@@ -2584,7 +2626,8 @@ BOOLEAN FT_FillFtIeInfo(
 			break;
 
 		case FT_BIGTK_ID:
-			if (subEidPtr->Len > 0) {
+
+			if ((subEidPtr->Len > 0) && (subEidPtr->Len <= sizeof(pFtIeInfo->BIGtkSubIE))) {
 				pFtIeInfo->BIGtkLen = subEidPtr->Len;
 				NdisMoveMemory(pFtIeInfo->BIGtkSubIE, &subEidPtr->Oct[0], subEidPtr->Len);
 			}
@@ -2592,7 +2635,8 @@ BOOLEAN FT_FillFtIeInfo(
 			break;
 
 		case FT_OCI_ID:
-			if (subEidPtr->Len > 0) {
+
+			if ((subEidPtr->Len > 0) && (subEidPtr->Len <= MAX_OCI_LEN)) {
 				pFtIeInfo->OCILen = subEidPtr->Len;
 				NdisMoveMemory(pFtIeInfo->OCISubIE, &subEidPtr->Oct[0], subEidPtr->Len);
 			}
@@ -3246,6 +3290,7 @@ VOID	FT_CalculateMIC(
 	IN	UINT8		rsnxe_len,
 	OUT PUINT8		mic)
 {
+
 	UCHAR   *OutBuffer;
 	ULONG	FrameLen = 0;
 	ULONG	TmpLen = 0;
@@ -3254,7 +3299,12 @@ VOID	FT_CalculateMIC(
 	MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_INFO, "%s\n", __func__);
 	NdisZeroMemory(mic, mlen);
 	/* allocate memory for MIC calculation */
-	os_alloc_mem(NULL, (PUCHAR *)&OutBuffer, 512);
+	/*STA MAC + AP MAC + SEQ No + RSNE + MDI + FTIE + RIC + RSNXE*/
+	ULONG requiredSize = MAC_ADDR_LEN * 2 + 1 + (rsnie ? rsnie_len : 0) +
+						(mdie ? mdie_len : 0) + (ftie ? ftie_len : 0) +
+						(ric ? ric_len : 0) + (rsnxe ? rsnxe_len : 0);
+
+	os_alloc_mem(NULL, (PUCHAR *)&OutBuffer, requiredSize);
 
 	if (OutBuffer == NULL) {
 		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_FT, DBG_LVL_ERROR, "!!!FT_CalculateMIC: no memory!!!\n");
@@ -3314,6 +3364,7 @@ VOID	FT_CalculateMIC(
 	/* Calculate MIC */
 	AES_CMAC(OutBuffer, FrameLen, kck, LEN_PTK_KCK, mic, &mlen);
 	os_free_mem(OutBuffer);
+
 }
 
 #ifdef CONFIG_AP_SUPPORT

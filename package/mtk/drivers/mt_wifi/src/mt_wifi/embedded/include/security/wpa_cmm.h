@@ -23,7 +23,7 @@
 /* Retry counter limitation */
 #define PEER_MSG1_RETRY_LIMIT        2
 #define PEER_MSG3_RETRY_LIMIT        2
-#define GROUP_MSG1_RETRY_LIMIT    10
+#define GROUP_MSG1_RETRY_LIMIT    3
 
 #define EAPOL_MSG_INVALID      0
 #define EAPOL_PAIR_MSG_1        1
@@ -39,6 +39,10 @@
 #define EAPOL_START_DISABLE    0
 #define EAPOL_START_PSK           1
 #define EAPOL_START_1X             2
+#define EAPOL_START    3
+
+#define ASSOCIATE_RESP_INIT 0
+#define ASSOCIATE_RESP_TX_DONE 1
 
 /* ---EddySEC  End ---*/
 
@@ -67,7 +71,8 @@
 #define MT2_EAPOLASFAlert            4
 #define MT2_EAPOLRetry               5
 #define MT2_EAPOL2way                6
-#define MAX_WPA_MSG                  7
+#define MT2_EAPOLDeauth              7
+#define MAX_WPA_MSG                  8
 
 #define WPA_FUNC_SIZE                (MAX_WPA_PTK_STATE * MAX_WPA_MSG)
 

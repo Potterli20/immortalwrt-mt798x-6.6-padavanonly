@@ -290,6 +290,10 @@ extern UINT8 WPS_DH_P_VALUE[192];
 #define WSC_DEVICE_TYPE_SUB_CAT_GAM_PS          3
 #define WSC_DEVICE_TYPE_SUB_CAT_PHONE_WM        1
 
+
+#define WSC_TAG_LEN_SIZE 4
+#define WSC_OUI_LEN 4
+
 typedef	struct _WSC_TLV_0B {
 	/*USHORT	tag;*/
 	USHORT	len;

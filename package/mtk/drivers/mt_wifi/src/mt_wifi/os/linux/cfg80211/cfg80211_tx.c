@@ -196,7 +196,7 @@ VOID ProbeResponseHandler(
 		struct probe_req_report pProbeReqReportTemp;
 
 		memset(&pProbeReqReportTemp, 0, sizeof(struct probe_req_report));
-		pProbeReqReportTemp.band = (WMODE_CAP_2G(wdev->PhyMode) && wdev->channel <= 14) ? 0 : 1;
+		pProbeReqReportTemp.band = wlan_config_get_ch_band(wdev);
 		COPY_MAC_ADDR(pProbeReqReportTemp.sta_mac, ProbeReqParam->Addr2);
 		pProbeReqReportTemp.vendor_ie.element_id = ProbeReqParam->report_param.vendor_ie.element_id;
 		pProbeReqReportTemp.vendor_ie.len = ProbeReqParam->report_param.vendor_ie.len;
@@ -1057,7 +1057,7 @@ VOID CFG80211_AssocRespHandler(RTMP_ADAPTER *pAd, VOID *pData, ULONG Data)
 		StatusCode = mgmt->u.reassoc_resp.status_code;
 
 #ifdef WAPP_SUPPORT
-	if (StatusCode != MLME_SUCCESS)
+	if (StatusCode != MLME_SUCCESS && !pAd->CommonCfg.bWappSupportDisabled)
 		wapp_assoc_fail = MLME_UNABLE_HANDLE_STA;
 #endif /* WAPP_SUPPORT */
 
@@ -1939,7 +1939,8 @@ VOID CFG80211_AssocRespHandler(RTMP_ADAPTER *pAd, VOID *pData, ULONG Data)
 	map_a4_peer_enable(pAd, pEntry, TRUE);
 #endif /* CONFIG_MAP_SUPPORT */
 #ifdef WAPP_SUPPORT
-	wapp_send_cli_join_event(pAd, pEntry);
+	if (!pAd->CommonCfg.bWappSupportDisabled)
+		wapp_send_cli_join_event(pAd, pEntry);
 #endif
 	}
 #endif

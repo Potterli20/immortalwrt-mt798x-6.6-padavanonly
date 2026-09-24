@@ -866,6 +866,7 @@ VOID sta_sae_auth_rsp_action(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 	USHORT mlme_status;
 	UCHAR *pmk;
 	UCHAR sae_conn_type;
+	UCHAR Instance_created;
 	ASSERT(pStaCfg);
 	ASSERT(wdev);
 
@@ -883,7 +884,7 @@ VOID sta_sae_auth_rsp_action(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 						  &wdev->SecConfig.sae_pk,
 						  &wdev->SecConfig.sae_cap,
 						  &wdev->SecConfig.pwd_id_list_head,
-						  seq, status, &pmk, &sae_conn_type)) {
+						  seq, status, &pmk, &sae_conn_type, &Instance_created)) {
 		mlme_status = MLME_UNSPECIFY_FAIL;
 		auth_fsm_state_transition(wdev, AUTH_FSM_IDLE, __func__);
 		cntl_auth_assoc_conf(wdev, CNTL_MLME_AUTH_CONF, mlme_status);
@@ -915,7 +916,8 @@ VOID sta_sae_auth_rsp_action(RTMP_ADAPTER *pAd, MLME_QUEUE_ELEM *Elem)
 			if (pEntry) {
 				NdisMoveMemory(pEntry->SecConfig.PMK, pmk, LEN_PMK);
 #ifdef SUPP_SAE_SUPPORT
-				mtk_cfg80211_event_connect_params(pAd, pmk, LEN_PMK);
+				if (!pAd->CommonCfg.bSuppSAEDisabled)
+					mtk_cfg80211_event_connect_params(pAd, pmk, LEN_PMK);
 #endif
 				pEntry->SecConfig.sae_conn_type = sae_conn_type;
 				NdisCopyMemory(&pEntry->SecConfig.sae_cap, &wdev->SecConfig.sae_cap, sizeof(struct sae_capability));

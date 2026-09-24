@@ -311,8 +311,7 @@ static PUCHAR IPv6MacTableLookUp(
 	return pIPv6MacTable->hash[IPV6MAC_TB_HASH_INDEX_OF_BCAST]->macAddr;
 }
 
-
-static inline unsigned short int icmpv6_csum(
+unsigned short int icmpv6_csum(
 	RT_IPV6_ADDR *saddr,
 	RT_IPV6_ADDR *daddr,
 	USHORT		  len,
@@ -379,7 +378,12 @@ static PUCHAR MATProto_IPv6_Rx(
 	return pMacAddr;
 }
 
-static PNDIS_PACKET ICMPv6_Handle_Tx(
+
+#ifndef U16_MAX
+#define U16_MAX		((u16)~0U)
+#endif
+
+PNDIS_PACKET ICMPv6_Handle_Tx(
 	IN MAT_STRUCT		*pMatSrtuct,
 	IN PNDIS_PACKET		pSkb,
 	IN PUCHAR			pLayerHdr,
@@ -395,17 +399,35 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 	PNDIS_PACKET newSkb = NULL;
 	BOOLEAN needModify = FALSE;
 	PUCHAR pSrcMac;
+	INT32 pkt_len = (INT32)GET_OS_PKT_LEN(pSkb);
+	INT32 addr_offset;
+	UCHAR *pkt_addr = GET_OS_PKT_DATAPTR(pSkb);
+
 
 	pIPv6Hdr = (RT_IPV6_HDR *)pLayerHdr;
 	payloadLen = OS_NTOHS(pIPv6Hdr->payload_len);
-	if (payloadLen > (1500 - IPV6_HDR_LEN))
+
+	addr_offset = (pLayerHdr+offset+payloadLen) - pkt_addr;
+	if ((addr_offset > pkt_len)
+		|| (addr_offset <= 0)) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_MAT, DBG_LVL_DEBUG,
+			"Invalid packet1, drop\n");
 		return newSkb;
+	}
+
 	pICMPv6Hdr = (RT_ICMPV6_HDR *)(pLayerHdr + offset);
 	ICMPOffset = offset;
 	if (ICMPOffset > IPV6_HDR_LEN)
 		ICMPOffset = IPV6_HDR_LEN;
 	ICMPMsgLen = payloadLen + IPV6_HDR_LEN - ICMPOffset;
 	leftLen = ICMPMsgLen;
+
+	if (leftLen < 0 || leftLen >= U16_MAX) {
+		MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_MAT, DBG_LVL_ERROR,
+			"Invalid left len:%d\n", leftLen);
+		return newSkb;
+	}
+
 
 	switch (pICMPv6Hdr->type) {
 	case ICMPV6_MSG_TYPE_ROUTER_SOLICITATION:
@@ -414,7 +436,7 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 		/* for unspecified source address, it should not include the option about link-layer address. */
 		if (!(IS_UNSPECIFIED_IPV6_ADDR(pIPv6Hdr->srcAddr)) &&
 			(ICMPMsgLen > ROUTER_SOLICITATION_FIXED_LEN)) {
-			while (leftLen > sizeof(RT_ICMPV6_OPTION_HDR)) {
+			while (leftLen > (INT32)sizeof(RT_ICMPV6_OPTION_HDR)) {
 				pOptHdr = (RT_ICMPV6_OPTION_HDR *)(pLayerHdr + offset);
 
 				if (pOptHdr->len == 0)
@@ -440,7 +462,7 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 		/* for unspecified source address, it should not include the option about link-layer address. */
 		if (!(IS_UNSPECIFIED_IPV6_ADDR(pIPv6Hdr->srcAddr)) &&
 			(ICMPMsgLen > ROUTER_ADVERTISEMENT_FIXED_LEN)) {
-			while (leftLen > sizeof(RT_ICMPV6_OPTION_HDR)) {
+			while (leftLen > (INT32)sizeof(RT_ICMPV6_OPTION_HDR)) {
 				pOptHdr = (RT_ICMPV6_OPTION_HDR *)(pLayerHdr + offset);
 
 				if (pOptHdr->len == 0)
@@ -466,7 +488,7 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 		/* for unspecified source address, it should not include the option about link-layer address. */
 		if (!(IS_UNSPECIFIED_IPV6_ADDR(pIPv6Hdr->srcAddr)) &&
 			(ICMPMsgLen > NEIGHBOR_SOLICITATION_FIXED_LEN)) {
-			while (leftLen > sizeof(RT_ICMPV6_OPTION_HDR)) {
+			while (leftLen > (INT32)sizeof(RT_ICMPV6_OPTION_HDR)) {
 				pOptHdr = (RT_ICMPV6_OPTION_HDR *)(pLayerHdr + offset);
 
 				if (pOptHdr->len == 0)
@@ -492,7 +514,7 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 		/* for unspecified source address, it should not include the option about link-layer address. */
 		if (!(IS_UNSPECIFIED_IPV6_ADDR(pIPv6Hdr->srcAddr)) &&
 			(ICMPMsgLen > NEIGHBOR_ADVERTISEMENT_FIXED_LEN)) {
-			while (leftLen > sizeof(RT_ICMPV6_OPTION_HDR)) {
+			while (leftLen > (INT32)sizeof(RT_ICMPV6_OPTION_HDR)) {
 				pOptHdr = (RT_ICMPV6_OPTION_HDR *)(pLayerHdr + offset);
 
 				if (pOptHdr->len == 0)
@@ -518,7 +540,7 @@ static PNDIS_PACKET ICMPv6_Handle_Tx(
 		/* for unspecified source address, it should not include the options about link-layer address. */
 		if (!(IS_UNSPECIFIED_IPV6_ADDR(pIPv6Hdr->srcAddr))  &&
 			(ICMPMsgLen > REDIRECT_FIXED_LEN)) {
-			while (leftLen > sizeof(RT_ICMPV6_OPTION_HDR)) {
+			while (leftLen > (INT32)sizeof(RT_ICMPV6_OPTION_HDR)) {
 				pOptHdr = (RT_ICMPV6_OPTION_HDR *)(pLayerHdr + offset);
 
 				if (pOptHdr->len == 0)
@@ -583,6 +605,9 @@ static PUCHAR MATProto_IPv6_Tx(
 	HEADER_802_3 *pEthHdr;
 	RT_IPV6_HDR *pIPv6Hdr;
 	PNDIS_PACKET newSkb = NULL;
+	UCHAR *pkt_addr = GET_OS_PKT_DATAPTR(pSkb);
+	UINT32 pkt_len = GET_OS_PKT_LEN(pSkb);
+	INT32 addr_offset;
 
 	pIPv6Hdr = (RT_IPV6_HDR *)pLayerHdr;
 	pEthHdr = (HEADER_802_3 *)(GET_OS_PKT_DATAPTR(pSkb));
@@ -596,6 +621,10 @@ static PUCHAR MATProto_IPv6_Tx(
 	/* We need to traverse the whole IPv6 Header and extend headers to check about the ICMPv6 pacekt. */
 	nextProtocol = pIPv6Hdr->nextHdr;
 	offset = IPV6_HDR_LEN;
+	addr_offset = (pLayerHdr+offset) - pkt_addr;
+	if ((addr_offset >= pkt_len)
+		|| (addr_offset <= 0))
+		return NULL;
 
 	/*MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_MAT, DBG_LVL_DEBUG, "NextProtocol=0x%x! payloadLen=%d! offset=%d!\n", nextProtocol, payloadLen, offset); */
 	while (nextProtocol != IPV6_NEXT_HEADER_ICMPV6 &&
@@ -606,6 +635,12 @@ static PUCHAR MATProto_IPv6_Tx(
 			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_MAT, DBG_LVL_INFO, "IPv6ExtHdrHandle failed!\n");
 			break;
 		}
+
+		addr_offset = (pLayerHdr+offset) - pkt_addr;
+		if ((addr_offset >= pkt_len)
+			|| (addr_offset <= 0))
+			return NULL;
+
 	}
 
 	switch (nextProtocol) {

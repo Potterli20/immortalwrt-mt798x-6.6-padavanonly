@@ -119,7 +119,7 @@ wifi_rx_tuple_add(struct wifi_entry *wifi, u8 idx, unsigned char *rx_info)
 /*
 *
 */
-int
+void
 wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info, u32 wdma_rx_port)
 {
 	struct wlan_tx_info t, *info =  &t;
@@ -129,14 +129,7 @@ wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info, u32 wdma_rx_port
 
 	if (ra_sw_nat_hook_tx) {
 		struct sk_buff *skb = (struct sk_buff *)info->pkt;
-		if (!info->pkt) {
-			warp_dbg(WARP_DBG_ERR, "%s():info->pkt is NULL!!!!\n", __func__);
-			return -EFAULT;
-		}
-		if (!skb->head) {
-			warp_dbg(WARP_DBG_ERR, "%s():skb->head is NULL!!!!\n", __func__);
-			return -EFAULT;
-		}
+
 		if ((FOE_AI(skb) == HIT_UNBIND_RATE_REACH) ||
 		    (FOE_AI_TAIL(skb) == HIT_UNBIND_RATE_REACH)) {
 			if (IS_SPACE_AVAILABLE_HEAD(skb)) {
@@ -176,7 +169,6 @@ wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info, u32 wdma_rx_port
 		wifi_dump_skb(idx, info, skb);
 #endif /*CONFIG_WARP_DBG_SUPPORT*/
 	}
-	return 0;
 }
 #endif	/* CONFIG_HW_NAT || CONFIG_RA_NAT_HW || CONFIG_NET_MEDIATEK_HNAT || CONFIG_NET_MEDIATEK_HNAT_MODULE */
 /*

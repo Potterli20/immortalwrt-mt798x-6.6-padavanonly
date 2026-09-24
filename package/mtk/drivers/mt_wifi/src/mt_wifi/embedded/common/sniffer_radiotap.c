@@ -1175,6 +1175,7 @@ VOID Monitor_Init(RTMP_ADAPTER *pAd, RTMP_OS_NETDEV_OP_HOOK *pNetDevOps)
 	COPY_MAC_ADDR(wdev->if_addr, pAd->CurrentAddress);
 	pNetDevOps->priv_flags = INT_MONITOR; /* we are virtual interface */
 	pNetDevOps->needProtcted = TRUE;
+
 	pNetDevOps->wdev = wdev;
 	NdisMoveMemory(pNetDevOps->devAddr, &wdev->if_addr[0], MAC_ADDR_LEN);
 	/* register this device to OS */

@@ -577,8 +577,8 @@ const struct iw_handler_def rt28xx_ap_iw_handler_def = {
 INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for ap/sta */
 {
 	struct net_device *net_dev;
-	struct iwreq	*wrqin = (struct iwreq *) data_obj;
 	VOID			*pAd = NULL;
+    struct iwreq	*wrqin = (struct iwreq *) data_obj;
 	RTMP_IOCTL_INPUT_STRUCT rt_wrq, *wrq = &rt_wrq;
 	INT				Status = NDIS_STATUS_SUCCESS;
 	USHORT			subcmd;
@@ -1010,5 +1010,6 @@ LabelExit:
 		if (wrq->u.data.length != org_len)
 			wrqin->u.data.length = wrq->u.data.length;
 	}
+
 	return Status;
 }

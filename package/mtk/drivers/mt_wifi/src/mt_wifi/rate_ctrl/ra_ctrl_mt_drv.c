@@ -508,8 +508,11 @@ StaRecAutoRateUpdate(
 #endif /* DOT11_N_SUPPORT */
 		if (pRaParam->u4Field == RA_PARAM_HT_2040_COEX)
 			pCmdStaRecAutoRateUpdate->u4Field = RA_PARAM_HT_2040_COEX;
-		else if (pRaParam->u4Field == RA_PARAM_HT_2040_BACK)
+		else if (pRaParam->u4Field == RA_PARAM_HT_2040_BACK) {
 			pCmdStaRecAutoRateUpdate->u4Field = RA_PARAM_HT_2040_BACK;
+			pCmdStaRecAutoRateUpdate->u1Bw40StaCnt = pRaParam->u1Bw40StaCnt;
+			NdisMoveMemory(pCmdStaRecAutoRateUpdate->u2Bw40StaWlanIdx, pRaParam->u2Bw40StaWlanIdx, MAX_BW40_CNT);
+		}
 		else if (pRaParam->u4Field == RA_PARAM_MMPS_UPDATE) {
 			pCmdStaRecAutoRateUpdate->ucMmpsMode = pRaEntry->ucMmpsMode;
 			pCmdStaRecAutoRateUpdate->u4Field = RA_PARAM_MMPS_UPDATE;

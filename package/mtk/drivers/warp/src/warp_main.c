@@ -35,6 +35,7 @@
 
 #define WED0_DEV_NODE "mediatek,wed"
 #define WED1_DEV_NODE "mediatek,wed2"
+
 /*
 * extern functions from other files
 */
@@ -79,7 +80,6 @@ static const struct of_device_id warp_of_ids[] = {
 
 /*warp support list write here*/
 static const u32 warp_support_list[] = {
-	0x6639,
 	0x7615,
 	0x7915,
 	0x7986,
@@ -339,7 +339,6 @@ warp_set_rrocfg(struct wed_entry *wed, u8 wed_idx, struct wifi_hw *hw)
 static int
 warp_probe(struct platform_device *pdev)
 {
-	int32_t ret = -1;
 	int i = 0;
 	u32 heart_beat = 0;
 	struct warp_entry *warp;
@@ -434,10 +433,7 @@ warp_probe(struct platform_device *pdev)
 #endif
 	/*wo interface initial*/
 #ifdef WED_RX_D_SUPPORT
-	ret = woif_init(warp, bus);
-#endif
-
-	if (ret < 0) {
+	if (woif_init(warp, bus) < 0) {
 		warp_dbg(WARP_DBG_INF, "%s(): WO FM DL failed!\n", __func__);
 		warp_fwdl_get_wo_heartbeat(&warp->woif.fwdl_ctrl, &heart_beat, warp->idx);
 		warp_dbg(WARP_DBG_ERR, "%s()wo heartbeat: 0x%x!\n", __func__, heart_beat);
@@ -448,6 +444,7 @@ warp_probe(struct platform_device *pdev)
 		}
 		warp_dbg(WARP_DBG_ERR, "%s()======WO PC LR dump======\n", __func__, heart_beat);
 	}
+#endif
 	warp_dbg(WARP_DBG_INF, "%s(): platform device probe is done\n", __func__);
 	return 0;
 }
@@ -463,7 +460,7 @@ warp_remove(struct platform_device *pdev)
 	struct wed_entry *wed;
 	struct wdma_entry *wdma;
 	struct wifi_entry *wifi;
-	struct warp_bus *bus = warp_bus_get();
+
 	warp = warp_entry_get_for_pdev(pdev);
 
 	if (warp == NULL) {
@@ -475,9 +472,6 @@ warp_remove(struct platform_device *pdev)
 	wed = &warp->wed;
 	wdma = &warp->wdma;
 	wifi = &warp->wifi;
-
-	/*reset bus reg*/
-	warp_bus_reset_hw(wed, bus, warp->idx);
 	/*remove wifi related setting*/
 	wifi_chip_remove(wifi);
 	/*remove wdma related setting*/
@@ -557,7 +551,7 @@ warp_get_swconf_from_dts(struct sw_conf_t *sw_conf, u8 wed_idx)
 
 	if (of_property_read_string(node, "dy_txbm_enable", &enable)) {
 		warp_dbg(WARP_DBG_INF, "%s(): get dy_txbm_enable from DTS fail! remain:%s\n",
-				 __func__, (sw_conf->txbm.enable == true) ? "true" : "false");
+				 __func__, (sw_conf->txbm.enable) ? "true" : "false");
 	} else {
 		warp_dbg(WARP_DBG_INF, "%s(): get dy_txbm_enable = %s!!\n", __func__, enable);
 
@@ -638,7 +632,7 @@ warp_get_swconf_from_dts(struct sw_conf_t *sw_conf, u8 wed_idx)
 
 	if (of_property_read_string(node, "dy_rxbm_enable", &enable)) {
 		warp_dbg(WARP_DBG_INF, "%s(): get dy_rxbm_enable from DTS fail! remain:%s\n",
-				 __func__, (sw_conf->rxbm.enable == true) ? "true" : "false");
+				 __func__, (sw_conf->rxbm.enable) ? "true" : "false");
 	} else {
 		warp_dbg(WARP_DBG_INF, "%s(): get dy_rxbm_enable = %s!!\n", __func__, enable);
 
@@ -758,7 +752,7 @@ warp_ctrl_init(struct warp_ctrl *warp_ctrl)
 	for (i = 0; i < warp_ctrl->warp_num; i++) {
 		warp_entry_init(&warp_ctrl->entry[i], i);
 
-		warp_ctrl->sw_conf[i].txbm.enable = false;
+		//warp_ctrl->sw_conf[i].txbm.enable = true;
 		warp_ctrl->sw_conf[i].rx_wdma_ring_depth = WDMA_RX_BM_RING_SIZE;//WDMA_TX_BM_RING_SIZE;
 		warp_ctrl->sw_conf[i].txbm.alt_quota = WED_DYNBM_LOW_GRP;
 		warp_ctrl->sw_conf[i].txbm.buf_low = WED_DYNBM_LOW_GRP;
@@ -766,7 +760,7 @@ warp_ctrl_init(struct warp_ctrl *warp_ctrl)
 		warp_ctrl->sw_conf[i].txbm.budget_limit = WED_DYNBM_LOW_GRP*4;
 		warp_ctrl->sw_conf[i].txbm.budget_refill_watermark = WED_DYNBM_LOW_GRP*2;
 
-		warp_ctrl->sw_conf[i].rxbm.enable = false;
+		//warp_ctrl->sw_conf[i].rxbm.enable = true;
 		warp_ctrl->sw_conf[i].rxbm.vld_group = 26;	/* 256MB solution, WFDMA ring as 1536 entry */
 		warp_ctrl->sw_conf[i].tx_wdma_ring_depth = WDMA_RX_BM_RING_SIZE;//WDMA_TX_BM_RING_SIZE;
 		warp_ctrl->sw_conf[i].rxbm.alt_quota = WED_DYNBM_LOW_GRP;//WDMA_RX_BM_RING_SIZE/128;	//512/128 = 4
@@ -1169,30 +1163,27 @@ EXPORT_SYMBOL(warp_ring_exit);
 /*
 *
 */
-int
+void
 warp_wlan_tx(void *priv_data, unsigned char *tx_info)
 {
 	struct warp_entry *warp;
-	int ret = 0;
 
 	warp = warp_entry_get_by_privdata(priv_data);
 
 	if (!warp)
-		return 0;
+		return;
 
 	if (wifi_hw_tx_allow(&warp->wifi, tx_info) == false)
-		return 0;
+		return;
 
 #ifdef WED_HW_TX_SUPPORT
 	{
 		u32 wdma_rx_port = warp->wdma.wdma_rx_port;
 
 		if (warp->cfg.hw_tx_en)
-			ret = wifi_tx_tuple_add(&warp->wifi, warp->idx, tx_info, wdma_rx_port);
+			wifi_tx_tuple_add(&warp->wifi, warp->idx, tx_info, wdma_rx_port);
 	}
 #endif /*WED_HW_TX_SUPPORT*/
-
-	return ret;
 }
 EXPORT_SYMBOL(warp_wlan_tx);
 
@@ -1348,238 +1339,6 @@ end:
 }
 EXPORT_SYMBOL(warp_ser_handler);
 
-#ifdef WARP_SUSPEND_RESUME
-/*
-* Warp suspend handler for Falcon, it's like warp_remove(), but not release pdev and pdriver.
-*/
-void
-warp_gen4m_suspend_handler(void *priv_data)
-{
-	struct warp_entry *warp;
-	struct warp_ctrl *warp_ctrl = warp_ctrl_get();
-	struct wifi_entry *wifi;
-	struct wed_entry *wed;
-	struct wdma_entry *wdma;
-	struct platform_device *pdev;
-	u8 enable;
-
-	warp = warp_entry_get_by_privdata(priv_data);
-
-	if (!warp) {
-		warp_dbg(WARP_DBG_ERR, "%s(), no warp entry\n", __func__);
-		goto err;
-	}
-
-	wifi = &warp->wifi;
-	wed = &warp->wed;
-	wdma = &warp->wdma;
-	pdev = warp->pdev;
-
-        /*** do warp_remove()'s concept, start ***/
-
-	/*remove wifi related setting*/
-	wifi_chip_remove(wifi);
-	/*remove wdma related setting*/
-	wdma_entry_proc_exit(warp, wdma);
-	wdma_exit(pdev, wdma);
-        /*remove wed related setting*/
-#ifdef WED_RX_D_SUPPORT
-        rxbm_proc_exit(warp, wed);
-#endif
-#ifdef CONFIG_WED_HW_RRO_SUPPORT
-        wo_proc_exit(warp);
-        wo_exep_proc_exit(warp);
-#endif
-        wed_entry_proc_exit(warp, wed);
-        wed_exit(pdev, wed);
-#ifdef WED_RX_D_SUPPORT
-        woif_exit(&warp->woif);
-#endif
-
-	/*reomve warp entry from warp_ctrl*/
-//	warp_entry_release_pdev(warp);
-	/* unregister warp msg */
-	warp_msg_deinit(warp->idx);
-
-        /*** do warp_remove()'s concept, end ***/
-
-	/*** do warp_entry_release()'s concept, start ***/
-        enable = 0;
-        /* wbsys irq return*/
-        wifi->ops->swap_irq(wifi->hw.priv, warp->wifi.hw.irq);
-        warp_bus_msi_set(warp->idx, &enable);
-
-        warp->wifi.hw.priv = NULL;
-//      memset(&warp->pdriver, 0, sizeof(warp->pdriver));
-
-	/*** do warp_entrl_release()'s concept, end ***/
-	warp_entry_proc_exit(warp_ctrl, warp);
-
-	warp_dbg(WARP_DBG_ERR, "%s(), end\n", __func__);
-	return;
-
-err:
-        warp_dbg(WARP_DBG_ERR, "%s(): error happens.\n",__func__);
-        return;
-
-}
-EXPORT_SYMBOL(warp_gen4m_suspend_handler);
-
-/*
-* warp_resume_sub(): sub API for Warp resume handler, like warp_probe(), but warp_entry are got
-* by wifi's privdata.
-*/
-static int
-warp_gen4m_resume_sub(struct warp_entry *warp)
-{
-	int32_t ret = -1;
-	int i = 0;
-	u32 heart_beat = 0;
-	struct wed_entry *wed;
-	struct wdma_entry *wdma;
-	struct wifi_entry *wifi;
-	struct wifi_hw *hw;
-	struct warp_bus *bus = warp_bus_get();
-	struct warp_ctrl *warp_ctrl = warp_ctrl_get();
-	struct platform_device *pdev = warp->pdev;
-
-	memset(&warp->wdma.res_ctrl, 0, sizeof(warp->wdma.res_ctrl));
-	/* register warp msg */
-	warp_msg_init(warp->idx);
-
-	/*pre-allocate wifi information*/
-	wifi = &warp->wifi;
-	hw = &wifi->hw;
-
-	if (hw->non_coherent_dma_addr_size > 32) {
-		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(hw->non_coherent_dma_addr_size))) {
-			dev_info(&pdev->dev, "Using %dbit DMA for streaming map\n",
-				hw->non_coherent_dma_addr_size);
-		} else if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-			dev_info(&pdev->dev, "Using 32bit DMA for streaming map\n");
-		} else {
-			dev_err(&pdev->dev, "No usable streaming DMA configuration, aborting\n");
-			return -1;
-		}
-	} else {
-		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-			dev_info(&pdev->dev, "Using 32bit DMA for streaming map\n");
-		} else {
-			dev_err(&pdev->dev, "No usable streaming DMA configuration, aborting\n");
-			return -1;
-		}
-	}
-	if (hw->coherent_dma_addr_size > 32) {
-		if (!dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(hw->coherent_dma_addr_size))) {
-			dev_info(&pdev->dev, "Using %dbit DMA for coherent map\n",
-				hw->coherent_dma_addr_size);
-		} else if (!dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-			dev_info(&pdev->dev, "Using 32bit DMA for coherent map\n");
-		} else {
-			dev_err(&pdev->dev, "No usable coherent DMA configuration, aborting\n");
-			return -1;
-		}
-	} else {
-		if (!dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-			dev_info(&pdev->dev, "Using 32bit DMA for coherent map\n");
-		} else {
-			dev_err(&pdev->dev, "No usable coherent DMA configuration, aborting\n");
-			return -1;
-		}
-	}
-
-	/*build sw base cr mirror mapping */
-	warp_mtable_build_hw(warp);
-	/*initial wed entry */
-	wed = &warp->wed;
-	wed->warp = warp;
-	wed->sw_conf = &warp_ctrl->sw_conf[warp->idx];
-	wed_init(pdev, warp->idx, wed);
-	wed_entry_proc_init(warp, wed);
-#ifdef WED_RX_D_SUPPORT
-	rxbm_proc_init(warp, wed);
-#endif
-	/*initial wdma entry*/
-	wdma = &warp->wdma;
-	wdma->warp = warp;
-	wdma->sw_conf = &warp_ctrl->sw_conf[warp->idx];
-	wdma_init(pdev, warp->idx, wdma, wed->ver);
-	wdma_entry_proc_init(warp, wdma);
-#ifdef WED_INTER_AGENT_SUPPORT
-	/*wifi chip related setting*/
-	wifi_chip_probe(wifi, wed->irq, wed->ver, wed->sub_ver,
-		wed->branch, wed->hw_cap);
-	/*after wifi probe should write wpdma mask to wed*/
-	warp_pdma_mask_set_hw(wed, *wifi->hw.p_int_mask);
-	/*bus hw configuration*/
-	warp_bus_set_hw(wed, bus, warp->idx, wifi->hw.msi_enable, wifi->hw.hif_type);
-	/*wifi hw configuration*/
-	warp_wifi_set_hw(wed, wifi);
-#endif
-	/*wo interface initial*/
-#ifdef WED_RX_D_SUPPORT
-	ret = woif_init(warp, bus);
-#endif
-
-	if (ret < 0) {
-		warp_dbg(WARP_DBG_INF, "%s(): WO FM DL failed!\n", __func__);
-		warp_fwdl_get_wo_heartbeat(&warp->woif.fwdl_ctrl, &heart_beat, warp->idx);
-		warp_dbg(WARP_DBG_ERR, "%s()wo heartbeat: 0x%x!\n", __func__, heart_beat);
-		/* dump WO PC LR log for 2 times*/
-		warp_dbg(WARP_DBG_ERR, "%s()======WO PC LR dump======\n", __func__, heart_beat);
-		for (i = 0; i < 2; i++) {
-			warp_wo_pc_lr_cr_dump(warp->idx);
-		}
-		warp_dbg(WARP_DBG_ERR, "%s()======WO PC LR dump======\n", __func__, heart_beat);
-	}
-
-	return 0;
-}
-
-
-/*
-* Warp resume handler for Falcon, only supports one WiFi card now.
-*/
-int
-warp_gen4m_resume_handler(struct wifi_hw *hw, struct wifi_ops *ops)
-{
-	struct wifi_entry *wifi = to_wifi_entry(hw);
-	struct warp_entry *warp;
-	struct warp_ctrl *warp_ctrl = warp_ctrl_get();
-        int ret = 0;
-
-	warp = warp_entry_get_by_privdata(wifi->hw.priv);
-	if (!warp) {
-		warp_dbg(WARP_DBG_ERR,
-			"%s(): can't acquire a new warp entry since full! priv_data: %p\n", __func__,
-				wifi->hw.priv);
-		goto err;
-	}
-	/*assign wifi ops*/
-	wifi->ops = ops;
-	warp->wifi = *wifi;
-
-	warp_entry_proc_init(warp_ctrl, warp);
-	warp_increase_ref();
-
-	if (!warp->pdriver.driver.name) {
-		warp_dbg(WARP_DBG_ERR, "%s(), no warp in pdriver\n", __func__);
-		goto err;
-	}
-
-	ret = warp_gen4m_resume_sub(warp);
-	if (ret < 0)
-		goto err;
-
-	return 0;
-err:
-	warp_dbg(WARP_DBG_ERR, "%s(): error happens.\n",__func__);
-        return -1;
-
-}
-EXPORT_SYMBOL(warp_gen4m_resume_handler);
-#endif /*WARP_SUSPEND_RESUME*/
-
 /*
 *
 */
@@ -1681,20 +1440,6 @@ warp_hb_chk_handler(void *priv_data, u8 *stop)
 }
 EXPORT_SYMBOL(warp_hb_chk_handler);
 
-/*
-*
-*/
-void *
-warp_page_hash_get(void *priv_data, dma_addr_t pa)
-{
-	return 0;
-}
-EXPORT_SYMBOL(warp_page_hash_get);
-
-
-/*
- *
- */
 int
 warp_rro_write_dma_idx(void *priv_data, u32 val)
 {
@@ -1763,4 +1508,5 @@ module_exit(warp_module_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION(DRIVER_DESC);
+MODULE_SUPPORTED_DEVICE("mt7615 within mt7622");
 

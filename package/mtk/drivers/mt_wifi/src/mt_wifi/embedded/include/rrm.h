@@ -452,11 +452,9 @@ VOID RRM_EnqueueNeighborRep(
  */
 VOID RRM_EnqueuePeerBeaconRep(
 		IN RTMP_ADAPTER *pAd,
+		IN PBCN_REQ_DATA BcnReqData,
 		IN PUCHAR pDA,
 		IN PUCHAR pSA,
-		IN UINT8 DialogToken,
-		MEASURE_REQ_INFO MeasureReqInfo,
-		IN RRM_BEACON_REQ_INFO BeaconReq,
 		BSS_ENTRY *pBssEntry);
 
 VOID RRM_EnqueueLinkMeasureReq(
@@ -542,6 +540,12 @@ BOOLEAN RRM_PeerMeasureRepAction(
 VOID RRM_PeerMeasureReqAction(
 		IN PRTMP_ADAPTER pAd,
 		IN MLME_QUEUE_ELEM *Elem);
+
+VOID RRM_SendBeaconRep(
+	struct wifi_dev *wdev,
+	PRTMP_ADAPTER pAd);
+
+int GetBandByOPClass(INT OPClass);
 
 
 int set_rrm_capabilities(RTMP_ADAPTER *pAd, UINT8 *rrm_capabilities);

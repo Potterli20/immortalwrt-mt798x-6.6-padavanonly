@@ -1201,6 +1201,7 @@ void vow_variable_reset(PRTMP_ADAPTER pAd)
 
 VOID vow_init(PRTMP_ADAPTER pad)
 {
+
 	BOOLEAN ret;
 #ifdef WIFI_UNIFIED_COMMAND
 	RTMP_CHIP_CAP *pChipCap = hc_get_chip_cap(pad->hdev_ctrl);
@@ -1245,6 +1246,7 @@ VOID vow_init(PRTMP_ADAPTER pad)
 	/* configure badnode detector */
 	MTWF_DBG(pad, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 			 "\x1b[31m: end ...\x1b[m\n");
+
 }
 
 VOID vow_init_CR_offset(PRTMP_ADAPTER pad)
@@ -2542,10 +2544,11 @@ INT set_vow_mcli_schedule_en(
 
 		if ((rv > 0)) {
 			pad->vow_cfg.mcli_schedule_en = val;
-			if (pad->vow_cfg.mcli_schedule_en)
-				MTWF_PRINT("%s: mcli schedule code enable.\n", __func__);
-			else
-				MTWF_PRINT("%s: mcli schedule code disable.\n", __func__);
+#ifdef RED_SUPPORT
+			vow_mcli_schedule_enable(pad, pad->vow_cfg.mcli_schedule_en);
+#endif
+			MTWF_PRINT("%s: mcli_schedule_en=%d.\n", __func__, pad->vow_cfg.mcli_schedule_en);
+
 		} else
 			return FALSE;
 	} else
@@ -5165,9 +5168,38 @@ INT set_vow_watf_add_entry(
 			}
 
 			if (!isDuplicate) {
+				MAC_TABLE_ENTRY *pEntry = NULL;
+				INT ret;
 				NdisMoveMemory(pwatf->Entry[pwatf->Num++].Addr, &macAddr, MAC_ADDR_LEN);
 				MTWF_PRINT("The entry Level %d - "MACSTR" is set complete!\n",
 						  level, MAC2STR(macAddr));
+
+				pEntry = MacTableLookup(pAd, macAddr);
+				if (!pEntry) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "the mac address not assoc yet!\n");
+					return FALSE;
+				}
+
+
+				/* VOW is disabled, skip all setting */
+				if (vow_is_enabled(pAd) == FALSE)
+					return FALSE;
+				if (vow_watf_is_enabled(pAd) == FALSE)
+					return FALSE;
+
+				MTWF_PRINT("Add WATF entry " MACSTR "\n", MAC2STR(macAddr));
+				set_vow_watf_sta_dwrr(pAd, &pEntry->Addr[0], pEntry->wcid);
+
+				ret = vow_set_sta(
+							pAd,
+							pEntry->wcid,
+							ENUM_VOW_DRR_CTRL_FIELD_STA_EXCLUDE_GROUP);
+				if (ret) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "set command failed.\n");
+					return FALSE;
+				}
 			}
 		} else {
 			MTWF_PRINT("Wrong format, vow_watf_add_entry=[Level]-[Addr]:[Addr]:[Addr]:[Addr]:[Addr]:[Addr]\n"
@@ -5216,6 +5248,9 @@ INT set_vow_watf_del_entry(
 			if (!isFound) {
 				MTWF_PRINT("The entry "MACSTR" is not in the list!\n", MAC2STR(macAddr));
 			} else {
+				MAC_TABLE_ENTRY *pEntry = NULL;
+				INT ret;
+
 				for (i = 0; i < pwatf->Num; i++) {
 					if (memcmp(pwatf->Entry[i].Addr, &nullAddr, MAC_ADDR_LEN) == 0)
 						continue;
@@ -5224,6 +5259,32 @@ INT set_vow_watf_del_entry(
 				}
 
 				pwatf->Num--;
+
+				pEntry = MacTableLookup(pAd, macAddr);
+				if (!pEntry) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "the mac address not assoc yet!\n");
+					return FALSE;
+				}
+
+				/* VOW is disabled, skip all setting */
+				if (vow_is_enabled(pAd) == FALSE)
+					return FALSE;
+				if (vow_watf_is_enabled(pAd) == FALSE)
+					return FALSE;
+
+				MTWF_PRINT("delete WATF entry " MACSTR "\n", MAC2STR(macAddr));
+				set_vow_watf_sta_dwrr(pAd, &pEntry->Addr[0], pEntry->wcid);
+
+				ret = vow_set_sta(
+						pAd,
+						pEntry->wcid,
+						ENUM_VOW_DRR_CTRL_FIELD_STA_EXCLUDE_GROUP);
+				if (ret) {
+					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+							 "set command failed.\n");
+					return FALSE;
+				}
 			}
 		} else {
 			MTWF_PRINT("Wrong format, vow_watf_add_entry=[Level]-[Addr]:[Addr]:[Addr]:[Addr]:[Addr]:[Addr]\n"
@@ -5271,8 +5332,10 @@ VOID set_vow_watf_sta_dwrr(
 			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					 "Update STA %d's DWRR quantum with LV%d\n", Wcid, level);
 		} else {
-			for (i = 0; i < 4; i++)
-				pAd->vow_sta_cfg[Wcid].dwrr_quantum[i] = level;
+			pAd->vow_sta_cfg[Wcid].dwrr_quantum[WMM_AC_BK] = VOW_STA_DWRR_IDX2;
+			pAd->vow_sta_cfg[Wcid].dwrr_quantum[WMM_AC_BE] = VOW_STA_DWRR_IDX2;
+			pAd->vow_sta_cfg[Wcid].dwrr_quantum[WMM_AC_VI] = VOW_STA_DWRR_IDX1;
+			pAd->vow_sta_cfg[Wcid].dwrr_quantum[WMM_AC_VO] = VOW_STA_DWRR_IDX0;
 
 			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 					 "Update STA %d's DWRR quantum with default LV%d\n", Wcid, level);

@@ -261,7 +261,7 @@ INT32  RtPrivIoctlSetVal(VOID)
 UINT32 MtRandom32(VOID)
 {
 #if (LINUX_VERSION_CODE  >= KERNEL_VERSION(3, 8, 0))
-	return get_random_u32();
+	return prandom_u32();
 #else /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0) */
 	return random32();
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0) */

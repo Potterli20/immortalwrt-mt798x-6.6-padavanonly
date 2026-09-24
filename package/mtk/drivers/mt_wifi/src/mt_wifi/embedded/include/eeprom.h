@@ -2556,5 +2556,18 @@ NDIS_STATUS rtmp_eeprom_DelayComp_update(
 
 INT32 show_UpdateEfuse_Example(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
 #endif /*#ifdef	CONNAC_EFUSE_FORMAT_SUPPORT*/
+#ifdef CONFIG_MT7916_5G_6G_GROUP_PREK_CACHE_SUPPORT
+NDIS_STATUS l1get_GroupPrek6G_bin(struct _RTMP_ADAPTER *pAd, RTMP_STRING *src);
+NDIS_STATUS l1get_GroupPrek5G_bin(struct _RTMP_ADAPTER *pAd, RTMP_STRING *src);
+INT rtmp_group_prek_write_to_bin(struct _RTMP_ADAPTER *pAd);
+INT rtmp_group_prek_write_to_buffer(struct _RTMP_ADAPTER *pAd, RTMP_STRING *src);
+#endif
 
+#ifdef CONFIG_MT7916_DPD_RE_CAL_SUPPORT
+INT Set_DPDBinWriteBack_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT Set_DPDCalStatus_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+INT Show_DPDCalStatusDump_Proc(struct _RTMP_ADAPTER *pAd, RTMP_STRING *arg);
+NDIS_STATUS l1get_dpd_bin_file(struct _RTMP_ADAPTER *pAd, RTMP_STRING *src);
+INT rtmp_cal_write_to_buffer(struct _RTMP_ADAPTER *pAd);
+#endif
 #endif /* __EEPROM_H__ */

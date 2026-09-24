@@ -62,6 +62,7 @@
 //                     MCU_SYSRAM SW CR Definitions
 //
 //****************************************************************************
+#define WF_MCU_WA_SW_DEF_CR_BASE         0x00401980
 #define WF_SW_DEF_CR_BASE                0x00411400
 
 #define WF_SW_DEF_CR_WACPU_STAT_ADDR            (WF_SW_DEF_CR_BASE + 0x000) // 1400
@@ -70,6 +71,7 @@
 #define WF_SW_DEF_CR_WA2WM_ACTION_ADDR          (WF_SW_DEF_CR_BASE + 0x00C) // 140C
 #define WF_SW_DEF_CR_LP_DBG0_ADDR               (WF_SW_DEF_CR_BASE + 0x010) // 1410
 #define WF_SW_DEF_CR_LP_DBG1_ADDR               (WF_SW_DEF_CR_BASE + 0x014) // 1414
+#define WF_SW_DEF_CR_SER_STEPS_ADDR             (WF_SW_DEF_CR_BASE + 0x038) // 1438
 #define WF_SW_DEF_CR_ICAP_SPECTRUM_MODE_ADDR    (WF_SW_DEF_CR_BASE + 0x03C) // 143C
 #define WF_SW_DEF_CR_SER_STATUS_ADDR            (WF_SW_DEF_CR_BASE + 0x040) // 1440
 #define WF_SW_DEF_CR_PLE_STATUS_ADDR            (WF_SW_DEF_CR_BASE + 0x044) // 1444
@@ -84,6 +86,9 @@
 #define WF_SW_DEF_CR_USB_MCU_EVENT_ADD          (WF_SW_DEF_CR_BASE + 0x070) // 1470
 #define WF_SW_DEF_CR_USB_HOST_ACK_ADDR          (WF_SW_DEF_CR_BASE + 0x074) // 1474
 #define WF_SW_DEF_CR_PM_CHANGE_ADDR             (WF_SW_DEF_CR_BASE + 0x078) // 1478
+
+#define WF_MCU_WA_SW_DEF_CR_SER_ADDR            (WF_MCU_WA_SW_DEF_CR_BASE + 0x004) // 1984
+
 /* =====================================================================================
 
   ---WF_SW_DEF_CR_WACPU_SLEEP_STAT_ADDR (0x00411400 + 0x004)---

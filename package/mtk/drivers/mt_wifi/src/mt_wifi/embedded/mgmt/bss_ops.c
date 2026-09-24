@@ -66,7 +66,7 @@ UCHAR ZeroSsid[MAX_LEN_OF_SSID] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-static VOID BssCipherParse(BSS_ENTRY *pBss)
+VOID BssCipherParse(BSS_ENTRY *pBss)
 {
 	PEID_STRUCT		 pEid;
 	PUCHAR				pTmp;
@@ -206,6 +206,11 @@ static VOID BssCipherParse(BSS_ENTRY *pBss)
 
 		case IE_RSN:
 			pRsnHeader = (PRSN_IE_HEADER_STRUCT) pTmp;
+			if (pRsnHeader->Length + 2 > Length) {
+				MTWF_DBG(NULL, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO,
+					"IE_RSN length exceed the space!!\n");
+				break;
+			}
 			res = wpa_rsne_sanity(pTmp, pRsnHeader->Length + 2, &end_field);
 
 			if (res == FALSE)
@@ -436,7 +441,11 @@ static VOID BssCipherParse(BSS_ENTRY *pBss)
 					pBss->sae_conn_type = SAE_CONNECTION_TYPE_H2E;
 			}
 #endif
-			pBss->rsnxe_len = pEid->Len + 2;
+			if ((pEid->Len + 2) > MAX_LEN_OF_RSNXEIE)
+				pBss->rsnxe_len = MAX_LEN_OF_RSNXEIE;
+			else
+				pBss->rsnxe_len = pEid->Len + 2;
+
 			NdisMoveMemory(pBss->rsnxe_content, (UCHAR *)pEid, pBss->rsnxe_len);
 			break;
 
@@ -812,6 +821,11 @@ VOID BssEntrySet(
 		NdisMoveMemory(&pBss->he_ops, &cmm_ies->he_ops, sizeof(struct he_op_ie));
 		SET_HE_OP_EXIST(pBss->ie_exists);
 	}
+
+#ifdef CONFIG_6G_SUPPORT
+	if (HAS_HE_6G_CAP_EXIST(cmm_ies->ie_exists))
+		SET_HE_6G_CAP_EXIST(pBss->ie_exists);
+#endif
 #endif /*DOT11_HE_AX*/
 	BssCipherParse(pBss);
 
@@ -846,8 +860,10 @@ VOID BssEntrySet(
 		pBss->RsnIE.IELen = 0;
 		pBss->WpsIE.IELen = 0;
 #ifdef EXT_BUILD_CHANNEL_LIST
-		NdisZeroMemory(&pBss->CountryString[0], 3);
-		pBss->bHasCountryIE = FALSE;
+		if (!pAd->CommonCfg.bExtChListDisabled) {
+			NdisZeroMemory(&pBss->CountryString[0], 3);
+			pBss->bHasCountryIE = FALSE;
+		}
 #endif /* EXT_BUILD_CHANNEL_LIST */
 #if defined(DOT11R_FT_SUPPORT) || defined(DOT11K_RRM_SUPPORT)
 
@@ -934,11 +950,13 @@ VOID BssEntrySet(
 #ifdef EXT_BUILD_CHANNEL_LIST
 
 			case IE_COUNTRY:
-				if (parse_country_ie(pEid)) {
-					NdisMoveMemory(&pBss->CountryString[0], pEid->Octet, 3);
-					pBss->bHasCountryIE = TRUE;
-				} else /* func_no_retrun_value */
-					return;
+				if (!pAd->CommonCfg.bExtChListDisabled) {
+					if (parse_country_ie(pEid)) {
+						NdisMoveMemory(&pBss->CountryString[0], pEid->Octet, 3);
+						pBss->bHasCountryIE = TRUE;
+					} else /* func_no_retrun_value */
+						return;
+				}
 				break;
 #endif /* EXT_BUILD_CHANNEL_LIST */
 #if defined(DOT11R_FT_SUPPORT) || defined(DOT11K_RRM_SUPPORT)
@@ -1382,8 +1400,9 @@ ULONG BssTableSetEntry(
 #endif /* APCLI_SUPPORT */
 #ifdef RT_CFG80211_SUPPORT
 					/* YF: Driver ScanTable full but supplicant the SSID exist on supplicant */
-					|| SSID_EQUAL(pAd->cfg80211_ctrl.Cfg_pending_Ssid, pAd->cfg80211_ctrl.Cfg_pending_SsidLen, ie_list->Ssid,
-								  ie_list->SsidLen)
+					|| (SSID_EQUAL(pAd->cfg80211_ctrl.Cfg_pending_Ssid, pAd->cfg80211_ctrl.Cfg_pending_SsidLen, ie_list->Ssid,
+								  ie_list->SsidLen) &&
+								  !pAd->CommonCfg.bcfg80211Disabled)
 #endif /* RT_CFG80211_SUPPORT */
 				) {
 					Idx = Tab->BssOverlapNr;
@@ -1395,8 +1414,10 @@ ULONG BssTableSetEntry(
 					Tab->BssOverlapNr += 1;
 					Tab->BssOverlapNr = Tab->BssOverlapNr % MAX_LEN_OF_BSS_TABLE;
 #ifdef RT_CFG80211_SUPPORT
-					pAd->cfg80211_ctrl.Cfg_pending_SsidLen = 0;
-					NdisZeroMemory(pAd->cfg80211_ctrl.Cfg_pending_Ssid, MAX_LEN_OF_SSID + 1);
+					if (!pAd->CommonCfg.bcfg80211Disabled) {
+						pAd->cfg80211_ctrl.Cfg_pending_SsidLen = 0;
+						NdisZeroMemory(pAd->cfg80211_ctrl.Cfg_pending_Ssid, MAX_LEN_OF_SSID + 1);
+					}
 #endif /* RT_CFG80211_SUPPORT */
 				}
 
@@ -1533,8 +1554,8 @@ VOID BssTableSsidSort(
 
 
 		if (((pAd->CommonCfg.bIEEE80211H == 1)
-       && (pStaCfg->MlmeAux.Channel > 14)
-			 && RadarChannelCheck(pAd, pInBss->Channel))
+			&& (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G)
+			&& RadarChannelCheck(pAd, pInBss->Channel))
 #ifdef WIFI_REGION32_HIDDEN_SSID_SUPPORT
 			|| ((pInBss->Channel == 12) || (pInBss->Channel == 13))
 #endif /* WIFI_REGION32_HIDDEN_SSID_SUPPORT */
@@ -1647,7 +1668,7 @@ VOID BssTableSsidSort(
 
 				/* If no Country IE exists no Connection will be established when IEEE80211dClientMode is strict.*/
 				if ((pStaCfg->IEEE80211dClientMode == Rt802_11_D_Strict) &&
-					(pInBss->bHasCountryIE == FALSE)) {
+					(pInBss->bHasCountryIE == FALSE) && !pAd->CommonCfg.bExtChListDisabled) {
 					MTWF_DBG(pAd, DBG_CAT_MLME, DBG_SUBCAT_ALL, DBG_LVL_INFO,
 							 "StaCfg.IEEE80211dClientMode == Rt802_11_D_Strict, but this AP doesn't have country IE.\n");
 					continue;
@@ -1919,12 +1940,16 @@ BOOLEAN bss_coex_insert_effected_ch_list(
 
 					if ((Channel == ie_list->Channel) || ((Channel != ie_list->Channel)
 						 && (pAdd_HtInfo->ExtChanOffset != oper.ext_cha))) {
+						COPY_MAC_ADDR(pAd->CommonCfg.BssCoexApMac[pAd->CommonCfg.BssCoexApCnt],
+							ie_list->Addr2);
 						pAd->CommonCfg.BssCoexApCnt++;
 						Inserted = TRUE;
 					}
 				} else {
 					/* This is a legacy AP. */
 					pChCtrl->ChList[index].bEffectedChannel |=  EFFECTED_CH_LEGACY; /* 4; 1 for legacy AP. */
+					COPY_MAC_ADDR(pAd->CommonCfg.BssCoexApMac[pAd->CommonCfg.BssCoexApCnt],
+						ie_list->Addr2);
 					pAd->CommonCfg.BssCoexApCnt++;
 					Inserted = TRUE;
 				}

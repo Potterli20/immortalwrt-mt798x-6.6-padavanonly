@@ -174,15 +174,16 @@ INT scan_ch_restore(RTMP_ADAPTER *pAd, UCHAR OpMode, struct wifi_dev *pwdev)
 
 #ifdef CONFIG_MULTI_CHANNEL
 #if defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT)
-	pMbss = &pAd->ApCfg.MBSSID[CFG_GO_BSSID_IDX];
-	PSTA_ADMIN_CONFIG pApCliEntry = pApCliEntry = &pAd->StaCfg[MAIN_MBSSID];
-	struct wifi_dev *p2p_wdev = &pMbss->wdev;
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		pMbss = &pAd->ApCfg.MBSSID[CFG_GO_BSSID_IDX];
+		PSTA_ADMIN_CONFIG pApCliEntry = pApCliEntry = &pAd->StaCfg[MAIN_MBSSID];
+		struct wifi_dev *p2p_wdev = &pMbss->wdev;
 
-	if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd))
-		p2p_wdev = &pMbss->wdev;
-	else if (RTMP_CFG80211_VIF_P2P_CLI_ON(pAd))
-		p2p_wdev = &pApCliEntry->wdev;
-
+		if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd))
+			p2p_wdev = &pMbss->wdev;
+		else if (RTMP_CFG80211_VIF_P2P_CLI_ON(pAd))
+			p2p_wdev = &pApCliEntry->wdev;
+	}
 #endif /* defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT) */
 #endif /* CONFIG_MULTI_CHANNEL */
 #ifdef CONFIG_AP_SUPPORT
@@ -209,18 +210,18 @@ INT scan_ch_restore(RTMP_ADAPTER *pAd, UCHAR OpMode, struct wifi_dev *pwdev)
 #endif /*CONFIG_STA_SUPPORT*/
 #ifdef CONFIG_MULTI_CHANNEL
 #if defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT)
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd) && (ch != p2p_wdev->channel) && (p2p_wdev->CentralChannel != 0))
+			bw = wlan_operate_get_ht_bw(p2p_wdev);
+		else if (RTMP_CFG80211_VIF_P2P_CLI_ON(pAd) && (ch != p2p_wdev->channel) && (p2p_wdev->CentralChannel != 0))
+			bw = wlan_operate_get_ht_bw(p2p_wdev);
 
-	if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd) && (ch != p2p_wdev->channel) && (p2p_wdev->CentralChannel != 0))
-		bw = wlan_operate_get_ht_bw(p2p_wdev);
-	else if (RTMP_CFG80211_VIF_P2P_CLI_ON(pAd) && (ch != p2p_wdev->channel) && (p2p_wdev->CentralChannel != 0))
-		bw = wlan_operate_get_ht_bw(p2p_wdev);
+		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE, "scan ch restore   ch %d  p2p_wdev->CentralChannel%d\n", ch, p2p_wdev->CentralChannel);
 
-	MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE, "scan ch restore   ch %d  p2p_wdev->CentralChannel%d\n", ch, p2p_wdev->CentralChannel);
-
-	/*If GO start, we need to change to GO Channel*/
-	if ((ch != p2p_wdev->CentralChannel) && (p2p_wdev->CentralChannel != 0))
-		ch = p2p_wdev->CentralChannel;
-
+		/*If GO start, we need to change to GO Channel*/
+		if ((ch != p2p_wdev->CentralChannel) && (p2p_wdev->CentralChannel != 0))
+			ch = p2p_wdev->CentralChannel;
+	}
 #endif /* defined(RT_CFG80211_SUPPORT) && defined(CONFIG_AP_SUPPORT) */
 #endif /* CONFIG_MULTI_CHANNEL */
 #ifdef OFFCHANNEL_SCAN_FEATURE
@@ -282,7 +283,7 @@ INT scan_ch_restore(RTMP_ADAPTER *pAd, UCHAR OpMode, struct wifi_dev *pwdev)
 
 	pDot11h = wdev->pDot11_H;
 
-	if (((wdev->channel > 14) &&
+	if (((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) &&
 		 (pAd->CommonCfg.bIEEE80211H == TRUE) &&
 		 RadarChannelCheck(pAd, wdev->channel)) &&
 		(pDot11h && pDot11h->RDMode != RD_SWITCHING_MODE)) {
@@ -456,7 +457,8 @@ INT scan_ch_restore(RTMP_ADAPTER *pAd, UCHAR OpMode, struct wifi_dev *pwdev)
 #endif /* CONFIG_AP_SUPPORT */
 
 #ifdef APCLI_CFG80211_SUPPORT
-		RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
+		if (!pAd->CommonCfg.bApcliCfg80211Disabled)
+			RTEnqueueInternalCmd(pAd, CMDTHREAD_SCAN_END, NULL, 0);
 #endif /* APCLI_CFG80211_SUPPORT */
 #ifdef SCAN_RADAR_COEX_SUPPORT
 	pAd->scan_wdev = NULL;
@@ -499,7 +501,7 @@ INT ch_switch_monitor_scan_ch_restore(RTMP_ADAPTER *pAd, UCHAR OpMode, struct wi
 		if (pDot11h == NULL)
 			return FALSE;
 
-		if (((wdev->channel > 14) &&
+		if (((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) &&
 			 (pAd->CommonCfg.bIEEE80211H == TRUE) &&
 			 RadarChannelCheck(pAd, wdev->channel)) &&
 			pDot11h->RDMode != RD_SWITCHING_MODE) {
@@ -833,41 +835,37 @@ static BOOLEAN scan_type_stay_time_checker(
 	if (*ScanType == FAST_SCAN_ACTIVE)
 		stay_time = FAST_ACTIVE_SCAN_TIME;
 	else { /* must be SCAN_PASSIVE or SCAN_ACTIVE*/
-#ifdef CONFIG_AP_SUPPORT
-		if ((pAd->ApCfg.bAutoChannelAtBootup[band_idx] == TRUE))
-			stay_time = AUTO_CHANNEL_SEL_TIMEOUT;
-		else
-#endif /* CONFIG_AP_SUPPORT */
-			if (WMODE_CAP_2G(wdev->PhyMode) &&
-				WMODE_CAP_5G(wdev->PhyMode)) {
-				if (ScanCtrl->Channel > 14)
-					stay_time = ScanTimeIn5gChannel;
-				else
-					stay_time = MIN_CHANNEL_TIME;
+		if (WMODE_CAP_2G(wdev->PhyMode) &&
+			WMODE_CAP_5G(wdev->PhyMode)) {
+			if (ScanCtrl->Channel > 14)
+				stay_time = ScanTimeIn5gChannel;
+			else
+				stay_time = MIN_CHANNEL_TIME;
 
-				} else {
-						stay_time = MAX_CHANNEL_TIME;
-				}
+			} else {
+					stay_time = MAX_CHANNEL_TIME;
+			}
 	}
 
 #ifdef CONFIG_STA_SUPPORT
 #ifdef RT_CFG80211_SUPPORT
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
 #ifdef RT_CFG80211_P2P_CONCURRENT_DEVICE
 #ifdef CONFIG_MULTI_CHANNEL
 
-	if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd))
-		stay_time = FAST_ACTIVE_SCAN_TIME;
+		if (RTMP_CFG80211_VIF_P2P_GO_ON(pAd))
+			stay_time = FAST_ACTIVE_SCAN_TIME;
 
 #endif /* CONFIG_MULTI_CHANNEL */
 #endif /* RT_CFG80211_P2P_CONCURRENT_DEVICE */
 
-	/* CFG_TODO: for testing. */
-	/* Since the Channel List is from Upper layer */
-	if (CFG80211DRV_OpsScanRunning(pAd) &&
-		(pAd->cfg80211_ctrl.Cfg80211ChanListLen == 1) &&
-		(wdev->wdev_type == WDEV_TYPE_P2P_DEVICE))
-		stay_time = 500;
-
+		/* CFG_TODO: for testing. */
+		/* Since the Channel List is from Upper layer */
+		if (CFG80211DRV_OpsScanRunning(pAd) &&
+			(pAd->cfg80211_ctrl.Cfg80211ChanListLen == 1) &&
+			(wdev->wdev_type == WDEV_TYPE_P2P_DEVICE))
+			stay_time = 500;
+	}
 #endif /* RT_CFG80211_SUPPORT */
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef CONFIG_AP_SUPPORT
@@ -1037,7 +1035,8 @@ BOOLEAN scan_next_channel(
 		}
 #endif
 #ifdef APCLI_CFG80211_SUPPORT
-			if (pStaCfg != NULL && pStaCfg->MarkToClose) {
+			if (pStaCfg != NULL && pStaCfg->MarkToClose &&
+				!pAd->CommonCfg.bApcliCfg80211Disabled) {
 				ScanCtrl->Channel = 0;
 				scan_ch_restore(pAd, OpMode, wdev);
 				RTMP_OS_COMPLETE(&pStaCfg->scan_complete);
@@ -1055,14 +1054,16 @@ BOOLEAN scan_next_channel(
 #endif
 	}
 #ifdef SCAN_RADAR_COEX_SUPPORT
-	if (wdev != NULL && wdev->RadarDetected) {
+	if (wdev != NULL && pAd->radar_handling) {
 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "%s: Stopping Scan!\n", __func__);
 		ScanCtrl->Channel = 0;
 		scan_ch_restore(pAd, OpMode, wdev);
 #ifdef APCLI_CFG80211_SUPPORT
-		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning)
+		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning &&
+			!pAd->CommonCfg.bApcliCfg80211Disabled)
 			RT_CFG80211_SCAN_END(pAd, TRUE);
 #endif /* APCLI_CFG80211_SUPPORT */
+		ScanCtrl->PartialScan.bScanning = FALSE;
 		return FALSE;
 	}
 #endif /* SCAN_RADAR_COEX_SUPPORT */
@@ -1072,7 +1073,8 @@ BOOLEAN scan_next_channel(
 		ScanCtrl->Channel = 0;
 		scan_ch_restore(pAd, OpMode, wdev);
 #ifdef APCLI_CFG80211_SUPPORT
-		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning)
+		if (pAd->cfg80211_ctrl.FlgCfg80211Scanning &&
+			!pAd->CommonCfg.bApcliCfg80211Disabled)
 			RT_CFG80211_SCAN_END(pAd, TRUE);
 #endif /* APCLI_CFG80211_SUPPORT */
 
@@ -1138,23 +1140,24 @@ BOOLEAN scan_next_channel(
 
 #ifdef CONFIG_STA_SUPPORT
 #ifdef RT_CFG80211_SUPPORT
+	if (!pAd->CommonCfg.bcfg80211Disabled) {
+		/* Since the Channel List is from Upper layer */
+		if (CFG80211DRV_OpsScanRunning(pAd) && !ScanPending) {
+			int ChannelFound = 0;
 
-	/* Since the Channel List is from Upper layer */
-	if (CFG80211DRV_OpsScanRunning(pAd) && !ScanPending) {
-		int ChannelFound = 0;
-		while (!ChannelFound) {
-		ScanCtrl->Channel = CFG80211DRV_OpsScanGetNextChannel(pAd);
-			if (ScanCtrl->Channel == 0)
-				break;
-			if ((ScanCtrl->Channel) > 14 && (!WMODE_CAP_5G(wdev->PhyMode)))
-				continue;
-			else if ((ScanCtrl->Channel) <= 14 && (!WMODE_CAP_2G(wdev->PhyMode)))
-				continue;
-			else
-				ChannelFound = 1;
+			while (!ChannelFound) {
+				ScanCtrl->Channel = CFG80211DRV_OpsScanGetNextChannel(pAd);
+				if (ScanCtrl->Channel == 0)
+					break;
+				if ((ScanCtrl->Channel) > 14 && (!WMODE_CAP_5G(wdev->PhyMode)))
+					continue;
+				else if ((ScanCtrl->Channel) <= 14 && (!WMODE_CAP_2G(wdev->PhyMode)))
+					continue;
+				else
+					ChannelFound = 1;
+			}
 		}
 	}
-
 #endif /* RT_CFG80211_SUPPORT */
 #endif /* CONFIG_STA_SUPPORT */
 
@@ -1239,19 +1242,15 @@ BOOLEAN scan_next_channel(
 		}
 #endif
 
-		if (ScanPending == FALSE) {
-			ScanInfo->LastScanChannel = 0;
-
-			if (ScanType == SCAN_PARTIAL) {
-				if (ScanCtrl->PartialScan.TimerInterval > 0) {
-					ScanCtrl->PartialScan.bScanning = FALSE;
-					RTMPSetTimer(&ScanCtrl->PartialScan.PartialScanTimer,
-									ScanCtrl->PartialScan.TimerInterval);
-				} else {
-					ScanCtrl->PartialScan.bScanning = FALSE;
-					ScanCtrl->PartialScan.pwdev = NULL;
-					ScanCtrl->ScanType = SCAN_ACTIVE;
-				}
+		if (ScanType == SCAN_PARTIAL) {
+			if (ScanPending && ScanCtrl->PartialScan.TimerInterval > 0) {
+				ScanCtrl->PartialScan.bScanning = FALSE;
+				RTMPSetTimer(&ScanCtrl->PartialScan.PartialScanTimer,
+								ScanCtrl->PartialScan.TimerInterval);
+			} else if (!ScanPending) {
+				ScanCtrl->PartialScan.bScanning = FALSE;
+				ScanCtrl->PartialScan.pwdev = NULL;
+				ScanCtrl->ScanType = SCAN_ACTIVE;
 			}
 		}
 
@@ -1314,7 +1313,8 @@ BOOLEAN scan_next_channel(
 		wdev->MAPCfg.FireProbe_on_DFS = FALSE;
 		if ((IS_MAP_TURNKEY_ENABLE(pAd)) &&
 			(!((pAd->CommonCfg.bIEEE80211H == 1) &&
-				RadarChannelCheck(pAd, ScanCtrl->Channel)))) {
+				(wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G)
+				&& RadarChannelCheck(pAd, ScanCtrl->Channel)))) {
 			while (index_map < MAX_BH_PROFILE_CNT) {
 				if (wdev->MAPCfg.scan_bh_ssids.scan_SSID_val[index_map].SsidLen > 0) {
 				scan_extra_probe_req(pAd,	OpMode, SCAN_ACTIVE, wdev,
@@ -1586,18 +1586,6 @@ VOID scan_partial_trigger_checker(RTMP_ADAPTER *pAd)
 
 			if (!wdev)
 				continue;
-
-#ifdef SCAN_RADAR_COEX_SUPPORT
-			if (wdev != NULL && wdev->RadarDetected) {
-				MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE, "%s: Stopping Scan!\n", __func__);
-				ScanCtrl->Channel = 0;
-				ScanCtrl->PartialScan.bScanning = FALSE;
-				if (GetCurrentChannelOpOwner(pAd, wdev) == CH_OP_OWNER_PARTIAL_SCAN)
-					ReleaseChannelOpCharge(pAd, wdev, CH_OP_OWNER_PARTIAL_SCAN);
-				RTMP_OS_COMPLETE(&wdev->scan_complete);
-				return;
-			}
-#endif /* MT_DFS_SUPPORT */
 
 			ScanInfo = &wdev->ScanInfo;
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_NOTICE,

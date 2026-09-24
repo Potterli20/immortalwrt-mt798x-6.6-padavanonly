@@ -765,9 +765,12 @@ int main(int argc, char *argv[])
 			if ((strncmp(sku, "ax6000", 6) == 0) || (strncmp(sku, "ax8400", 6) == 0)) {
 				if (strncmp(adie, "mt7975", 6) == 0)
 					strcat(ine2pname, "rebb/MT7986_iPAiLNA_EEPROM_AX6000.bin");
-				else if (strncmp(adie, "mt7976", 6) == 0)
-					strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_AX6000.bin");
-				else
+				else if (strncmp(adie, "mt7976", 6) == 0) {
+					if (strncmp(sku, "ax6000", 6) == 0)
+						strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_AX6000.bin");
+					else
+						strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_AX8400.bin");
+				} else
 					printf("unknown ADIE:%s", adie);
 			} else if (strncmp(sku, "ax7800", 6) == 0) {
 				if (strncmp(adie, "mt7975", 6) == 0)
@@ -776,7 +779,14 @@ int main(int argc, char *argv[])
 					strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_AX7800.bin");
 				else
 					printf("unknown ADIE:%s", adie);
-			} else if (strncmp(sku, "ax4200", 6) == 0) {
+			} else if (strncmp(sku, "ax5400", 6) == 0) {
+                                if (strncmp(adie, "mt7975", 6) == 0)
+                                        strcat(ine2pname, "rebb/MT7986_iPAiLNA_EEPROM_AX5400.bin");
+                                else if (strncmp(adie, "mt7976", 6) == 0)
+                                        strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_AX5400.bin");
+                                else
+                                        printf("unknown ADIE:%s", adie);
+                        } else if (strncmp(sku, "ax4200", 6) == 0) {
 				if (strncmp(adie, "mt7976", 6) == 0)
 					strcat(ine2pname, "rebb/MT7986_ePAeLNA_EEPROM_ONEADIE_DBDC.bin");
 				else

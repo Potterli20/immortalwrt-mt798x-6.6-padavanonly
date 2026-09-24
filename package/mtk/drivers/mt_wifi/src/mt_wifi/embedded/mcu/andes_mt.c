@@ -251,8 +251,6 @@ static VOID ExtEventRddReportHandler(RTMP_ADAPTER *pAd,
 	UCHAR rddidx = HW_RDD0;
 #ifdef SCAN_RADAR_COEX_SUPPORT
 	SCAN_CTRL *ScanCtrl = NULL;
-	BOOLEAN IsScan = FALSE;
-	struct wifi_dev *wdev = NULL;
 	UCHAR cur_channel;
 	UCHAR BandIdx = BAND0;
 #endif
@@ -260,49 +258,45 @@ static VOID ExtEventRddReportHandler(RTMP_ADAPTER *pAd,
 	if (!pExtEventRddReport)
 		return;
 
+	rddidx = pExtEventRddReport->rdd_idx;
+
 #ifdef SCAN_RADAR_COEX_SUPPORT
-	cur_channel = pExtEventRddReport->channel;
-
-	if (pAd->radar_handling)
-		return;
-
-	pAd->radar_handling = TRUE;
-	if (pAd->scan_wdev && scan_in_run_state(pAd, pAd->scan_wdev)) {
-		wdev = pAd->scan_wdev;
-		IsScan = TRUE;
-	}
+	if (rddidx != HW_RDD2) {
+		cur_channel = pExtEventRddReport->channel;
 
 #ifdef DBDC_MODE
-	if (pAd->CommonCfg.dbdc_mode)
-		BandIdx = BAND1;
+		if (pAd->CommonCfg.dbdc_mode)
+			BandIdx = BAND1;
 #endif
 
-	ScanCtrl = &pAd->ScanCtrl[BandIdx];
-	if (ScanCtrl->PartialScan.bScanning == TRUE) {
-		IsScan = TRUE;
-		wdev = ScanCtrl->PartialScan.pwdev;
-	}
-	if (IsScan) {
-		UCHAR prim_channel = wlan_operate_get_prim_ch(wdev);
-
-		if (cur_channel != prim_channel) {
-			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s: RADAR is not on the Original Channel!\n", __func__);
-			pAd->CommonCfg.DfsParameter.is_radar_emu = FALSE;
-			pAd->radar_handling = FALSE;
+		if (cur_channel != 0) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+						"RADAR is not on the Original Channel!\n");
+			/* Drop RADAR Event and start RDD */
+			RTEnqueueInternalCmd(pAd, CMDTHREAD_DROP_RADAR_EVENT, &BandIdx, sizeof(UCHAR));
+			if (RadarChannelCheck(pAd, cur_channel))
+				mtRddControl(pAd, RDD_START, BandIdx, RXSEL_0, pAd->CommonCfg.RDDurRegion);
 			return;
 		}
 
-		if (ScanCtrl->PartialScan.bScanning == TRUE)
-			pAd->scan_wdev = wdev;
+		if (pAd->radar_handling)
+			return;
 
-		MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s: Wait for Scan to stop!\n", __func__);
-		NdisCopyMemory(&pAd->rddReport, Data, sizeof(struct _EXT_EVENT_RDD_REPORT_T));
-		RTCMDUp(&pAd->radar_task);
-		return;
+		pAd->radar_handling = TRUE;
+		ScanCtrl = &pAd->ScanCtrl[BandIdx];
+
+		if ((pAd->scan_wdev && scan_in_run_state(pAd, pAd->scan_wdev)) ||
+					(ScanCtrl->PartialScan.bScanning == TRUE)) {
+			if (ScanCtrl->PartialScan.bScanning == TRUE)
+				pAd->scan_wdev = ScanCtrl->PartialScan.pwdev;
+
+			MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s: Wait for Scan to stop!\n", __func__);
+			NdisCopyMemory(&pAd->rddReport, Data, sizeof(struct _EXT_EVENT_RDD_REPORT_T));
+			RTCMDUp(&pAd->radar_task);
+			return;
+		}
 	}
 #endif /* SCAN_RADAR_COEX_SUPPORT */
-
-	rddidx = pExtEventRddReport->rdd_idx;
 
 
 	/* update dbg pulse info */
@@ -319,17 +313,18 @@ static VOID ExtEventRddReportHandler(RTMP_ADAPTER *pAd,
 			(pExtEventRddReport->cr_pls_detected == TRUE) ||
 			(pExtEventRddReport->stgr_pls_detected == TRUE))
 	{
-#ifdef ZWDFS_AX7800
+#if defined(ZWDFS_AX7800) || defined(ZWDFS_AX5400)
+	if (pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitDefault) {
 #ifdef MULTI_INF_SUPPORT
-	struct wifi_dev *temp_wdev;
-	POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
-	PRTMP_ADAPTER pOpposAd = NULL;
-	struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
-	UINT opposBandIdx = !multi_inf_get_idx(pAd);
+		struct wifi_dev *temp_wdev;
+		POS_COOKIE pObj = (POS_COOKIE) pAd->OS_Cookie;
+		PRTMP_ADAPTER pOpposAd = NULL;
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+		UINT opposBandIdx = !multi_inf_get_idx(pAd);
 
-	if (WMODE_CAP_6G(wdev->PhyMode) || WMODE_CAP_2G(wdev->PhyMode)) {
-		pOpposAd = (PRTMP_ADAPTER)adapt_list[opposBandIdx];
-		pAd = pOpposAd;
+		if (WMODE_CAP_6G(wdev->PhyMode) || WMODE_CAP_2G(wdev->PhyMode)) {
+			pOpposAd = (PRTMP_ADAPTER)adapt_list[opposBandIdx];
+			pAd = pOpposAd;
 			if (pOpposAd != NULL) {
 				MTWF_PRINT("%s Now: %s, Oppos: %s\n",
 				 __func__, pAd->net_dev->name, pOpposAd->net_dev->name);
@@ -337,6 +332,7 @@ static VOID ExtEventRddReportHandler(RTMP_ADAPTER *pAd,
 				MTWF_PRINT("%s Now: %s\n", __func__, pAd->net_dev->name);
 		}
 #endif
+	}
 #endif
 		WrapDfsRddReportHandle(pAd, rddidx);
 	}
@@ -1941,7 +1937,6 @@ BOOLEAN MtUpdateBcnToMcu(
 #else
 	NdisZeroMemory(&bcn_offload, sizeof(CMD_BCN_OFFLOAD_T));
 #endif
-
 	if (!wdev) {
 		MTWF_DBG(pAd, DBG_CAT_AP, CATAP_BCN, DBG_LVL_ERROR,
 				 "wdev is NULL!\n";
@@ -1951,7 +1946,6 @@ BOOLEAN MtUpdateBcnToMcu(
 #endif
 		return FALSE;
 	}
-
 	bcn_buf = &wdev->bcn_buf;
 
 	if (!bcn_buf) {
@@ -2393,10 +2387,10 @@ static VOID ExtEventCswNotifyHandler(
 			wdevEach->csa_count = wdev->csa_count;
 	}
 
-	if (((HcIsRfSupport(pAd, RFIC_5GHZ))
-		&& (pAd->CommonCfg.bIEEE80211H == 1)
+	if (((pAd->CommonCfg.bIEEE80211H == 1)
 		&& (pDot11h->RDMode == RD_SWITCHING_MODE))
-		|| ((wdev->channel <= 14) && (pAd->CommonCfg.ChannelSwitchFor2G.CHSWMode == CHANNEL_SWITCHING_MODE))) {
+		|| ((wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G)
+			&& (pAd->CommonCfg.ChannelSwitchFor2G.CHSWMode == CHANNEL_SWITCHING_MODE))) {
 #ifdef CONFIG_AP_SUPPORT
 		pDot11h->CSCount = pDot11h->CSPeriod;
 		ChannelSwitchingCountDownProc(pAd, wdev);
@@ -2910,15 +2904,20 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 #ifdef CONFIG_MAP_SUPPORT
 		P_EXT_EVENT_TX_RATE_RESULT_T prEventExtCmdResult = (P_EXT_EVENT_TX_RATE_RESULT_T)Data;
 		HTTRANSMIT_SETTING LastTxRate;
-		HETRANSMIT_SETTING HELastTxRate;
 		HTTRANSMIT_SETTING LastRxRate;
-		HETRANSMIT_SETTING HELastRxRate;
+		HE_TRANSMIT_SETTING HELastTxRate, HELastRxRate = {0};
 
 		for (Idx = 0; Idx < prEventExtCmdResult->ucStaNum; Idx++) {
+			/* skip unknown event */
+			if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE == MODE_UNKNOWN)
+				continue;
+
 			pEntry = &pAd->MacTab.Content[prEventExtCmdResult->rAllTxRateResult[Idx].ucWlanIdx];
 			if (pEntry && pEntry->wdev &&  IS_ENTRY_CLIENT(pEntry) && pEntry->Sst == SST_ASSOC) {
+				HELastTxRate.Dword = HELastRxRate.Dword = 0;
+				LastTxRate.word = LastRxRate.word = 0;
 /*For TX rate*/
-				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE == MODE_HE_SU_REMAPPING) {
+				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE >= MODE_HE) {
 					HELastTxRate.field.MODE = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE;
 					HELastTxRate.field.BW = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.BW;
 					HELastTxRate.field.ldpc = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.ldpc ? 1 : 0;
@@ -2934,17 +2933,20 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 					LastTxRate.field.STBC = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.STBC;
 				}
 
-				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE == MODE_HE_SU_REMAPPING) {
-					HELastTxRate.field.MCS =
-						(((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss - 1)
-						& 0x3) << 5) +
-						prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
-					pEntry->map_LastTxRate = (UINT32)HELastTxRate.word;
+				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE >= MODE_HE) {
+					HELastTxRate.field.MCS = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
+					HELastTxRate.field.Nss = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss;
+					pEntry->map_LastTxRate = (UINT32)HELastTxRate.Dword;
 				} else if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE  == MODE_VHT) {
 					LastTxRate.field.MCS =
 						(((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss - 1)
 						& 0x3) << 4) +
 						prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
+					pEntry->map_LastTxRate = (UINT32)LastTxRate.word;
+				} else if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE  >= MODE_HTMIX) {
+					LastTxRate.field.MCS = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MCS;
+					if ((LastTxRate.field.MCS < 8) && prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss)
+						LastTxRate.field.MCS += (((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.VhtNss - 1) & 0x3) << 3);
 					pEntry->map_LastTxRate = (UINT32)LastTxRate.word;
 				} else if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.MODE  == MODE_OFDM) {
 					LastTxRate.field.MCS =
@@ -2956,7 +2958,7 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 					pEntry->map_LastTxRate = (UINT32)LastTxRate.word;
 				}
 /*For RX rate */
-				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode == MODE_HE_SU_REMAPPING) {
+				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode >= MODE_HE) {
 					HELastRxRate.field.MODE = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode;
 					HELastRxRate.field.BW = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxBW;
 					HELastRxRate.field.ldpc = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxCoding ? 1 : 0;
@@ -2972,16 +2974,18 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 					LastRxRate.field.STBC = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxStbc;
 				}
 
-				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode == MODE_HE_SU_REMAPPING) {
-					HELastRxRate.field.MCS =
-						(((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts - 1)
-						& 0x3) << 5) +
-						prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxRate;
-					pEntry->map_LastRxRate = (UINT32)HELastRxRate.word;
+				if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode >= MODE_HE) {
+					HELastRxRate.field.MCS = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxRate;
+					HELastRxRate.field.Nss = prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts;
+					pEntry->map_LastRxRate = (UINT32)HELastRxRate.Dword;
 				} else if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode  == MODE_VHT) {
+					/* for STBC case NSS is NSTS/2 */
+					if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxStbc) {
+						prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts =
+							(prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts & 0x3) >> 1;
+					}
 					LastRxRate.field.MCS =
-						(((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts - 1)
-						& 0x3) << 4) +
+						((prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxNsts & 0x3) << 4) +
 						prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxRate;
 					pEntry->map_LastRxRate = (UINT32)LastRxRate.word;
 				} else if (prEventExtCmdResult->rAllTxRateResult[Idx].rEntryTxRate.u1RxMode  == MODE_OFDM) {
@@ -3002,7 +3006,6 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 	break;
 	case EVENT_PHY_PER_STA_TX_STAT:
 	{
-#ifdef EAP_STATS_SUPPORT
 		P_EXT_EVENT_TX_STAT_RESULT_T prEventExtCmdResult = (P_EXT_EVENT_TX_STAT_RESULT_T)Data;
 
 		prEventExtCmdResult->u2StaNum = le2cpu16(prEventExtCmdResult->u2StaNum);
@@ -3011,24 +3014,27 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 
 			rTxStatResult->u2WlanIdx = le2cpu16(rTxStatResult->u2WlanIdx);
 			pEntry = &pAd->MacTab.Content[rTxStatResult->u2WlanIdx];
-#ifdef WIFI_IAP_STA_DUMP_FEATURE
-			if (pEntry && pEntry->wdev && pEntry->Sst == SST_ASSOC &&
-			(IS_ENTRY_CLIENT(pEntry) || IS_ENTRY_PEER_AP(pEntry)))
-#else/*WIFI_IAP_STA_DUMP_FEATURE*/
-			if (pEntry && pEntry->wdev &&  IS_ENTRY_CLIENT(pEntry) && pEntry->Sst == SST_ASSOC)
-#endif
-			{
+
+			if (pEntry && pEntry->Sst == SST_ASSOC && (IS_ENTRY_CLIENT(pEntry) || IS_ENTRY_PEER_AP(pEntry))) {
 				pEntry->mpdu_attempts.QuadPart += le2cpu32(rTxStatResult->u4TotalTxCount);
 				pEntry->mpdu_retries.QuadPart += le2cpu32(rTxStatResult->u4TotalTxFailCount);
+				/* update corrosponding fail count */
+				pEntry->MapHWDropCnt = pEntry->TxFreeHWDropCnt;
+				pEntry->MapMCUDropCnt = pEntry->TxFreeMCUDropCnt;
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+					"STA[%02x:%02x:%02x:%02x:%02x:%02x] mpdu_attempts[%lld] u4TotalTxCount[%d ] mpdu_retries[%lld] u4TotalTxFailCount[%d]\n",
+					PRINT_MAC(pEntry->Addr), pEntry->mpdu_attempts.QuadPart, rTxStatResult->u4TotalTxCount,
+					pEntry->mpdu_retries.QuadPart, rTxStatResult->u4TotalTxFailCount);
 			}
 
 		}
-#endif
 	}
 	break;
 
 	case EVENT_PHY_RX_STAT:
-	{
+#ifdef RT_CFG80211_SUPPORT
+	if (!pAd->CommonCfg.bEapStatsDisabled) {
+#endif
 #ifdef EAP_STATS_SUPPORT
 		P_EXT_EVENT_RX_STAT_RESULT_T prEventExtCmdResult = (P_EXT_EVENT_RX_STAT_RESULT_T)Data;
 		UCHAR       concurrent_bands = HcGetAmountOfBand(pAd);
@@ -3042,7 +3048,9 @@ static VOID ExtEventGetAllStaStats(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length
 													le2cpu16(rRxStatResult->u2PhyRxMdrdyCntOfdm);
 		}
 #endif
+#ifdef RT_CFG80211_SUPPORT
 	}
+#endif
 	break;
 
 	case EVENT_PHY_PER_STA_TXRX_AIR_TIME:
@@ -6220,38 +6228,32 @@ INT AndesCSICtrl(RTMP_ADAPTER *pAd, struct CMD_CSI_CONTROL_T *prCSICtrl)
 	AndesInitCmdMsg(msg, attr);
 
 	/*Debug Log*/
-	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "\nCSI CMD DEBUG:%d,%d,%d,%d,%d\n",
+	MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+	"CSI send fw cmd:%d,%d,%d,%d,%d\n",
 	prCSICtrl->BandIdx, prCSICtrl->ucMode, prCSICtrl->ucCfgItem, prCSICtrl->ucValue1, prCSICtrl->ucValue2);
 
 	AndesAppendCmdMsg(msg, (char *)prCSICtrl, sizeof(struct CMD_CSI_CONTROL_T));
 	AndesSendCmdMsg(pAd, msg);
 error:
-	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "(ret = %d)\n", ret);
+	MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "(ret = %d)\n", ret);
 	return ret;
 }
 
 VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 {
-	UINT_32 u4FWver = 0;
-	UINT_32 u4cbw = 0;
-	UINT_32 u4Rssi = 0;
-	UINT_32 u4SNR = 0;
-	UINT_32 u4BandIdx = 0;
-	UINT_32 u4DataCount = 0;
-	UINT_32 u4DataBw = 0;
-	UINT_32 u4PrimaryChIdx = 0;
-	UINT_32 u4RxMode = 0;
-	UINT_32 u4Rsvd4 = 0;
 	UINT_16 *pru2Tmp = NULL;
 	UINT_32 *p32tmp = NULL;
 	INT_16 i2Idx = 0;
+	UINT_32 rx_info = 0;
 	INT32 offset_tmp = 0;
 	UINT32 expected_TS = 0;
 	UINT32 chain_idx = 0;
 	UINT32 chain_end = 0;
 	UINT32 seq = 0;
 	UINT8 need_push = 0;
+	UINT32 ret = 0;
 	struct CSI_DATA_T *prCSIData = NULL;
+	struct CSI_DATA_T *prCSIBuffer = NULL;
 	TLV_ELEMENT_T *prCSITlvData = NULL;
 	struct CSI_INFO_T *prCSIInfo = &pAd->rCSIInfo;
 	UINT8 *prBuf = Data;
@@ -6285,8 +6287,8 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid FW VER len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4FWver = le2cpu32(*((UINT32 *)prCSITlvData->aucbody));
-			prCSIData->FWVer = (UINT8)u4FWver;
+			prCSIData->FWVer = (UINT8)le2cpu32(*((UINT32 *)prCSITlvData->aucbody));
+			prCSIInfo->FWVer = prCSIData->FWVer;
 			break;
 		case CSI_EVENT_CBW:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6294,8 +6296,7 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid CBW len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4cbw = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucBw = (UINT8)u4cbw;
+			prCSIData->ucBw = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_RSSI:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6303,8 +6304,7 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid RSSI len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4Rssi = le2cpu32(*((INT_32 *)prCSITlvData->aucbody));
-			prCSIData->cRssi = (UINT8)u4Rssi;
+			prCSIData->cRssi = (UINT8)le2cpu32(*((INT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_SNR:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6312,8 +6312,7 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid SNR len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4SNR = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucSNR = (UINT8)u4SNR;
+			prCSIData->ucSNR = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_BAND:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6321,8 +6320,12 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid BAND len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4BandIdx = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucDbdcIdx = (UINT8)u4BandIdx;
+			prCSIData->ucDbdcIdx = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			if ((prCSIData->ucDbdcIdx != BAND0) && (prCSIData->ucDbdcIdx != BAND1)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid BAND IDX (%d)\n", prCSIData->ucDbdcIdx);
+				goto out;
+			}
 			break;
 		case CSI_EVENT_CSI_NUM:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6330,18 +6333,23 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid CSI num len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4DataCount = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->u2DataCount = (UINT16)u4DataCount;
-			break;
-		case CSI_EVENT_CSI_I_DATA:
-			if (prCSIData->u2DataCount > CSI_MAX_DATA_COUNT) {
+
+			prCSIData->u2DataCount = (UINT16)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+
+			/*at most BW80 per event,surpass BW80, data will be divided*/
+			if (prCSIData->u2DataCount > CSI_BW80_TONE_NUM) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 					"Invalid CSI count %u\n", prCSIData->u2DataCount);
 				goto out;
 			}
-			if (prCSITlvData->body_len != sizeof(INT_16) * CSI_MAX_DATA_COUNT) {
+
+			break;
+		case CSI_EVENT_CSI_I_DATA:
+
+			if (prCSITlvData->body_len != sizeof(INT_16) * prCSIData->u2DataCount) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-					"Invalid CSI num len %u", prCSITlvData->body_len);
+					"Invalid CSI I data len %u, csinum %u\n",
+					prCSITlvData->body_len, prCSIData->u2DataCount);
 				goto out;
 			}
 
@@ -6350,14 +6358,11 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 				prCSIData->ac2IData[i2Idx] = le2cpu16(*(pru2Tmp + i2Idx));
 			break;
 		case CSI_EVENT_CSI_Q_DATA:
-			if (prCSIData->u2DataCount > CSI_MAX_DATA_COUNT) {
+
+			if (prCSITlvData->body_len != sizeof(INT_16) * prCSIData->u2DataCount) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-					"Invalid CSI count %u\n", prCSIData->u2DataCount);
-				goto out;
-			}
-			if (prCSITlvData->body_len != sizeof(INT_16) * CSI_MAX_DATA_COUNT) {
-				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-					"Invalid CSI num len %u", prCSITlvData->body_len);
+					"Invalid CSI Q data len %u, csinum %u\n",
+					prCSITlvData->body_len, prCSIData->u2DataCount);
 				goto out;
 			}
 
@@ -6371,8 +6376,7 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid DBW len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4DataBw = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucDataBw = (UINT8)u4DataBw;
+			prCSIData->ucDataBw = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_CH_IDX:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6380,8 +6384,7 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid CH IDX len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4PrimaryChIdx = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucPrimaryChIdx = (UINT8)u4PrimaryChIdx;
+			prCSIData->ucPrimaryChIdx = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_TA:
 			/*
@@ -6410,8 +6413,9 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid Rx Mode len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4RxMode = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucRxMode = (UINT8)u4RxMode;
+			rx_info = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			prCSIData->ucRxMode = GET_CSI_RX_MODE(rx_info);
+			prCSIData->rx_rate = GET_CSI_RATE(rx_info);
 			break;
 		case CSI_EVENT_RSVD1:
 			if (prCSITlvData->body_len > sizeof(INT_32) * CSI_MAX_RSVD1_COUNT) {
@@ -6449,16 +6453,15 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 					"Invalid RSVD4 len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			u4Rsvd4 = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
-			prCSIData->ucRsvd4 = (UINT8)u4Rsvd4;
+			prCSIData->ucRsvd4 = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_H_IDX:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-					"Invalid Antenna_pattern len %u", prCSITlvData->body_len);
+					"Invalid chain_info len %u", prCSITlvData->body_len);
 				goto out;
 			}
-			prCSIData->Antenna_pattern = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			prCSIData->chain_info = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
 		case CSI_EVENT_TX_RX_IDX:
 			if (prCSITlvData->body_len != sizeof(UINT_32)) {
@@ -6476,6 +6479,45 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 			}
 			prCSIData->u4TimeStamp = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
 			break;
+		case CSI_EVENT_PKT_SN:
+			if (prCSITlvData->body_len != sizeof(UINT_32)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid Segment Number len %u",
+					prCSITlvData->body_len);
+				goto out;
+			}
+
+			prCSIData->pkt_sn = (UINT_16)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			break;
+		case CSI_EVENT_BW_SEG:
+			if (prCSITlvData->body_len != sizeof(UINT_32)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid Segment Number len %u",
+					prCSITlvData->body_len);
+				goto out;
+			}
+
+			prCSIData->u4SegmentNum = le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			break;
+		case CSI_EVENT_REMAIN_LAST:
+			if (prCSITlvData->body_len != sizeof(UINT_32)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid Remain Last len %u",
+					prCSITlvData->body_len);
+				goto out;
+			}
+			prCSIData->ucRemainLast = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			break;
+		case CSI_EVENT_TR_STREAM:
+			if (prCSITlvData->body_len != sizeof(UINT_32)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid TR stream number len %u",
+					prCSITlvData->body_len);
+				goto out;
+			}
+			prCSIData->tr_stream = (UINT8)le2cpu32(*((UINT_32 *)prCSITlvData->aucbody));
+			break;
+
 		default:
 			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_INFO, "Unsupported CSI tag %d\n",
 			prCSITlvData->tag_type);
@@ -6487,40 +6529,64 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 				prBuf += (u2Offset + prCSITlvData->body_len);
 		}
 
-		/*mask the null tone && pilot tone*/
-		if ((prCSIInfo->ucValue1[CSI_CONFIG_OUTPUT_FORMAT] ==
-			CSI_OUTPUT_TONE_MASKED ||
-			prCSIInfo->ucValue1[CSI_CONFIG_OUTPUT_FORMAT] ==
-			CSI_OUTPUT_TONE_MASKED_SHIFTED)) {
-			wlanApplyCSIToneMask(prCSIData->ucRxMode,
-				prCSIData->ucBw, prCSIData->ucDataBw,
-				prCSIData->ucPrimaryChIdx,
-				prCSIData->ac2IData, prCSIData->ac2QData);
+
+		/*if protocal filter is open, filter pkt*/
+		if (prCSIInfo->protocol_filter[prCSIData->ucDbdcIdx] &&
+			!(prCSIInfo->protocol_filter[prCSIData->ucDbdcIdx] & prCSIData->ucRxMode))
+			goto out;
+
+		ret = wlanCheckCSISegmentData(pAd, prCSIData);
+
+		/*event data error or event drop*/
+		if (ret == CSI_CHAIN_ERR || ret == CSI_CHAIN_SEGMENT_ERR) {
+			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+				"CSI chain check error! Segment number=%d, Remain last=%d\n",
+				prCSIData->u4SegmentNum, prCSIData->ucRemainLast);
+			goto out;
 		}
+
+		if (ret == CSI_CHAIN_SEGMENT_FIRST || ret == CSI_CHAIN_SEGMENT_MIDDLE)
+			goto out;
+		else if (ret == CSI_CHAIN_COMPLETE)
+			prCSIBuffer = prCSIData;
+		else if (ret == CSI_CHAIN_SEGMENT_LAST)	/*if all segments have been combined*/
+			prCSIBuffer = &(prCSIInfo->rCSISegmentTemp);
+
+		/*mask the null tone && pilot tone*/
+		if ((prCSIInfo->ucValue1[prCSIData->ucDbdcIdx][CSI_CONFIG_OUTPUT_FORMAT] ==
+			CSI_OUTPUT_TONE_MASKED ||
+			prCSIInfo->ucValue1[prCSIData->ucDbdcIdx][CSI_CONFIG_OUTPUT_FORMAT] ==
+			CSI_OUTPUT_TONE_MASKED_SHIFTED)) {
+			wlanApplyCSIToneMask(prCSIBuffer->ucRxMode,
+				prCSIBuffer->ucBw, prCSIBuffer->ucDataBw,
+				prCSIBuffer->ucPrimaryChIdx,
+				prCSIBuffer->ac2IData, prCSIBuffer->ac2QData);
+		}
+
 		/*reoder the tone */
-		if (prCSIInfo->ucValue1[CSI_CONFIG_OUTPUT_FORMAT] ==
+		if (prCSIInfo->ucValue1[prCSIData->ucDbdcIdx][CSI_CONFIG_OUTPUT_FORMAT] ==
 			CSI_OUTPUT_TONE_MASKED_SHIFTED) {
 			os_move_mem(prCSIInfo->ai2TempIData,
-				prCSIData->ac2IData,
-				sizeof(INT_16) * prCSIData->u2DataCount);
+				prCSIBuffer->ac2IData,
+				sizeof(INT_16) * prCSIBuffer->u2DataCount);
 			os_move_mem(prCSIInfo->ai2TempQData,
-				prCSIData->ac2QData,
-				sizeof(INT_16) * prCSIData->u2DataCount);
+				prCSIBuffer->ac2QData,
+				sizeof(INT_16) * prCSIBuffer->u2DataCount);
 
-			wlanShiftCSI(prCSIData->ucRxMode,
-				prCSIData->ucBw, prCSIData->ucDataBw,
-				prCSIData->ucPrimaryChIdx,
+			wlanShiftCSI(prCSIBuffer->ucRxMode,
+				prCSIBuffer->ucBw, prCSIBuffer->ucDataBw,
+				prCSIBuffer->ucPrimaryChIdx,
 				prCSIInfo->ai2TempIData,
 				prCSIInfo->ai2TempQData,
-				prCSIData->ac2IData,
-				prCSIData->ac2QData);
+				prCSIBuffer->ac2IData,
+				prCSIBuffer->ac2QData);
 
-			if (prCSIData->ucDataBw == RX_VT_FR_MODE_20)
-				prCSIData->u2DataCount = 64;
-			else if (prCSIData->ucDataBw == RX_VT_FR_MODE_40)
-				prCSIData->u2DataCount = 128;
+			if (prCSIBuffer->ucDataBw == RX_VT_FR_MODE_20)
+				prCSIBuffer->u2DataCount = CSI_BW20_TONE_NUM;
+			else if (prCSIBuffer->ucDataBw == RX_VT_FR_MODE_40)
+				prCSIBuffer->u2DataCount = CSI_BW40_TONE_NUM;
 			else
-				prCSIData->u2DataCount = 256;
+				prCSIBuffer->u2DataCount = CSI_BW80_TONE_NUM;
 
 			}
 
@@ -6529,41 +6595,41 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 	/*cur_TS(t0)				t1 -offset*1/10 		expected TS(t1)	  t1 +offset*1/10*/
 	if (prCSIInfo->usr_offset) {
 
-		chain_idx = PARSE_CHAIN_IDX(prCSIData->Antenna_pattern);
-		chain_end = PARSE_CHAIN_END_FLAG(prCSIData->Antenna_pattern);
-		seq = PARSE_CSI_SEQ_NUM(prCSIData->Antenna_pattern);
+		chain_idx = PARSE_CHAIN_IDX(prCSIBuffer->chain_info);
+		chain_end = PARSE_CHAIN_END_FLAG(prCSIBuffer->chain_info);
+		seq = PARSE_CSI_SEQ_NUM(prCSIBuffer->chain_info);
 
 		if (prCSIInfo->cur_TS == 0) {	/*init the cur_TS with first pkt*/
-			wlanPushCSIData(pAd, prCSIData);
+			wlanPushCSIData(pAd, prCSIBuffer);
 			if (chain_end) {
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
-				"Init PKT=> seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
-				prCSIInfo->cur_TS = prCSIData->u4TimeStamp;
+				"Init PKT=> seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
+				prCSIInfo->cur_TS = prCSIBuffer->u4TimeStamp;
 				prCSIInfo->ExpTs_offset = prCSIInfo->usr_offset/CSI_TS_FILTER_RATIO;
 			}
 		} else {	/*after init, filter the expected pkt*/
 			expected_TS = prCSIInfo->cur_TS + prCSIInfo->usr_offset;
-			offset_tmp = (INT32)(expected_TS - prCSIData->u4TimeStamp);
+			offset_tmp = (INT32)(expected_TS - prCSIBuffer->u4TimeStamp);
 			if (offset_tmp > (INT32)(prCSIInfo->usr_offset/CSI_TS_FILTER_RATIO)) { /*for case(1)*/
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-				"case 1 => seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
+				"case 1 => seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
 				goto out;
 			} else if ((offset_tmp < 0) &&
 				(abs(offset_tmp) >= prCSIInfo->usr_offset/CSI_TS_FILTER_RATIO)) {/*for case(4)*/
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-				"case 4 => seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
+				"case 4 => seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
 				need_push = 1;
 			} else {	/*for case(2) &&(3)*/
 				/*to store the pkt which is closest to expected TS*/
 				if (abs(offset_tmp) <= prCSIInfo->ExpTs_offset) {
 					prCSIInfo->ExpTs_offset = abs(offset_tmp);
 					/*store the tmp data*/
-					os_move_mem(&prCSIInfo->TS_filter_pkt[chain_idx], prCSIData, sizeof(struct CSI_DATA_T));
+					os_move_mem(&prCSIInfo->TS_filter_pkt[chain_idx], prCSIBuffer, sizeof(struct CSI_DATA_T));
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-					"case 2&3 buffer => seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
+					"case 2&3 buffer => seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
 				} else {
 					MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-					"case 2&3 push => seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
+					"case 2&3 push => seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
 					need_push = 1;
 				}
 			}
@@ -6583,16 +6649,16 @@ VOID ExtEventCSICtrl(RTMP_ADAPTER *pAd, UINT8 *Data, UINT32 Length)
 			}
 
 			/*if pkt delay too long, then init*/
-			if (prCSIData->u4TimeStamp >=
+			if (prCSIBuffer->u4TimeStamp >=
 				(prCSIInfo->cur_TS + prCSIInfo->usr_offset + prCSIInfo->usr_offset/CSI_TS_FILTER_RATIO)) {
 				prCSIInfo->cur_TS = 0; /*new cur_TS*/
-				wlanPushCSIData(pAd, prCSIData);
+				wlanPushCSIData(pAd, prCSIBuffer);
 				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_DEBUG,
-				"Delay too long, to init => seq:%d ts:%u\n", seq, prCSIData->u4TimeStamp);
+				"Delay too long, to init => seq:%d ts:%u\n", seq, prCSIBuffer->u4TimeStamp);
 			}
 		}
 	} else
-		wlanPushCSIData(pAd, prCSIData);
+		wlanPushCSIData(pAd, prCSIBuffer);
 
 	if (prCSIInfo->CSI_report_mode == CSI_PROC)
 		wake_up_interruptible(&(pAd->rCSIInfo.waitq));

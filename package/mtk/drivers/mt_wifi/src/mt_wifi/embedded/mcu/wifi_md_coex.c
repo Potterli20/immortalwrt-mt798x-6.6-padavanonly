@@ -96,7 +96,7 @@ UCHAR get_wifi_card_type(struct _RTMP_ADAPTER *pAd)
 		for (i = 0; i < WDEV_NUM_MAX; i++) {
 			wdev = pAd->wdev_list[i];
 			if (wdev != NULL) {
-				if (WMODE_CAP_5G(wdev->PhyMode)) {
+				if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
 					band_idx = HcGetBandByWdev(wdev);
 					b_found_5g_wdev = TRUE;
 					break;
@@ -121,7 +121,7 @@ UCHAR get_wifi_card_type(struct _RTMP_ADAPTER *pAd)
 	{
 		wdev = &pAd->ApCfg.MBSSID[MAIN_MBSSID].wdev;
 		if (wdev) {
-			if (WMODE_CAP_5G(wdev->PhyMode)) {
+			if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) {
 				p_chn_ctrl = hc_get_channel_ctrl(pAd->hdev_ctrl, band_idx);
 				if (p_chn_ctrl) {
 					if (p_chn_ctrl->ChGrpABandEn == 0)
@@ -131,7 +131,7 @@ UCHAR get_wifi_card_type(struct _RTMP_ADAPTER *pAd)
 					else if (p_chn_ctrl->ChGrpABandEn == 0b0011)
 						card_type = COEX_WIFI_5G_LOW;
 				}
-			} else if (WMODE_CAP_2G(wdev->PhyMode)) {
+			} else if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_24G) {
 				card_type = COEX_WIFI_2G;
 			}
 		}

@@ -22,7 +22,6 @@
 #include <linux/delay.h>
 #include <linux/of_device.h>
 #include <linux/of_reserved_mem.h>
-#include <linux/clk.h>
 
 #include "osal.h"
 #include "consys_hw.h"
@@ -519,7 +518,6 @@ int consys_hw_pmic_event_cb(unsigned int id, unsigned int event)
 int mtk_conninfra_probe(struct platform_device *pdev)
 {
 	int ret = -1;
-	struct clk *mcu_clk, *ap_conn_clk;
 
 	if (pdev)
 		g_pdev = pdev;
@@ -533,18 +531,6 @@ int mtk_conninfra_probe(struct platform_device *pdev)
 		pr_err("Get platform data fail.\n");
 		return -2;
 	}
-
-	mcu_clk = devm_clk_get(&pdev->dev, "mcu");
-	if (IS_ERR(mcu_clk))
-		pr_err("mcu clock not found\n");
-	else if (clk_prepare_enable(mcu_clk))
-		pr_err("mcu clock configuration failed\n");
-
-	ap_conn_clk = devm_clk_get(&pdev->dev, "ap2conn");
-	if (IS_ERR(ap_conn_clk))
-		pr_err("ap2conn clock not found\n");
-	else if (clk_prepare_enable(ap_conn_clk))
-		pr_err("ap2conn clock configuration failed\n");
 
 	if (consys_hw_ops == NULL)
 		consys_hw_ops = (const struct consys_hw_ops_struct*)g_conninfra_plat_data->hw_ops;

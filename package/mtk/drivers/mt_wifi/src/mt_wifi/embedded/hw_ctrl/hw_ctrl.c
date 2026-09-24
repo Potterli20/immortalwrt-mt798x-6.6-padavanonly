@@ -395,6 +395,7 @@ static NTSTATUS HwCtrlAPRecoverEXPAckTime(RTMP_ADAPTER *pAd, HwCmdQElmt *CMDQelm
 
 static NTSTATUS HwCtrlUpdateRawCounters(RTMP_ADAPTER *pAd, HwCmdQElmt *CMDQelmt)
 {
+
 	MTWF_DBG(NULL, DBG_CAT_HW, DBG_SUBCAT_ALL, DBG_LVL_DEBUG, "%s(line:%d)\n", __func__, __LINE__);
 	asic_update_raw_counters(pAd);
 	return NDIS_STATUS_SUCCESS;
@@ -1170,6 +1171,8 @@ NTSTATUS HwRecoveryFromError(RTMP_ADAPTER *pAd)
 			PCI_HIF_T *pci_hif = hc_get_hif_ctrl(pAd->hdev_ctrl);
 			ULONG flags = 0;
 
+			pAd->ErrRecoveryCtl.hostSerStep = 9;
+
 			os_zero_mem(pSerTimes,
 						(sizeof(pSerTimes[SER_TIME_ID_T0]) * SER_TIME_ID_END));
 			AsicGetTsfTime(pAd, &Highpart, &Lowpart, HW_BSSID_0);
@@ -1209,6 +1212,7 @@ NTSTATUS HwRecoveryFromError(RTMP_ADAPTER *pAd)
 	case ERR_RECOV_STAGE_STOP_PDMA0:		/* Stage 1 */
 		if (Status & ERROR_DETECT_RESET_DONE) {
 			ULONG flags = pAd->Flags;
+			pAd->ErrRecoveryCtl.hostSerStep = 10;
 
 #ifdef WHNAT_SUPPORT
 			/* Stop to access host rx dma after reset WHNAT RX */
@@ -1272,6 +1276,7 @@ NTSTATUS HwRecoveryFromError(RTMP_ADAPTER *pAd)
 
 	case ERR_RECOV_STAGE_RESET_PDMA0:		/* Stage 2 */
 		if (Status & ERROR_DETECT_RECOVERY_DONE) {
+			pAd->ErrRecoveryCtl.hostSerStep = 11;
 			AsicGetTsfTime(pAd, &Highpart, &Lowpart, HW_BSSID_0);
 			pSerTimes[SER_TIME_ID_T4] = Lowpart;
 			ErrRecoverySetRecovStage(pErrRecoveryCtrl, ERR_RECOV_STAGE_WAIT_N9_NORMAL);
@@ -1297,6 +1302,7 @@ NTSTATUS HwRecoveryFromError(RTMP_ADAPTER *pAd)
 			ErrRecoverySetRecovStage(pErrRecoveryCtrl, ERR_RECOV_STAGE_EVENT_REENTRY);
 			HwRecoveryFromError(pAd);
 		} else if (Status & ERROR_DETECT_N9_NORMAL_STATE) {
+			pAd->ErrRecoveryCtl.hostSerStep = 12;
 			AsicGetTsfTime(pAd, &Highpart, &Lowpart, HW_BSSID_0);
 			pSerTimes[SER_TIME_ID_T6] = Lowpart;
 			ErrRecoverySetRecovStage(pErrRecoveryCtrl, ERR_RECOV_STAGE_STOP_IDLE);
@@ -2282,9 +2288,7 @@ NTSTATUS UpdateRddReportHandle(RTMP_ADAPTER *pAd)
 
 	MTWF_DBG(pAd, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s: Wait for scan to stop!\n", __func__);
 	RTMP_OS_INIT_COMPLETION(&wdev->scan_complete);
-	wdev->RadarDetected = TRUE;
 	RTMP_OS_WAIT_FOR_COMPLETION_TIMEOUT(&wdev->scan_complete, 800);
-	wdev->RadarDetected = FALSE;
 
 	rddidx = pExtEventRddReport->rdd_idx;
 

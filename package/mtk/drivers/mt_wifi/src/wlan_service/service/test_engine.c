@@ -1187,7 +1187,7 @@ static s_int32 mt_engine_stack_push(
 	void *virtual_wtbl,
 	struct test_tx_info *tx_info)
 {
-	s_int32 ret = -1;
+	s_int32 ret;
 	struct test_tx_stack *stack = &configs->stack;
 
 	ret = mt_engine_stack_lookup(configs, virtual_wtbl);
@@ -1271,7 +1271,7 @@ static s_int32 mt_engine_store_tx_info(
 	void *virtual_wtbl,
 	struct test_tx_info *tx_info)
 {
-	s_int32 ret = SERV_STATUS_SUCCESS, sta_idx = -1;
+	s_int32 ret = SERV_STATUS_SUCCESS, sta_idx;
 	u_char *pate_pkt = (u_char *)configs->test_pkt;
 	struct test_tx_stack *stack = &configs->stack;
 
@@ -1332,6 +1332,14 @@ static s_int32 mt_engine_store_tx_info(
 						pate_pkt,
 						tx_info->mpdu_info.msdu_len,
 						tx_info->mpdu_info.hdr_len);
+
+			if (ret != SERV_STATUS_SUCCESS) {
+				SERV_LOG(SERV_DBG_CAT_ENGN,
+					 SERV_DBG_LVL_ERROR,
+				("%s: Compose packets failed(0x%04x)\n",
+					__func__, ret));
+				goto err_out;
+			}
 
 			/* allocate per sta packet */
 			/* release packet first in case
@@ -2888,7 +2896,7 @@ s_int32 mt_engine_stop_tx(
 	net_ad_thread_stop_tx(winfos);
 #endif
 
-	if (op_mode & OP_MODE_TXCARR) {
+	if ((op_mode & OP_MODE_TXCARR) == OP_MODE_TXCARR) {
 		op_mode &= ~OP_MODE_TXCARR;
 		configs->op_mode = op_mode;
 		configs->tx_tone_en = 0;
@@ -2920,7 +2928,7 @@ s_int32 mt_engine_stop_tx(
 		if ((pkt_tx_time > 0) || (ipg > 0)) {
 			u_char omac_idx = 0, sta_seq = 0;
 			/* Flush SW queue */
-			ret = net_ad_clean_sta_q(winfos, band_idx, SERV_WCID_ALL);
+			ret = net_ad_clean_sta_q(winfos, band_idx);
 			if (ret)
 				return ret;
 

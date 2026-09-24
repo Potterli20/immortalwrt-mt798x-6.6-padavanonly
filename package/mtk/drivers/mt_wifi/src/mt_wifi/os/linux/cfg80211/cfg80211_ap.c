@@ -1171,7 +1171,7 @@ BOOLEAN CFG80211DRV_OpsBeaconAdd(VOID *pAdOrg, VOID *pData)
 #endif
 	CFG80211DRV_UpdateApSettingFromBeacon(pAd, apidx, pBeacon);
 #define MCAST_WCID_TO_REMOVE 0
-	MgmtTableSetMcastEntry(pAd, MCAST_WCID_TO_REMOVE);
+	MgmtTableSetMcastEntry(pAd, MCAST_WCID_TO_REMOVE, wdev);
 	APSecInit(pAd, wdev);
 	sta_rec = &pAd->MacTab.tr_entry[tr_tb_idx].StaRec;
 	ap_key_table_init(pAd, wdev);

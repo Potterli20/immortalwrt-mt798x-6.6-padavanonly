@@ -385,6 +385,9 @@ static INT build_extra_probe_req_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UC
 	SCAN_INFO *ScanInfo = &wdev->ScanInfo;
 #ifdef CONFIG_STA_SUPPORT
 #ifdef RT_CFG80211_SUPPORT
+	if (pAd->CommonCfg.bcfg80211Disabled)
+		goto skip;
+
 	PSTA_ADMIN_CONFIG pStaCfg = GetStaCfgByWdev(pAd, wdev);
 
 	if (wdev->wdev_type == WDEV_TYPE_STA)
@@ -403,15 +406,16 @@ static INT build_extra_probe_req_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UC
 #if defined(WPA_SUPPLICANT_SUPPORT) || defined(APCLI_CFG80211_SUPPORT)
 	if (pStaCfg &&
 		(pStaCfg->wpa_supplicant_info.WpaSupplicantUP != WPA_SUPPLICANT_DISABLE) &&
-		(pAd->cfg80211_ctrl.ExtraIeLen > 0)) {
+		(pAd->cfg80211_ctrl.ExtraIeLen > 0) &&
+		(!pAd->CommonCfg.bApcliCfg80211Disabled)) {
 		MAKE_IE_TO_BUF(buf, pAd->cfg80211_ctrl.pExtraIe,
 					   pAd->cfg80211_ctrl.ExtraIeLen, len);
 	}
 #endif
 
+skip:
 #endif /* RT_CFG80211_SUPPORT */
 #endif /*CONFIG_STA_SUPPORT*/
-
 	if (ScanInfo->ExtraIeLen && ScanInfo->ExtraIe) {
 		MAKE_IE_TO_BUF(buf, ScanInfo->ExtraIe,
 					   ScanInfo->ExtraIeLen, len);
@@ -595,6 +599,29 @@ INT build_ap_extended_cap_ie(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UCHAR *bu
 			extCapInfo.sae_pk_pwd_used_exclusively = 0;
 	}
 #endif
+#else
+		if (pAd->CommonCfg.bHostapdDisabled) {
+#ifdef DOT11_SAE_SUPPORT
+			{
+				struct _SECURITY_CONFIG *sec_cfg = &wdev->SecConfig;
+
+				if (IS_AKM_SAE(sec_cfg->AKMMap) && sec_cfg->pwd_id_cnt != 0)
+					extCapInfo.sae_pwd_id_in_use = 1;
+				else
+					extCapInfo.sae_pwd_id_in_use = 0;
+
+				if (IS_AKM_SAE(sec_cfg->AKMMap) && sec_cfg->sae_cap.pwd_id_only)
+					extCapInfo.sae_pwd_id_used_exclusively = 1;
+				else
+					extCapInfo.sae_pwd_id_used_exclusively = 0;
+
+				if (IS_AKM_SAE(sec_cfg->AKMMap) && sec_cfg->sae_cap.sae_pk_en)
+					extCapInfo.sae_pk_pwd_used_exclusively = 1;
+				else
+					extCapInfo.sae_pk_pwd_used_exclusively = 0;
+			}
+#endif
+		}
 #endif /*HOSTAPD_WPA3_SUPPORT*/
 
 #ifdef BCN_PROTECTION_SUPPORT
@@ -906,6 +933,9 @@ ULONG build_support_rate_ie(struct wifi_dev *wdev, UCHAR *sup_rate, UCHAR sup_ra
 	USHORT PhyMode = wdev->PhyMode;
 	UCHAR real_sup_rate_len = sup_rate_len;
 	UCHAR total_len;
+#ifdef RT_CFG80211_SUPPORT
+	RTMP_ADAPTER *pAd = (struct _RTMP_ADAPTER *)wdev->sys_handle;
+#endif
 
 	if (sup_rate_len == 0)
 		return frame_len;
@@ -914,19 +944,18 @@ ULONG build_support_rate_ie(struct wifi_dev *wdev, UCHAR *sup_rate, UCHAR sup_ra
 		real_sup_rate_len = 4;
 #ifdef RT_CFG80211_SUPPORT
 #ifndef APCLI_CFG80211_SUPPORT
-	if (wdev->wdev_type == WDEV_TYPE_STA) {
+	if (wdev->wdev_type == WDEV_TYPE_STA)
+#else
+	if ((wdev->wdev_type == WDEV_TYPE_STA) &&
+		pAd->CommonCfg.bApcliCfg80211Disabled)
 #endif
 #endif /*RT_CFG80211_SUPPORT*/
+	{
 #ifdef DOT11_SAE_SUPPORT
 	if (wdev->SecConfig.sae_cap.gen_pwe_method == PWE_HASH_ONLY && real_sup_rate_len < 8)
 		bss_mem_selector_len++;
 #endif
-#ifdef RT_CFG80211_SUPPORT
-#ifndef APCLI_CFG80211_SUPPORT
 	}
-#endif
-#endif /*RT_CFG80211_SUPPORT*/
-
 	total_len = real_sup_rate_len + bss_mem_selector_len;
 
 	MakeOutgoingFrame(buf, &frame_len, 1, &SupRateIe,
@@ -947,32 +976,35 @@ ULONG build_support_ext_rate_ie(struct wifi_dev *wdev, UCHAR sup_rate_len,
 	UCHAR bss_mem_selector_code = BSS_MEMBERSHIP_SELECTOR_VALID | BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY;
 	USHORT PhyMode = wdev->PhyMode;
 	UCHAR total_len;
+#ifdef RT_CFG80211_SUPPORT
+	RTMP_ADAPTER *pAd = (struct _RTMP_ADAPTER *)wdev->sys_handle;
+#endif
 
 	if (PhyMode == WMODE_B)
 		return frame_len;
 
 #ifdef HOSTAPD_WPA3R3_SUPPORT
 	if (wdev->wdev_type == WDEV_TYPE_AP
-		&& wdev->SecConfig.SaePwe == SAE_PWE_HASH_TO_ELEMENT && sup_rate_len >= 8) {
+		&& wdev->SecConfig.SaePwe == SAE_PWE_HASH_TO_ELEMENT && sup_rate_len >= 8 &&
+		!wdev->SecConfig.bHostapdDisabled) {
 		bss_mem_selector_len++;
 	}
 #endif
 
 #ifdef RT_CFG80211_SUPPORT
 #ifndef APCLI_CFG80211_SUPPORT
-	if (wdev->wdev_type == WDEV_TYPE_STA) {
+	if (wdev->wdev_type == WDEV_TYPE_STA)
+#else
+	if (wdev->wdev_type == WDEV_TYPE_STA &&
+		pAd->CommonCfg.bApcliCfg80211Disabled)
 #endif
 #endif /*RT_CFG80211_SUPPORT*/
+	{
 #ifdef DOT11_SAE_SUPPORT
 	if (sup_rate_len >= 8 && wdev->SecConfig.sae_cap.gen_pwe_method == PWE_HASH_ONLY)
 		bss_mem_selector_len++;
 #endif
-#ifdef RT_CFG80211_SUPPORT
-#ifndef APCLI_CFG80211_SUPPORT
 	}
-#endif
-#endif /*RT_CFG80211_SUPPORT*/
-
 	if (ext_sup_rate_len == 0 && bss_mem_selector_len == 0)
 		return frame_len;
 
@@ -1079,7 +1111,7 @@ INT parse_wapi_ie(EID_STRUCT *eid_ptr)
 
 INT parse_ht_info_ie(EID_STRUCT *eid_ptr)
 {
-	return eid_ptr->Len >= SIZE_ADD_HT_INFO_IE;
+	return eid_ptr->Len == SIZE_ADD_HT_INFO_IE;
 }
 
 INT parse_sec_ch_offset_ie(EID_STRUCT *eid_ptr)
@@ -1175,6 +1207,12 @@ INT parse_support_ext_rate_ie(struct legacy_rate *rate, EID_STRUCT *eid_ptr)
 		MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			"ext support rate ie size(%d) is large than MAX_LEN_OF_SUPPORTED_RATE(%d))\n",
 			eid_ptr->Len, MAX_LEN_OF_SUPPORTED_RATES);
+		return FALSE;
+	}
+	if (!rate->sup_rate_len && !eid_ptr->Len) {
+		MTWF_DBG(NULL, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+			"Ext support rate ie size is (%d) and Supported rate Len (%d))\n",
+			eid_ptr->Len, rate->sup_rate_len);
 		return FALSE;
 	}
 

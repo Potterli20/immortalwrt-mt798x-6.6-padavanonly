@@ -930,7 +930,7 @@ wed_proc_handle(struct wed_entry *wed, char choice, char *arg)
 			warp_dbg(WARP_DBG_ERR, "DYBM is not enabled!\n");
 	}
 	break;
-#endif	/* WED_DYNAMIC_RXBM_SUPPORT */
+#endif	/* WED_DYNAMIC_TXBM_SUPPORT */
 
 #ifdef WED_HW_TX_SUPPORT
 	case WED_PROC_TX_FREE_CNT:
@@ -1053,7 +1053,7 @@ wed_proc_handle(struct wed_entry *wed, char choice, char *arg)
 		case WED_PROC_SER_ERR_CNT:
 			dump_wed_ser_dbg_cnt(wed);
 			break;
-#endif	/* WED_DYNAMIC_TXBM_SUPPORT || WED_DYNAMIC_RXBM_SUPPORT*/
+#endif	/* WED_DYNAMIC_TXBM_SUPPORT */
 	default:
 		break;
 	}

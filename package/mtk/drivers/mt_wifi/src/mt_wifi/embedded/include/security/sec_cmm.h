@@ -391,6 +391,7 @@ typedef struct _HANDSHAKE_PROFILE {
 	UINT16 ReasonCode;	/* Record 4way failed reason code */
 	UCHAR RSC[6];
 	RALINK_TIMER_STRUCT MsgRetryTimer;
+	RALINK_TIMER_STRUCT rekey_deauth_delay_timer;
 	UCHAR MsgRetryCounter;
 	BOOLEAN AllowInsPTK;
 } HANDSHAKE_PROFILE, *PHANDSHAKE_PROFILE;
@@ -415,6 +416,11 @@ typedef struct _SECURITY_CONFIG {
 
 	/* for Txblk reference and tx_sw_encrypt() can use */
 	CIPHER_KEY SwPairwiseKey;
+#ifdef SW_CONNECT_SUPPORT
+#ifdef CONFIG_LINUX_CRYPTO
+	struct crypto_aead *tfm;
+#endif /* CONFIG_LINUX_CRYPTO */
+#endif /* SW_CONNECT_SUPPORT */
 
 	/* Group Key */
 	UINT32 GroupCipher;
@@ -425,7 +431,7 @@ typedef struct _SECURITY_CONFIG {
 	SEC_GROUP_REKEY_METHOD GroupReKeyMethod;
 	ULONG GroupReKeyInterval; /* time-based: seconds, packet-based: kilo-packets */
 	ULONG GroupPacketCounter;
-	UCHAR GroupReKeyInstallCountDown; /*unit: second, Install key after 2 way completed or 1 seconds */
+	UCHAR rekey_count_down_counter; /*unit: second,Install key after 2 way completed or 1 sec */
 
 	ULONG PMKCachePeriod;
 
@@ -543,6 +549,10 @@ typedef struct _SECURITY_CONFIG {
 #ifdef CONFIG_HOTSPOT_R3
 	BOOLEAN bIsWPA2EntOSEN;
 #endif
+	UCHAR rekey_install_count_down;
+	UINT16 rekeying_sta_cnt; /* the total sta count is waiting for rekey */
+	UINT32 rekey_deauth_delay;
+	BOOLEAN bHostapdDisabled;
 } SECURITY_CONFIG, *PSECURITY_CONFIG;
 
 /*	Bit	Name			Most secure algorithms						Transition algorithms

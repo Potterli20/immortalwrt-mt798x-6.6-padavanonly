@@ -53,6 +53,7 @@ static struct wifi_ops mt7916_jedi_ops = {
 	.token_rx_dmad_init = client_token_rx_dmad_init,
 	.token_rx_dmad_lookup = client_token_rx_dmad_lookup,
 	.rxinfo_wrapper = client_rxinfo_wrapper,
+	.update_wo_rxcnt = client_update_wo_rxcnt
 };
 
 void mt7916_chip_specific_get(struct wifi_hw *hw)

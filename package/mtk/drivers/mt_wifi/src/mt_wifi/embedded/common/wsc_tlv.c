@@ -216,7 +216,8 @@ int AppendWSCTLV(USHORT index, OUT UCHAR *obuf,
 *
 *	========================================================================
 */
-static VOID	WscParseEncrSettings(
+
+VOID	WscParseEncrSettings(
 	IN  PRTMP_ADAPTER pAdapter,
 	IN  PUCHAR pPlainData,
 	IN  INT PlainLength,
@@ -325,12 +326,14 @@ static VOID	WscParseEncrSettings(
 			break;
 
 		case WSC_ID_MAC_ADDR:
-			if (!MAC_ADDR_EQUAL(pData, pWscControl->RegData.SelfInfo.MacAddr))
-				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO, "WscParseEncrSettings --> Enrollee macAddr not match\n");
+			if (WscLen && (PlainLength >= MAC_ADDR_LEN)) {
+				if (!MAC_ADDR_EQUAL(pData, pWscControl->RegData.SelfInfo.MacAddr))
+					MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+						"WscParseEncrSettings --> Enrollee macAddr not match\n");
 
-			RTMPMoveMemory(pProfile->Profile[0].MacAddr, pData, 6);
+				RTMPMoveMemory(pProfile->Profile[0].MacAddr, pData, 6);
+			}
 			break;
-
 		case WSC_ID_AUTH_TYPE:
 			tmpVal = get_unaligned((PUSHORT) pData);
 			pProfile->Profile[0].AuthType = cpu2be16(tmpVal);/*cpu2be16(*((PUSHORT) pData)); */
@@ -356,11 +359,13 @@ static VOID	WscParseEncrSettings(
 #endif /* CONFIG_STA_SUPPORT */
 #ifdef MAP_R3
 		case WSC_ID_DPP_URI_INFO:
-			NdisMoveMemory(pWscControl->rcvd_dpp_uri, pData, WscLen);
-			pWscControl->rcvd_uri_len = WscLen;
-			MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
-				"WscParseEncrSettings --> Received URI %s with len %d from peer device\n",
-				pWscControl->rcvd_dpp_uri, pWscControl->rcvd_uri_len);
+			if (WscLen <= sizeof(pWscControl->rcvd_dpp_uri)) {
+				NdisMoveMemory(pWscControl->rcvd_dpp_uri, pData, WscLen);
+				pWscControl->rcvd_uri_len = WscLen;
+				MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_INFO,
+					"WscParseEncrSettings --> Received URI %s with len %d from peer device\n",
+					pWscControl->rcvd_dpp_uri, pWscControl->rcvd_uri_len);
+			}
 			break;
 #endif /* MAP_R3 */
 
@@ -373,9 +378,11 @@ static VOID	WscParseEncrSettings(
 		pData  += WscLen;
 		PlainLength -= WscLen;
 	}
+#ifndef RT_CFG80211_SUPPORT
 
 	/* Validate HMAC, reuse KDK buffer */
 	RT_HMAC_SHA256(pReg->AuthKey, 32, pPlainData, HmacLen, Temp, SHA256_DIGEST_SIZE);
+#endif /* RT_CFG80211_SUPPORT */
 
 	if (RTMPEqualMemory(Hmac, Temp, 8) != 1) {
 		MTWF_DBG(pAdapter, DBG_CAT_SEC, CATSEC_WPS, DBG_LVL_ERROR,
@@ -387,6 +394,7 @@ static VOID	WscParseEncrSettings(
 				 "calculated --> 0x%08x-%08x\n",
 				  (UINT)cpu2be32(*((PUINT)&Hmac[0])), (UINT)cpu2be32(*((PUINT)&Hmac[4])));
 	}
+
 }
 
 /*
@@ -480,13 +488,19 @@ BOOLEAN	WscProcessCredential(
 			break;
 
 		case WSC_ID_AUTH_TYPE:
-			tmpVal = get_unaligned((PUSHORT) pData);
-			pProfile->Profile[CurrentIdx].AuthType = cpu2be16(tmpVal);
+
+			if (WscLen && (PlainLength >= sizeof(tmpVal))) {
+				tmpVal = get_unaligned((PUSHORT) pData);
+				pProfile->Profile[CurrentIdx].AuthType = cpu2be16(tmpVal);
+			}
 			break;
 
 		case WSC_ID_ENCR_TYPE:
-			tmpVal = get_unaligned((PUSHORT) pData);
-			pProfile->Profile[CurrentIdx].EncrType = cpu2be16(tmpVal);
+
+			if (WscLen && PlainLength >= sizeof(tmpVal)) {
+				tmpVal = get_unaligned((PUSHORT) pData);
+				pProfile->Profile[CurrentIdx].EncrType = cpu2be16(tmpVal);
+			}
 			break;
 
 		case WSC_ID_NW_KEY_INDEX:
@@ -514,7 +528,10 @@ BOOLEAN	WscProcessCredential(
 			*	Some AP (ex. Buffalo WHR-G300N WPS AP) would change BSSID during WPS processing.
 			*	STA shall not change MacAddr of credential form AP.
 			*/
-			RTMPMoveMemory(pProfile->Profile[CurrentIdx].MacAddr, pData, MAC_ADDR_LEN);
+
+			if (WscLen && (PlainLength >= MAC_ADDR_LEN))
+				RTMPMoveMemory(
+					pProfile->Profile[CurrentIdx].MacAddr, pData, MAC_ADDR_LEN);
 			break;
 
 		case WSC_ID_KEY_WRAP_AUTH:
@@ -1439,6 +1456,7 @@ int BuildMessageM3(
 	PUCHAR				pData = (PUCHAR)pbuf, pAuth;
 	PWSC_REG_DATA		pReg = NULL;
 	INT				    HmacLen;
+	INT					idx;
 	UCHAR				*pHash = NULL;
 #ifdef WSC_V2_SUPPORT
 	PWSC_TLV			pWscTLV = &pWscControl->WscV2Info.ExtraTlv;
@@ -1462,9 +1480,19 @@ int BuildMessageM3(
 	templen = AppendWSCTLV(WSC_ID_REGISTRAR_NONCE, pData, pReg->RegistrarNonce, 0);
 	pData += templen;
 	Len   += templen;
+
+	/* Enrollee 16 byte E-S1 generation */
+	for (idx = 0; idx < 16; idx++)
+		pReg->Es1[idx] = RandomByte(pAdapter);
+
+	/* Enrollee 16 byte E-S2 generation */
+	for (idx = 0; idx < 16; idx++)
+		pReg->Es2[idx] = RandomByte(pAdapter);
+
 	/* 4. E-Hash1 */
 	/* */
 	/* Generate PSK1 */
+
 	WscGenPSK1(pAdapter, pWscControl, &TB[0]);
 	/* Copy first 16 bytes to PSK1 */
 	NdisMoveMemory(pReg->Psk1, TB, 16);
@@ -2896,12 +2924,14 @@ int ProcessMessageM1(
 		/* Enrollee 192 random bytes for DH key generation */
 		for (idx = 0; idx < 192; idx++)
 			pWscControl->RegData.EnrolleeRandom[idx] = RandomByte(pAdapter);
+#ifndef RT_CFG80211_SUPPORT
 
 		RT_DH_PublicKey_Generate(
 			WPS_DH_G_VALUE, sizeof(WPS_DH_G_VALUE),
 			WPS_DH_P_VALUE, sizeof(WPS_DH_P_VALUE),
 			pWscControl->RegData.EnrolleeRandom, sizeof(pWscControl->RegData.EnrolleeRandom),
 			pReg->Pkr, (UINT *) &DH_Len);
+#endif /*#ifndef RT_CFG80211_SUPPORT*/
 
 		/* Need to prefix zero padding */
 		if ((DH_Len != sizeof(pReg->Pkr)) &&
@@ -3180,6 +3210,7 @@ int ProcessMessageM1(
 			if (IS_MAP_ENABLE(pAdapter)) {
 				UCHAR tmp_data_len = 0;
 
+				NdisZeroMemory(&pReg->PeerInfo.map_DevPeerRole, sizeof(pReg->PeerInfo.map_DevPeerRole));
 				WscParseV2SubItem(WFA_EXT_ID_MAP_EXT_ATTRIBUTE,
 								pData, WscLen,
 								&pReg->PeerInfo.map_DevPeerRole,
@@ -3929,6 +3960,7 @@ int ProcessMessageM3(
 		Length -= WscLen;
 	}
 
+
 	/* Combine last TX & RX message contents and validate the HMAC */
 	/* We have to exclude last 12 bytes from last receive since it's authenticator value */
 	HmacLen = pReg->LastTx.Length + pReg->LastRx.Length - 12;
@@ -4544,6 +4576,7 @@ int ProcessMessageM6(
 
 	if (FieldCheck[0] || FieldCheck[1] || FieldCheck[2] || FieldCheck[3] || FieldCheck[4] || FieldCheck[5] || FieldCheck[6])
 		ret = WSC_ERROR_WANTING_FIELD;
+
 
 out:
 

@@ -62,13 +62,19 @@ INT32 wlan_operate_set_vht_bw(struct wifi_dev *wdev, UCHAR vht_bw)
 	struct wlan_operate *op = (struct wlan_operate *) wdev->wpf_op;
 	UCHAR cap_vht_bw = wlan_config_get_vht_bw(wdev);
 	INT32 ret = WLAN_OPER_OK;
-	struct freq_cfg cfg;
+	struct freq_cfg cfg = {0};
+	RTMP_ADAPTER *pAd = (RTMP_ADAPTER *)wdev->sys_handle;
 
 	if (!op) {
 		MTWF_DBG(NULL, DBG_CAT_CFG, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
 			" op NULL\n");
 		return WLAN_OPER_FAIL;
 	}
+
+	if (pAd && pAd->CommonCfg.DfsParameter.bDedicatedZeroWaitSupport &&
+		(wlan_config_get_ch_band(wdev) == CMD_CH_BAND_5G) &&
+		pAd->CommonCfg.DfsParameter.ZwAdjBwFlag)
+		return ret;
 
 	if (vht_bw == op->vht_oper.vht_bw)
 		return ret;

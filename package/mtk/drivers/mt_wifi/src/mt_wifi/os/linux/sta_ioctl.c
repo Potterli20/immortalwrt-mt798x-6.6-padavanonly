@@ -3107,6 +3107,7 @@ INT rt28xx_sta_ioctl(void *net_dev_obj, void *rq, INT cmd) /* snowpin for ap/sta
 #if (KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE)
 		if (access_ok(VERIFY_READ, wrqin->u.data.pointer, wrqin->u.data.length) != TRUE)
 #else
+
 		if (access_ok(wrqin->u.data.pointer, wrqin->u.data.length) != TRUE)
 #endif
 			break;

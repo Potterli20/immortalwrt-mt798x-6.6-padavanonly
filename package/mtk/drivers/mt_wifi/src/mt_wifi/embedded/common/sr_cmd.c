@@ -8037,6 +8037,13 @@ INT ShowSrMeshstatTh(IN PRTMP_ADAPTER pAd, IN RTMP_STRING * arg)
 		rv = sscanf(arg, "%d", &idevidx);
 
 		if (rv == 1)  {
+
+			if ((idevidx < 0) || (idevidx >= WDEV_NUM_MAX)) {
+				MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR,
+					"Invalid WdevIdx  = %d\n", idevidx);
+				return FALSE;
+			}
+
 			wdev = pAd->wdev_list[idevidx];
 
 			if (wdev == NULL) {

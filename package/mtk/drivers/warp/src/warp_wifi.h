@@ -174,7 +174,7 @@ struct wifi_entry {
 #define WIFI_ERR_RECOV_STOP_IDLE_DONE 		3
 
 /*wifi related hal*/
-int wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info,
+void wifi_tx_tuple_add(struct wifi_entry *wifi, u8 idx, u8 *tx_info,
 		       u32 wdma_rx_port);
 void wifi_tx_tuple_reset(struct wifi_entry *wifi);
 void wifi_tx_ring_info_dump(struct wifi_entry *wifi, u8 ring_id, u32 idx);

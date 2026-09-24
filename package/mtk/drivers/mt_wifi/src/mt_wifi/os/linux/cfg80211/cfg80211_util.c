@@ -165,11 +165,9 @@ static const UINT32 CipherSuites[] = {
 #endif
 #endif /*DOT11W_PMF_SUPPORT*/
 	WLAN_CIPHER_SUITE_GCMP,
-#if (KERNEL_VERSION(4, 0, 0) <= LINUX_VERSION_CODE)
 	WLAN_CIPHER_SUITE_CCMP_256,
 #ifdef HOSTAPD_SUITEB_SUPPORT
 	WLAN_CIPHER_SUITE_GCMP_256,
-#endif
 #endif
 };
 /*Changes to support 4_19 kernel version*/
@@ -582,6 +580,7 @@ BOOLEAN CFG80211_SupBandInit(
 		pWiphy->bands[IEEE80211_BAND_2GHZ] = NULL;
 		pBand->channels = NULL;
 		pBand->bitrates = NULL;
+		memset(&pBand->edmg_cap, 0, sizeof(pBand->edmg_cap));
 	}
 
 	/* 8. Fill the Band 5GHz */
@@ -674,6 +673,7 @@ BOOLEAN CFG80211_SupBandInit(
 		pWiphy->bands[IEEE80211_BAND_5GHZ] = NULL;
 		pBand->channels = NULL;
 		pBand->bitrates = NULL;
+		memset(&pBand->edmg_cap, 0, sizeof(pBand->edmg_cap));
 	}
 
 	/* 9. Fill the Band 6GHz */

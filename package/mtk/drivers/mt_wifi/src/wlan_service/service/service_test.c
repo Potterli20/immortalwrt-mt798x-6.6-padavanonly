@@ -1155,6 +1155,10 @@ s_int32 mt_serv_dpd_prek(struct service_test *serv_test)
 				serv_test->test_winfo,
 				PREK_DPD_5G_PROC);
 
+	if (ret)
+		SERV_LOG(SERV_DBG_CAT_TEST, SERV_DBG_LVL_ERROR,
+			("%s: PREK_DPD_5G err=0x%08x\n", __func__, ret));
+
 	ret = serv_test->test_op->op_dpd_prek(
 				serv_test->test_winfo,
 				PREK_DPD_2G_PROC);
@@ -2096,7 +2100,7 @@ s_int32 mt_serv_log_on_off(
 	struct test_operation *ops;
 	struct test_log_dump_cb *log_cb = NULL;
 	u_int32 mask = 0;
-	u_int8 overwrite = TRUE;
+	u_int8 overwrite;
 
 	ops = serv_test->test_op;
 	log_cb = &serv_test->test_log_dump[log_type-1];

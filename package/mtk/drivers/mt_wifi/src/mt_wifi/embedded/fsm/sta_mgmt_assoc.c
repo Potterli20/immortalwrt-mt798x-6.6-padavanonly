@@ -317,7 +317,10 @@ static VOID ApCliAssocPostProc(
 
 	==========================================================================
  */
-static VOID sta_assoc_post_proc(
+
+
+
+VOID sta_assoc_post_proc(
 	IN PRTMP_ADAPTER pAd,
 	IN PUCHAR pAddr2,
 	IN USHORT CapabilityInfo,
@@ -858,7 +861,8 @@ static VOID sta_mlme_assoc_req_action(
 #ifdef APCLI_CFG80211_SUPPORT
 			/*pStaCfg->ReqVarIELen = 0;*/
 			/*NdisZeroMemory(pStaCfg->ReqVarIEs, MAX_VIE_LEN);*/
-			if ((pStaCfg->wpa_supplicant_info.WpaSupplicantUP & 0x7F) ==  WPA_SUPPLICANT_ENABLE) {
+			if (((pStaCfg->wpa_supplicant_info.WpaSupplicantUP & 0x7F) ==  WPA_SUPPLICANT_ENABLE)
+				&& (!pAd->CommonCfg.bApcliCfg80211Disabled)) {
 				ULONG TmpWpaAssocIeLen = 0;
 #if defined(SUPP_SAE_SUPPORT) || defined(SUPP_OWE_SUPPORT)
 				UCHAR * wpa_ie = NULL;
@@ -1276,25 +1280,6 @@ static VOID sta_mlme_assoc_req_action(
 			MTWF_DBG(pAd, DBG_CAT_CLIENT, CATCLIENT_APCLI, DBG_LVL_INFO, "%s:: APCLI NOT INSERT RM CAPA\n", __func__);
 #endif
 
-#ifdef CONFIG_MAP_SUPPORT
-		if ((IS_MAP_ENABLE(pAd) && (pAd->MAPMode != MAP_CERT_MODE)) ||
-			(!IS_MAP_ENABLE(pAd))
-#ifdef MAP_6E_SUPPORT
-			|| (IS_MAP_CERT_ENABLE(pAd) && WMODE_CAP_6G(wdev->PhyMode))
-#endif
-			)
-#ifdef HOSTAPD_WPA3R3_SUPPORT
-			FrameLen += build_rsnxe_ie(wdev, &wdev->SecConfig, pOutBuffer + FrameLen);
-#else
-			FrameLen += build_rsnxe_ie(&wdev->SecConfig, pOutBuffer + FrameLen);
-#endif
-#else
-#ifdef HOSTAPD_WPA3R3_SUPPORT
-		FrameLen += build_rsnxe_ie(wdev, &wdev->SecConfig, pOutBuffer + FrameLen);
-#else
-		FrameLen += build_rsnxe_ie(&wdev->SecConfig, pOutBuffer + FrameLen);
-#endif
-#endif
 
 		FrameLen += build_vendor_ie(pAd, wdev, (pOutBuffer + FrameLen), VIE_ASSOC_REQ
 		);
@@ -1323,7 +1308,8 @@ static VOID sta_mlme_assoc_req_action(
 #ifdef APCLI_CFG80211_SUPPORT
 		/*pStaCfg->ReqVarIELen = 0;*/
 		/*NdisZeroMemory(pStaCfg->ReqVarIEs, MAX_VIE_LEN);*/
-		if ((pStaCfg->wpa_supplicant_info.WpaSupplicantUP & 0x7F) ==  WPA_SUPPLICANT_ENABLE) {
+		if (((pStaCfg->wpa_supplicant_info.WpaSupplicantUP & 0x7F) ==  WPA_SUPPLICANT_ENABLE) &&
+			(!pAd->CommonCfg.bApcliCfg80211Disabled)) {
 			ULONG TmpWpaAssocIeLen = 0;
 #if defined(SUPP_SAE_SUPPORT) || defined(SUPP_OWE_SUPPORT)
 			UCHAR *wpa_ie = NULL;
@@ -1651,6 +1637,31 @@ static VOID sta_mlme_assoc_req_action(
 		}
 		/* RSN end */
 
+		/*
+		Fix Connect IOT issue:When Iphone checks Assoc req,
+		it may follow the strict order of RSN first, then RSNXE.
+		Once the order is reversed, assoc connect will be rejected.
+		*/
+#ifdef CONFIG_MAP_SUPPORT
+		if ((IS_MAP_ENABLE(pAd) && (pAd->MAPMode != MAP_CERT_MODE)) ||
+			(!IS_MAP_ENABLE(pAd))
+#ifdef MAP_6E_SUPPORT
+			|| (IS_MAP_CERT_ENABLE(pAd) && WMODE_CAP_6G(wdev->PhyMode))
+#endif
+			)
+#ifdef HOSTAPD_WPA3R3_SUPPORT
+			FrameLen += build_rsnxe_ie(wdev, &wdev->SecConfig, pOutBuffer + FrameLen);
+#else
+			FrameLen += build_rsnxe_ie(&wdev->SecConfig, pOutBuffer + FrameLen);
+#endif
+#else
+#ifdef HOSTAPD_WPA3R3_SUPPORT
+		FrameLen += build_rsnxe_ie(wdev, &wdev->SecConfig, pOutBuffer + FrameLen);
+#else
+		FrameLen += build_rsnxe_ie(&wdev->SecConfig, pOutBuffer + FrameLen);
+#endif
+#endif
+
 		ie_info.frame_buf = (UCHAR *)(pOutBuffer + FrameLen);
 		FrameLen +=  build_extra_ie(pAd, &ie_info);
 #ifdef WSC_INCLUDED
@@ -1669,7 +1680,11 @@ static VOID sta_mlme_assoc_req_action(
 
 
 #ifdef CONFIG_OWE_SUPPORT
-		if (IS_AKM_OWE(pAPEntry->SecConfig.AKMMap)) {
+		if (IS_AKM_OWE(pAPEntry->SecConfig.AKMMap)
+#ifdef RT_CFG80211_SUPPORT
+				&& pAd->CommonCfg.bcfg80211Disabled
+#endif
+		) {
 			OWE_INFO *owe = &pAPEntry->SecConfig.owe;
 			UCHAR group = pStaCfg->curr_owe_group;
 			owe->last_try_group = group;
@@ -2163,6 +2178,15 @@ static VOID sta_mlme_disassoc_req_action(
 		RTMPSetTimer(&pStaCfg->MlmeAux.DisassocTimer, Timeout);	/* in mSec */
 		assoc_fsm_state_transition(wdev, DISASSOC_WAIT_RSP);
 	}
+#ifdef VENDOR10_VLP_FEATURE
+	if (pAd->root_ap_vlp == TRUE) {
+		pAd->root_ap_vlp = FALSE;
+		if (wlan_config_get_ch_band(wdev) == CMD_CH_BAND_6G && pAd->vlp_ctrl == TRUE) {
+			MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s() Apply LPI power\n", __func__);
+			MtPwrLimitTblChProc(pAd, HcGetBandByWdev(wdev), wlan_operate_get_ch_band(wdev), wlan_operate_get_prim_ch(wdev), wlan_operate_get_cen_ch_1(wdev));
+		}
+	}
+#endif
 
 SEND_EVENT_TO_CNTL:
 	/* linkdown should be done after DisAssoc frame is sent */
@@ -2235,14 +2259,17 @@ static VOID sta_peer_assoc_rsp_action(
 		/* The frame is for me ? */
 		if (MAC_ADDR_EQUAL(Addr2, pStaCfg->MlmeAux.Bssid)) {
 #if defined(RT_CFG80211_P2P_CONCURRENT_DEVICE) || defined(CFG80211_MULTI_STA) || defined(APCLI_CFG80211_SUPPORT)
-			PFRAME_802_11 pFrame =	(PFRAME_802_11) (Elem->Msg);
-			MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
-					 "ASSOC - receive ASSOC_RSP to me (status=%d)\n", Status);
-			/* Store the AssocRsp Frame to wpa_supplicant via CFG80211 */
-			NdisZeroMemory(pAd->StaCfg[ifIndex].ResVarIEs, MAX_VIE_LEN);
-			pAd->StaCfg[ifIndex].ResVarIELen = 0;
-			pAd->StaCfg[ifIndex].ResVarIELen = Elem->MsgLen - 6 - sizeof(HEADER_802_11);
-			NdisCopyMemory(pAd->StaCfg[ifIndex].ResVarIEs, &pFrame->Octet[6], pAd->StaCfg[ifIndex].ResVarIELen);
+			if (!pAd->CommonCfg.bApcliCfg80211Disabled) {
+				PFRAME_802_11 pFrame =	(PFRAME_802_11) (Elem->Msg);
+
+				MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+						 "ASSOC - receive ASSOC_RSP to me (status=%d)\n", Status);
+				/* Store the AssocRsp Frame to wpa_supplicant via CFG80211 */
+				NdisZeroMemory(pAd->StaCfg[ifIndex].ResVarIEs, MAX_VIE_LEN);
+				pAd->StaCfg[ifIndex].ResVarIELen = 0;
+				pAd->StaCfg[ifIndex].ResVarIELen = Elem->MsgLen - 6 - sizeof(HEADER_802_11);
+				NdisCopyMemory(pAd->StaCfg[ifIndex].ResVarIEs, &pFrame->Octet[6], pAd->StaCfg[ifIndex].ResVarIELen);
+			}
 #endif /* RT_CFG80211_P2P_CONCURRENT_DEVICE || CFG80211_MULTI_STA */
 #ifdef MAC_REPEATER_SUPPORT
 
@@ -2440,7 +2467,7 @@ static VOID sta_peer_assoc_rsp_action(
 					/* For Repeater get correct wmm valid setting */
 					pStaCfg->MlmeAux.APEdcaParm.bValid = EdcaParm.bValid;
 #ifdef APCLI_AS_WDS_STA_SUPPORT
-					{
+					if (!pAd->CommonCfg.bApcliASWDSSTADisabled) {
 						PMAC_TABLE_ENTRY pEntry = &pAd->MacTab.Content[pStaCfg->MacTabWCID];
 
 						if (!(IS_AKM_WPA_CAPABILITY_Entry(pEntry)
@@ -2493,17 +2520,32 @@ static VOID sta_peer_assoc_rsp_action(
 								  HAS_HT_CAPS_EXIST(ie_list->cmm_ies.ie_exists));
 
 #ifdef DOT11_HE_AX
-				if (HAS_HE_OP_EXIST(ie_list->cmm_ies.ie_exists))
+				if (HAS_HE_OP_EXIST(ie_list->cmm_ies.ie_exists)) {
 					parse_he_bss_color_info(wdev, ie_list);
+#ifdef VENDOR10_VLP_FEATURE
+					if (((ie_list->cmm_ies.he6g_opinfo.ctrl) & 0x38) == 0x10)
+						pAd->root_ap_vlp = TRUE;
+					else
+						pAd->root_ap_vlp = FALSE;
+					MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_NOTICE,
+						"%s() set root AP VLP mode= %d\n", __func__, pAd->root_ap_vlp);
+					if (pAd->vlp_ctrl == TRUE && pAd->root_ap_vlp == TRUE) {
+						MTWF_DBG(NULL, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_NOTICE, "%s() Apply VLP power\n", __func__);
+						MtPwrLimitTblChProc(pAd, HcGetBandByWdev(wdev), wlan_operate_get_ch_band(wdev), wlan_operate_get_prim_ch(wdev), wlan_operate_get_cen_ch_1(wdev));
+					}
+#endif
+				}
 				if (HAS_HE_MU_EDCA_EXIST(ie_list->cmm_ies.ie_exists))
 					update_peer_he_muedca_ies(pEntry, &(ie_list->cmm_ies));
 #endif
 
 #ifdef APCLI_CFG80211_SUPPORT
-			CFG80211_checkScanTable(pAd);
-				RT_CFG80211_P2P_CLI_CONN_RESULT_INFORM(pAd, pStaCfg->MlmeAux.Bssid, ifIndex,
-					pStaCfg->ReqVarIEs, pStaCfg->ReqVarIELen,
-					pStaCfg->ResVarIEs, pStaCfg->ResVarIELen, TRUE);
+			if (!pAd->CommonCfg.bApcliCfg80211Disabled) {
+				CFG80211_checkScanTable(pAd);
+					RT_CFG80211_P2P_CLI_CONN_RESULT_INFORM(pAd, pStaCfg->MlmeAux.Bssid, ifIndex,
+						pStaCfg->ReqVarIEs, pStaCfg->ReqVarIELen,
+						pStaCfg->ResVarIEs, pStaCfg->ResVarIELen, TRUE);
+			}
 #endif
 			} else {
 #ifdef FAST_EAPOL_WAR
@@ -2545,12 +2587,14 @@ static VOID sta_peer_assoc_rsp_action(
 				}
 #endif
 #ifdef APCLI_CFG80211_SUPPORT
-					CFG80211_checkScanTable(pAd);
+					if (!pAd->CommonCfg.bApcliCfg80211Disabled) {
+						CFG80211_checkScanTable(pAd);
 #ifdef SUPP_OWE_SUPPORT
 				RT_CFG80211_P2P_CLI_CONN_RESULT_INFORM(pAd, pStaCfg->MlmeAux.Bssid, ifIndex, NULL, 0, NULL, Status, 0);
 #else
 				RT_CFG80211_P2P_CLI_CONN_RESULT_INFORM(pAd, pStaCfg->MlmeAux.Bssid, ifIndex, NULL, 0, NULL, 0, 0);
 #endif
+					}
 #endif
 			}
 			assoc_fsm_state_transition(Elem->wdev, ASSOC_IDLE);
@@ -2560,7 +2604,18 @@ static VOID sta_peer_assoc_rsp_action(
 #ifndef APCLI_CFG80211_SUPPORT
 #ifdef RT_CFG80211_SUPPORT
 
-			if (Status == MLME_SUCCESS) {
+			if (Status == MLME_SUCCESS && !pAd->CommonCfg.bcfg80211Disabled) {
+				PFRAME_802_11 pFrame =  (PFRAME_802_11) (Elem->Msg);
+
+				RTEnqueueInternalCmd(pAd, CMDTHREAD_CONNECT_RESULT_INFORM,
+									 &pFrame->Octet[6], Elem->MsgLen - 6 - sizeof(HEADER_802_11));
+			}
+
+#endif /* RT_CFG80211_SUPPORT */
+#else
+#ifdef RT_CFG80211_SUPPORT
+
+			if (Status == MLME_SUCCESS && !pAd->CommonCfg.bcfg80211Disabled) {
 				PFRAME_802_11 pFrame =  (PFRAME_802_11) (Elem->Msg);
 
 				RTEnqueueInternalCmd(pAd, CMDTHREAD_CONNECT_RESULT_INFORM,
@@ -2570,6 +2625,10 @@ static VOID sta_peer_assoc_rsp_action(
 #endif /* RT_CFG80211_SUPPORT */
 #endif
 #endif /* LINUX */
+#ifdef DFS_SLAVE_SUPPORT
+			if (SLAVE_MODE_EN(pAd, HcGetBandByWdev(wdev)))
+				slave_bh_event(pAd, wdev, TRUE);
+#endif /* DFS_SLAVE_SUPPORT */
 		}
 	} else
 		MTWF_DBG(pAd, DBG_CAT_CLIENT, DBG_SUBCAT_ALL, DBG_LVL_WARN, "ASSOC - sanity check fail\n");

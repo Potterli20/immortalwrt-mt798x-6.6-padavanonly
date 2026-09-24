@@ -1,6 +1,8 @@
+diff --git a/mt_wifi/embedded/ap/ap_cfg.c b/mt_wifi/embedded/ap/ap_cfg.c
+index f6c14de..e6247eb 100644
 --- a/mt_wifi/embedded/ap/ap_cfg.c
 +++ b/mt_wifi/embedded/ap/ap_cfg.c
-@@ -29235,6 +29235,46 @@ INT32 rtmp_get_macPower(IN VOID *pAdSrc)
+@@ -29908,6 +29908,46 @@ INT32 rtmp_get_macPower(IN VOID *pAdSrc)
  	return retPwr;
  }
  
@@ -47,9 +49,11 @@
  #ifdef CONFIG_6G_SUPPORT
  INT show_bssmnger_info(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
  {
+diff --git a/mt_wifi/os/linux/ap_ioctl.c b/mt_wifi/os/linux/ap_ioctl.c
+index 077a7f9..a2510fb 100644
 --- a/mt_wifi/os/linux/ap_ioctl.c
 +++ b/mt_wifi/os/linux/ap_ioctl.c
-@@ -574,6 +574,8 @@ const struct iw_handler_def rt28xx_ap_iw
+@@ -574,6 +574,8 @@ const struct iw_handler_def rt28xx_ap_iw_handler_def = {
  };
  #endif /* CONFIG_APSTA_MIXED_SUPPORT */
  
@@ -58,7 +62,7 @@
  INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for ap/sta */
  {
  	struct net_device *net_dev;
-@@ -801,18 +803,24 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, v
+@@ -801,18 +803,24 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
  	{
  		INT32 powerval = 0;
  

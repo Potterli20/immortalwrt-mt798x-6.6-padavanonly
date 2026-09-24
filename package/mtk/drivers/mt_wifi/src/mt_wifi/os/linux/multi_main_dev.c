@@ -124,6 +124,8 @@ EXPORT_SYMBOL(multi_inf_get_idx);
 
 /* Driver module load/unload function */
 static int __init wifi_drv_init_module(void)
+
+
 {
 	int status = 0;
 
@@ -161,7 +163,6 @@ static void __exit wifi_drv_cleanup_module(void)
 #endif /* RTMP_RBUS_SUPPORT */
 	os_module_exit();
 }
-
 
 module_init(wifi_drv_init_module);
 module_exit(wifi_drv_cleanup_module);

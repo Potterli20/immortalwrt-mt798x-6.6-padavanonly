@@ -226,8 +226,10 @@ static struct vht_ch_layout vht_ch_40M[] = {
 	{140, 144, 142},
 	{149, 153, 151},
 	{157, 161, 159},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{165, 169, 167},
 	{173, 177, 175},
+#endif
 	{0, 0, 0},
 };
 
@@ -300,20 +302,302 @@ static struct vht_ch_layout vht_ch_80M[] = {
 	{116, 128, 122},
 	{132, 144, 138},
 	{149, 161, 155},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{165, 177, 171},
+#endif
 	{0, 0, 0},
 };
 
 static struct  vht_ch_layout vht_ch_160M[] = {
 	{36, 64, 50},
 	{100, 128, 114},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{149, 177, 163},
+#endif
+
 	{0, 0, 0},
 };
 
 static struct  vht_ch_layout vht_ch_160M_non_weather[] = {
 	{36, 64, 50},
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 	{149, 177, 163},
+#endif
+	{0, 0, 0},
+};
+
+//Country Region 40M channel
+//Countryt Region 6
+static struct vht_ch_layout vht_ch_40M_UNII_1[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{0, 0, 0},
+};
+//Countryt Region 8
+static struct vht_ch_layout vht_ch_40M_UNII_2[] = {
+	{52, 56, 54},
+	{60, 64, 62},
+	{0, 0, 0},
+};
+//Countryt Region 2
+static struct vht_ch_layout vht_ch_40M_UNII_3[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{0, 0, 0},
+};
+//Countryt Region 3, 16
+static struct vht_ch_layout vht_ch_40M_UNII_4[] = {
+	{52, 56, 54},
+	{60, 64, 62},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 4, 5
+static struct vht_ch_layout vht_ch_40M_UNII_5[] = {
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 10, 17
+static struct vht_ch_layout vht_ch_40M_UNII_6[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 0
+static struct vht_ch_layout vht_ch_40M_UNII_7[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 22
+static struct vht_ch_layout vht_ch_40M_UNII_8[] = {
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{0, 0, 0},
+};
+//Countryt Region 18
+static struct vht_ch_layout vht_ch_40M_UNII_9[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{132, 136, 134},
+	{0, 0, 0},
+};
+//Countryt Region 1
+static struct vht_ch_layout vht_ch_40M_UNII_10[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{0, 0, 0},
+};
+//Countryt Region 19
+static struct vht_ch_layout vht_ch_40M_UNII_11[] = {
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 12
+static struct vht_ch_layout vht_ch_40M_UNII_12[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{140, 144, 142},
+	{0, 0, 0},
+};
+//Countryt Region 9
+static struct vht_ch_layout vht_ch_40M_UNII_13[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{132, 136, 134},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 11, 20
+static struct vht_ch_layout vht_ch_40M_UNII_14[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 14
+static struct vht_ch_layout vht_ch_40M_UNII_15[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{132, 136, 134},
+	{140, 144, 142},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 7, 21
+static struct vht_ch_layout vht_ch_40M_UNII_16[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+//Countryt Region 13
+static struct vht_ch_layout vht_ch_40M_UNII_17[] = {
+	{36, 40, 38},
+	{44, 48, 46},
+	{52, 56, 54},
+	{60, 64, 62},
+	{100, 104, 102},
+	{108, 112, 110},
+	{116, 120, 118},
+	{124, 128, 126},
+	{132, 136, 134},
+	{140, 144, 142},
+	{149, 153, 151},
+	{157, 161, 159},
+	{0, 0, 0},
+};
+
+//Country Region 80M channel
+//Countryt Region 6
+static struct vht_ch_layout vht_ch_80M_UNII_1[] = {
+	{36, 48, 42},
+	{0, 0, 0},
+};
+
+//Countryt Region 8
+static struct vht_ch_layout vht_ch_80M_UNII_2a[] = {
+	{52, 64, 58},
+	{0, 0, 0},
+};
+
+//Countryt Region 10, 17
+static struct vht_ch_layout vht_ch_80M_UNII_1_3[] = {
+	{36, 48, 42},
+	{149, 161, 155},
+	{0, 0, 0},
+};
+
+//Countryt Region 3, 16
+static struct vht_ch_layout vht_ch_80M_UNII_2a_3[] = {
+	{52, 64, 58},
+	{149, 161, 155},
+	{0, 0, 0},
+};
+
+//Countryt Region 1
+static struct vht_ch_layout vht_ch_80M_UNII_1_2a_2c1_2c2[] = {
+	{36, 48, 42},
+	{52, 64, 58},
+	{100, 112, 106},
+	{116, 128, 122},
+	{0, 0, 0},
+};
+
+
+//Countryt Region 9, 11
+static struct vht_ch_layout vht_ch_80M_UNII_1_2a_2c1_3[] = {
+	{36, 48, 42},
+	{52, 64, 58},
+	{100, 112, 106},
+	{149, 161, 155},
+	{0, 0, 0},
+};
+
+//Countryt Region 14
+static struct vht_ch_layout vht_ch_80M_UNII_1_2a_2c1_2c3_3[] = {
+	{36, 48, 42},
+	{52, 64, 58},
+	{100, 112, 106},
+	{132, 144, 138},
+	{149, 161, 155},
+	{0, 0, 0},
+};
+
+//Countryt Region 18
+static struct vht_ch_layout vht_ch_80M_UNII_1_2a_2c1[] = {
+	{36, 48, 42},
+	{52, 64, 58},
+	{100, 112, 106},
+	{0, 0, 0},
+};
+
+//Countryt Region 19
+static struct vht_ch_layout vht_ch_80M_UNII_2c1_2c2[] = {
+	{100, 112, 106},
+	{116, 128, 122},
+	{0, 0, 0},
+};
+
+//Country Region 160M channel
+//Countryt Region 9, 11, 14
+static struct  vht_ch_layout vht_ch_160M_UNII_1_2a[] = {
+	{36, 64, 50},
+	{0, 0, 0},
+};
+
+//Countryt Region 19
+static struct  vht_ch_layout vht_ch_160M_UNII_2c1_2c2[] = {
+	{100, 128, 114},
+	{0, 0, 0},
+};
+
+//Countryt Region 1
+static struct  vht_ch_layout vht_ch_160M_UNII_1_2a_2c1_2c2[] = {
+	{36, 64, 50},
+	{100, 128, 114},
 	{0, 0, 0},
 };
 
@@ -636,7 +920,7 @@ INT vht_mode_adjust(RTMP_ADAPTER *pAd, MAC_TABLE_ENTRY *pEntry,
 				} else {
 					/* can not know peer capability,
 					use the bw from support opclass as maximum capability. */
-					if ((bw_from_opclass != NULL) && ((*bw_from_opclass) < BW_80))
+					if ((bw_from_opclass != NULL) && ((*bw_from_opclass) == BW_40))
 						pEntry->MaxHTPhyMode.field.BW = BW_40;
 					else {
 						pEntry->MaxHTPhyMode.field.BW = BW_80;
@@ -1472,25 +1756,106 @@ BOOLEAN vht40_channel_group(RTMP_ADAPTER *pAd, UCHAR channel, struct wifi_dev *w
 	INT idx = 0;
 	UCHAR region = 0;
 	UCHAR ch_band = wlan_config_get_ch_band(wdev);
+	struct vht_ch_layout *vht_ch = get_ch_array(BW_40, ch_band);
 
 	switch (ch_band) {
 	case CMD_CH_BAND_5G:
+		switch (pAd->CommonCfg.CountryRegionForABand) {
+		case 0:
+			vht_ch = vht_ch_40M_UNII_7;
+			break;
+
+		case 1:
+			vht_ch = vht_ch_40M_UNII_10;
+			break;
+
+		case 2:
+			vht_ch = vht_ch_40M_UNII_3;
+			break;
+
+		case 3:
+		case 16:
+			vht_ch = vht_ch_40M_UNII_4;
+			break;
+
+		case 4:
+		case 5:
+			vht_ch = vht_ch_40M_UNII_5;
+			break;
+
+		case 6:
+			vht_ch = vht_ch_40M_UNII_1;
+			break;
+
+		case 7:
+		case 21:
+			vht_ch = vht_ch_40M_UNII_16;
+			break;
+
+		case 8:
+			vht_ch = vht_ch_40M_UNII_2;
+			break;
+
+		case 10:
+		case 17:
+			vht_ch = vht_ch_40M_UNII_6;
+			break;
+
+		case 9:
+			vht_ch = vht_ch_40M_UNII_13;
+			break;
+
+		case 11:
+		case 20:
+			vht_ch = vht_ch_40M_UNII_14;
+			break;
+
+		case 12:
+			vht_ch = vht_ch_40M_UNII_12;
+			break;
+
+		case 13:
+			vht_ch = vht_ch_40M_UNII_17;
+			break;
+
+		case 14:
+			vht_ch = vht_ch_40M_UNII_15;
+			break;
+
+		case 18:
+			vht_ch = vht_ch_40M_UNII_9;
+			break;
+
+		case 19:
+			vht_ch = vht_ch_40M_UNII_11;
+			break;
+
+		case 22:
+			vht_ch = vht_ch_40M_UNII_8;
+			break;
+
+		default:
+			break;
+		}
+
 		region = GetCountryRegionFromCountryCode(pAd->CommonCfg.CountryCode);
-		while (vht_ch_40M[idx].ch_up_bnd != 0) {
-			if (channel >= vht_ch_40M[idx].ch_low_bnd &&
-				channel <= vht_ch_40M[idx].ch_up_bnd) {
+		while (vht_ch[idx].ch_up_bnd != 0) {
+			if (channel >= vht_ch[idx].ch_low_bnd &&
+				channel <= vht_ch[idx].ch_up_bnd) {
 				if (((region == CE) &&
-					(vht_ch_40M[idx].cent_freq_idx == 142))
+					(vht_ch[idx].cent_freq_idx == 142))
 				) {
 					idx++;
 					continue;
 				}
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 				if (!UNII4BandSupport(pAd) &&
-					(vht_ch_40M[idx].cent_freq_idx == 167 ||
-						vht_ch_40M[idx].cent_freq_idx == 175)) {
+					(vht_ch[idx].cent_freq_idx == 167 ||
+						vht_ch[idx].cent_freq_idx == 175)) {
 							idx++;
 							continue;
 					}
+#endif
 					return TRUE;
 				}
 			idx++;
@@ -1524,6 +1889,50 @@ BOOLEAN vht80_channel_group(RTMP_ADAPTER *pAd, UCHAR channel, struct wifi_dev *w
 
 	switch (ch_band) {
 	case CMD_CH_BAND_5G:
+		/*Select BW80 channel cap by country region*/
+		switch (pAd->CommonCfg.CountryRegionForABand) {
+		case 1:
+			vht_ch = vht_ch_80M_UNII_1_2a_2c1_2c2;
+			break;
+
+		case 3:
+		case 16:
+			vht_ch = vht_ch_80M_UNII_2a_3;
+			break;
+
+		case 6:
+			vht_ch = vht_ch_80M_UNII_1;
+			break;
+
+		case 8:
+			vht_ch = vht_ch_80M_UNII_2a;
+			break;
+
+		case 10:
+		case 17:
+			vht_ch = vht_ch_80M_UNII_1_3;
+			break;
+
+		case 9:
+		case 11:
+			vht_ch = vht_ch_80M_UNII_1_2a_2c1_3;
+			break;
+
+		case 14:
+			vht_ch = vht_ch_80M_UNII_1_2a_2c1_2c3_3;
+			break;
+
+		case 18:
+			vht_ch = vht_ch_80M_UNII_1_2a_2c1;
+			break;
+
+		case 19:
+			vht_ch = vht_ch_80M_UNII_2c1_2c2;
+			break;
+		default:
+			break;
+
+		}
 		while (vht_ch && vht_ch[idx].ch_up_bnd != 0) {
 			if (channel >= vht_ch[idx].ch_low_bnd &&
 				channel <= vht_ch[idx].ch_up_bnd) {
@@ -1545,10 +1954,12 @@ BOOLEAN vht80_channel_group(RTMP_ADAPTER *pAd, UCHAR channel, struct wifi_dev *w
 					idx++;
 					continue;
 				}
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 					if (!UNII4BandSupport(pAd) && (vht_ch_80M[idx].cent_freq_idx == 171)) {
 						idx++;
 						continue;
 					}
+#endif
 				return TRUE;
 			}
 
@@ -1610,14 +2021,36 @@ BOOLEAN vht160_channel_group(RTMP_ADAPTER *pAd, UCHAR channel, struct wifi_dev *
 		if (!CheckWeatherChannel(pAd, wdev, channel)) {
 			vht_ch = vht_ch_160M_non_weather;
 		}
+		/*Select BW160 channel cap by country region*/
+		switch (pAd->CommonCfg.CountryRegionForABand) {
+		case 1:
+			vht_ch = vht_ch_160M_UNII_1_2a_2c1_2c2;
+			break;
+
+		case 9:
+		case 11:
+		case 14:
+		case 18:
+		case 20:
+			vht_ch = vht_ch_160M_UNII_1_2a;
+			break;
+		case 19:
+			vht_ch = vht_ch_160M_UNII_2c1_2c2;
+			break;
+		default:
+			break;
+
+		}
 
 		while (vht_ch && vht_ch[idx].ch_up_bnd != 0) {
 			if (channel >= vht_ch[idx].ch_low_bnd &&
 				channel <= vht_ch[idx].ch_up_bnd){
+#ifndef IAP_VENDOR1_FEATURE_SUPPORT
 				if (!UNII4BandSupport(pAd) && (vht_ch[idx].cent_freq_idx == 163)) {
 					idx++;
 					continue;
 				}
+#endif
 				return TRUE;
 			}
 

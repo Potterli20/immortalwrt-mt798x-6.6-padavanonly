@@ -94,6 +94,9 @@ typedef struct _STA_REC_CTRL_T {
 #ifdef DOT11_HE_AX
 	struct he_sta_info he_sta;
 #endif /*DOT11_HE_AX*/
+#ifdef CONFIG_6G_SUPPORT
+	BOOLEAN update_ra;
+#endif /* CONFIG_6G_SUPPORT */
 	VOID *priv;
 	DL_LIST list;
 } STA_REC_CTRL_T;

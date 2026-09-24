@@ -615,6 +615,9 @@ typedef struct _STAREC_AUTO_RATE_CFG_T {
 	UINT_32 u4RaFastInterval;
 } CMD_STAREC_AUTO_RATE_CFG_T, *P_CMD_STAREC_AUTO_RATE_CFG_T;
 
+#ifdef DOT11_N_SUPPORT
+#define MAX_BW40_CNT               64
+#endif /* DOT11_N_SUPPORT */
 typedef struct _STAREC_AUTO_RATE_UPDATE_T {
 	/* Auto Rate (Group3) */
 	UINT_16 u2Tag;                          /* Tag = 0x03 */
@@ -633,6 +636,10 @@ typedef struct _STAREC_AUTO_RATE_UPDATE_T {
 	BOOL    fgIs5G;
 
 	UINT_8  ucMmpsMode;
+	UINT_8 u1Rsv[3];
+	UINT_8 u1Bw40StaCnt;
+	UINT_8 u1Rsv1[3];
+	UINT_16 u2Bw40StaWlanIdx[MAX_BW40_CNT];
 } CMD_STAREC_AUTO_RATE_UPDATE_T, *P_CMD_STAREC_AUTO_RATE_UPDATE_T;
 
 typedef struct _CMD_FIX_RATE_WO_STA_UPDATE_T {
@@ -681,6 +688,10 @@ typedef enum _HERA_EVENT_TYPE_T {
 typedef enum _RA_CTRL_OPTION {
     RA_CTRL_OPTION_DYNAMIC_BW = 0,
     RA_CTRL_OPTION_LEGACY_FREQ_DUP,
+	RA_CTRL_OPTION_FAST_RATE_DOWN,
+	RA_CTRL_OPTION_UBA_CTRL,
+	RA_CTRL_OPTION_BA_BOUND_EN,
+	RA_CTRL_OPTION_HRC_EN,
     RA_CTRL_OPTION_NUM
 } RA_CTRL_OPTION;
 

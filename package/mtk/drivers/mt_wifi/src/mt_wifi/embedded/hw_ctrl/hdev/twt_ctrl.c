@@ -81,6 +81,7 @@ VOID twt_ctrl_init(struct hdev_ctrl *ctrl)
 				(sizeof(struct twt_link_node *)*pChipCap->twt_hw_num));
 	if (twt_ctl->twt_node != NULL) {
 		twt_ctl->max_twt_node_num = pChipCap->twt_hw_num;
+		twt_ctl->max_btwt_node_num = pChipCap->twt_btwt_max_num;
 		twt_ctl->free_twt_node_num_individual = pChipCap->twt_individual_max_num;
 		twt_ctl->free_twt_node_num_btwt = pChipCap->twt_btwt_max_num;
 		twt_ctl->free_twt_node_num_group = pChipCap->twt_group_max_num;
@@ -197,7 +198,11 @@ struct twt_link_node *twt_ctrl_acquire_twt_node(struct hdev_ctrl *ctrl, BOOLEAN 
 		twt_node = twt_ctl->twt_node[i];
 		twt_node->state = TWT_STATE_SW_OCCUPIED;
 		twt_node->type = type;
-		twt_node->agrt_tbl_idx = i;
+		if (type == TWT_TYPE_BTWT)
+			twt_node->agrt_tbl_idx = (TWT_HW_BTWT_ARGT_IDX_BASE +
+									  (twt_ctl->max_btwt_node_num - twt_ctl->free_twt_node_num_btwt));
+		else
+			twt_node->agrt_tbl_idx = i;
 		if (type == TWT_TYPE_INDIVIDUAL)
 			twt_ctl->free_twt_node_num_individual--;
 		else if (type == TWT_TYPE_GROUP)

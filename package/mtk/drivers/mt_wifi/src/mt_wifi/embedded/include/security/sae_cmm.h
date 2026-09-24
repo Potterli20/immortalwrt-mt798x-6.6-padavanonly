@@ -413,6 +413,8 @@ struct __SAE_CFG {
 	ULONG dot11RSNASAERetransPeriod;
 	struct _RTMP_ADAPTER *pAd;
 	NDIS_SPIN_LOCK sae_cfg_lock;
+	UINT32 comeback_idx;
+	UINT32 comeback_pending_idx[288];
 };
 
 typedef struct __BIG_INTEGER_EC_POINT {

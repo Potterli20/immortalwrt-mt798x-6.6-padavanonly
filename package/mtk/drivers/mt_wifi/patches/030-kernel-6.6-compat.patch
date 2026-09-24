@@ -1,3 +1,36 @@
+diff --git a/mt_wifi/chips/mt7916_dbg.c b/mt_wifi/chips/mt7916_dbg.c
+index a3f2479..086dc4d 100644
+--- a/mt_wifi/chips/mt7916_dbg.c
++++ b/mt_wifi/chips/mt7916_dbg.c
+@@ -4757,7 +4757,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
+ 	RTMP_STRING *msg;
+ 	UCHAR fileName[64];
+ 	struct file *file_w;
+-	mm_segment_t orig_fs;
++	// mm_segment_t orig_fs;
+ 	UINT32 addr = 0;
+ 	UINT32 end_addr = 0;
+ 	UINT32 macVal = 0;
+@@ -4771,8 +4771,8 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
+ 
+ 	NdisZeroMemory(msg, 4);
+ 
+-	orig_fs = get_fs();
+-	set_fs(KERNEL_DS);
++	// orig_fs = get_fs();
++	// set_fs(KERNEL_DS);
+ 
+ 	while (COREDUMP_QUEUE_INFO[i].Name != NULL) {
+ 		ret = snprintf(fileName, sizeof(fileName), "/etc/%s.bin", COREDUMP_QUEUE_INFO[i].Name);
+@@ -4821,7 +4821,7 @@ static INT32 chip_show_coredump_proc(struct _RTMP_ADAPTER *pAd)
+ 	}
+ 
+ done:
+-	set_fs(orig_fs);
++	// set_fs(orig_fs);
+ 	os_free_mem(msg);
+ 
+ 	return TRUE;
 diff --git a/mt_wifi/chips/mt7981_dbg.c b/mt_wifi/chips/mt7981_dbg.c
 index 0801fa4..8a663dd 100644
 --- a/mt_wifi/chips/mt7981_dbg.c
@@ -65,10 +98,10 @@ index ee9ee89..831bfde 100644
  
  	return TRUE;
 diff --git a/mt_wifi/embedded/ap/ap_cfg.c b/mt_wifi/embedded/ap/ap_cfg.c
-index fdc66d8..ad995c6 100644
+index c9ad125..9e6f728 100644
 --- a/mt_wifi/embedded/ap/ap_cfg.c
 +++ b/mt_wifi/embedded/ap/ap_cfg.c
-@@ -17857,7 +17857,7 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+@@ -17824,7 +17824,7 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
  {
  	UCHAR fileName[64];
  	struct file *file_w;
@@ -77,7 +110,7 @@ index fdc66d8..ad995c6 100644
  	UINT32 startaddr = 0,  endaddr = 0, addr = 0;
  	UINT32 macVal = 0;
  	UINT Idx;/* enable load from bin */
-@@ -17898,8 +17898,8 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+@@ -17865,8 +17865,8 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
  		endaddr = 0xE00D7FFF;
  	}
  
@@ -88,7 +121,7 @@ index fdc66d8..ad995c6 100644
  	/* open file */
  	file_w = filp_open(fileName, O_WRONLY | O_CREAT, 0);
  
-@@ -17939,7 +17939,7 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+@@ -17906,7 +17906,7 @@ INT Show_SimSectionUlm_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
  	}
  
  done:
@@ -302,6 +335,41 @@ index a5eaabe..bdb5ea1 100644
 -
  	return Status;
  }
+diff --git a/mt_wifi/os/linux/pci_main_dev.c b/mt_wifi/os/linux/pci_main_dev.c
+index 3dc475b..ef52fb1 100644
+--- a/mt_wifi/os/linux/pci_main_dev.c
++++ b/mt_wifi/os/linux/pci_main_dev.c
+@@ -267,13 +267,13 @@ static int mt_pci_dev_set(struct pci_dev *pdev, unsigned long *csr_addr)
+ 
+ #if defined(PLATFORM_M_STB)
+ 	if (IS_ENABLED(CONFIG_ARM64) && (!IS_ENABLED(CONFIG_ZONE_DMA))) {
+-		if ((rv = pci_set_dma_mask(pdev, DMA_BIT_MASK(64))) != 0) {
++		if ((rv = dma_set_mask(&pdev->dev, DMA_BIT_MASK(64))) != 0) {
+ 			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
+ 					 "set DMA mask failed!errno=%d\n", rv);
+ 			return rv;
+ 		}
+ 
+-		if ((rv = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64))) != 0) {
++		if ((rv = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64))) != 0) {
+ 			MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
+ 					 "set DMA consistent mask failed!errno=%d\n", rv);
+ 			return rv;
+@@ -281,12 +281,12 @@ static int mt_pci_dev_set(struct pci_dev *pdev, unsigned long *csr_addr)
+ 	}
+ 	else
+ #endif
+-	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
++	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32))) {
+ 		/*
+ 		 * pci_set_consistent_dma_mask() will always be able to set the same
+ 		 * or a smaller mask as pci_set_dma_mask()
+ 		 */
+-		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
++		dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+ 	} else {
+ 		MTWF_DBG(NULL, DBG_CAT_HIF, CATHIF_PCI, DBG_LVL_ERROR,
+ 				 "set DMA mask failed!errno=%d\n", rv);
 diff --git a/mt_wifi/os/linux/rbus_prop_dev.c b/mt_wifi/os/linux/rbus_prop_dev.c
 index b856b45..8e9a26b 100644
 --- a/mt_wifi/os/linux/rbus_prop_dev.c

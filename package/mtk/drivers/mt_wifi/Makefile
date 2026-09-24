@@ -313,9 +313,18 @@ define Build/Compile
 endef
 
 define KernelPackage/mt_wifi/install
+rm -rf $(1)/lib/firmware/; \
+$(INSTALL_DIR) $(1)/lib/firmware/; \
+if [ "$$(CONFIG_MTK_CHIP_MT7986)" = "y" ] ; then \
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7986/rebb/MT7986_* $(1)/lib/firmware/; \
+fi ; \
+if [ "$$(CONFIG_MTK_CHIP_MT7916)" = "y" ] ; then \
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7916/rebb/MT7916_* $(1)/lib/firmware/; \
+fi ; \
+if [ "$$(CONFIG_MTK_CHIP_MT7981)" = "y" ] ; then \
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7981/rebb/MT7981_* $(1)/lib/firmware/; \
+fi ; \
 if [ "$$(CONFIG_MTK_WIFI_FW_BIN_LOAD)" = "y" ]; then \
-	rm -rf $(1)/lib/firmware/; \
-	$(INSTALL_DIR) $(1)/lib/firmware/; \
 	if [ "$$(CONFIG_MTK_CHIP_MT7986)" = "y" ] ; then \
 		if [ "$$(CONFIG_MTK_MT_WIFI_FIRMWARE_PATH_MT7986)" != "" ]; then \
 			$(INSTALL_BIN) ./files/$$(CONFIG_MTK_MT_WIFI_FIRMWARE_PATH_MT7986)/* $(1)/lib/firmware/; \

@@ -1160,6 +1160,8 @@ static int mtk_get_hardware_id(const char *dev, char *buf)
 
 	ret = iwinfo_hardware_id_from_mtd(id);
 	if (ret != 0)
+		ret = mtk_get_id_by_l1util(dev, id);
+	if (ret != 0)
 		ret = mtk_get_hardware_id_from_l1profile(id);
 
 	return ret;

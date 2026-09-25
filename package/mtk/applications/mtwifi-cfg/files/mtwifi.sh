@@ -25,6 +25,12 @@ detect_mtwifi() {
 					[ $idx -eq 1 ] && band="2g" || band="5g"
 				fi
 
+				# 6GHz stays disabled: the regulatory domain in use does not
+				# allow it and there are no 6E clients, so no radio is created
+				# for that band at all.  Drop this line (and keep the 6g branch
+				# below) to bring the 6G radio back.
+				[ "$band" = "6g" ] && continue
+
 				txpower="100"
 				if [ "$band" = "2g" ]; then
 					hwmode="11g"

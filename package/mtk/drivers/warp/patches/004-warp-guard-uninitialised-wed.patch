@@ -1,0 +1,28 @@
+diff --git a/warp_main.c b/warp_main.c
+--- a/warp_main.c
++++ b/warp_main.c
+@@ -1402,6 +1402,24 @@
+ 	if (check_and_update_warp(&warp, &wed, &wdma, &wifi, priv_data) == false)
+ 		goto end;
+ 
++	/*
++	 * The WED registers are only reachable after the WED platform device has
++	 * been probed for this entry (wed_init() stores the ioremap result in
++	 * base_addr). A wed_entry whose platform device went away - e.g. because
++	 * the WED node had to be handed over to another card's warp driver - is
++	 * all zeroes here, and every warp_io_*() access on it would fault on the
++	 * register offset alone. Skip the register update and tell the caller
++	 * that WED 512 support is unavailable instead of taking the box down.
++	 */
++	if (!enable || !wed || !wed->base_addr) {
++		warp_dbg(WARP_DBG_ERR,
++			 "%s(): wed entry is not initialised (base_addr=0x%lx), skip WED 512 support setting!\n",
++			 __func__, wed ? wed->base_addr : 0UL);
++		if (enable)
++			*enable = false;
++		goto end;
++	}
++
+ 	warp_wed_512_support_hw(wed, enable);
+ 
+ end:

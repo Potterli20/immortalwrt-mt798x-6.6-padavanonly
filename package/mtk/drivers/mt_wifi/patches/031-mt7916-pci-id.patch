@@ -1,0 +1,72 @@
+diff --git a/mt_wifi/embedded/common/mt_io.c b/mt_wifi/embedded/common/mt_io.c
+index b5fb764..23e6d7f 100644
+--- a/mt_wifi/embedded/common/mt_io.c
++++ b/mt_wifi/embedded/common/mt_io.c
+@@ -586,7 +586,8 @@ VOID hif_chip_init(VOID *chip_hif, UINT32 device_id)
+ #ifdef MT7916
+ 	if ((device_id & 0x0000FFFF) == 0x790A)
+ 		mt790A_hif_ctrl_chip_pcie1_init(chip_hif);
+-	if (((device_id & 0x0000FFFF) == 0x7906))
++	if (((device_id & 0x0000FFFF) == 0x7906) ||
++		((device_id & 0x0000FFFF) == 0x7916))
+ 		mt7906_hif_ctrl_chip_init(chip_hif);
+ #endif /*MT7916*/
+ #ifdef MT7981
+diff --git a/mt_wifi/embedded/include/rtmp_chip.h b/mt_wifi/embedded/include/rtmp_chip.h
+index 90ed369..7581cda 100644
+--- a/mt_wifi/embedded/include/rtmp_chip.h
++++ b/mt_wifi/embedded/include/rtmp_chip.h
+@@ -230,7 +230,8 @@
+ #define IS_MT7986(_pAd)		((((_pAd)->ChipID & 0x0000ffff) == 0x00007986) || \
+ 							(((_pAd)->ChipID & 0x0000ffff) == 0x00000789))
+ 
+-#define IS_MT7916(_pAd)		((((_pAd)->ChipID & 0x0000ffff) == 0x00007906))
++#define IS_MT7916(_pAd)		((((_pAd)->ChipID & 0x0000ffff) == 0x00007906) || \
++				 (((_pAd)->ChipID & 0x0000ffff) == 0x00007916))
+ 
+ #define IS_MT7981(_pAd)		((((_pAd)->ChipID & 0x0000ffff) == 0x00007981) || \
+ 							(((_pAd)->ChipID & 0x0000ffff) == 0x00000790))
+diff --git a/mt_wifi/embedded/plug_in/warp_proxy/warp_proxy.c b/mt_wifi/embedded/plug_in/warp_proxy/warp_proxy.c
+index 98b107a..cf059ee 100644
+--- a/mt_wifi/embedded/plug_in/warp_proxy/warp_proxy.c
++++ b/mt_wifi/embedded/plug_in/warp_proxy/warp_proxy.c
+@@ -468,6 +468,7 @@ client_chip_specific_get(struct wifi_hw *hw)
+ #endif
+ #ifdef MT7916
+ 	case 0x7906:
++	case 0x7916:
+ 		mt7916_chip_specific_get(hw);
+ 		proxy_print("%s(): 0x7916 chip id 0x%4x!!\n",
+ 			__func__, hw->chip_id);
+@@ -656,6 +657,7 @@ client_register(struct wifi_hw *hw)
+ #endif
+ #ifdef MT7916
+ 	case 0x7906:
++	case 0x7916:
+ 		return mt7916_warp_register_client(hw);
+ #endif
+ #ifdef MT7981
+diff --git a/mt_wifi/embedded/plug_in/whnat/woe_main.c b/mt_wifi/embedded/plug_in/whnat/woe_main.c
+index 9bd3409..2d22839 100644
+--- a/mt_wifi/embedded/plug_in/whnat/woe_main.c
++++ b/mt_wifi/embedded/plug_in/whnat/woe_main.c
+@@ -51,6 +51,7 @@ static const unsigned int whnat_support_list[] = {
+ 	0x7915,
+ 	0x7986,
+ 	0x7906,
++	0x7916,
+ 	0x7981,
+ 	0
+ };
+diff --git a/mt_wifi/os/linux/pci_main_dev.c b/mt_wifi/os/linux/pci_main_dev.c
+index 3dc475b..32edb83 100644
+--- a/mt_wifi/os/linux/pci_main_dev.c
++++ b/mt_wifi/os/linux/pci_main_dev.c
+@@ -67,6 +67,7 @@ static struct pci_device_id rt_pci_tbl[] DEVINITDATA = {
+ #endif
+ #ifdef MT7916
+ 	{PCI_DEVICE(MT7906_PCI_VENDOR_ID, NIC7906_PCIe_DEVICE_ID)},
++	{PCI_DEVICE(MT7916_PCI_VENDOR_ID, NIC7916_PCIe_DEVICE_ID)},
+ #endif
+ #ifdef MT7981
+ 	{PCI_DEVICE(MT7981_PCI_VENDOR_ID, NIC7981_PCIe_DEVICE_ID)},

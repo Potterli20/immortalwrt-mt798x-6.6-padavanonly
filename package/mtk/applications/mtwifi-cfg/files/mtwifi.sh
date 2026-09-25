@@ -15,14 +15,28 @@ detect_mtwifi() {
 			[ "$type" = "mtwifi" ] || {
 				ifname="$(l1util get ${dev} main_ifname)"
 				idx="$(l1util get ${dev} subidx)"
-				if [ $idx -eq 1 ]; then
-					band="2g"
+				[ $idx -eq 1 ] && dbdc_main="1" || dbdc_main="0"
+
+				# the band comes from the l1profile (INDEXn_band, e.g. the
+				# AX7800 profile has INDEX1_band=2g;6g); only fall back to
+				# the subidx rule when the profile does not name a band.
+				band="$(l1util get ${dev} band)"
+				if [ -z "$band" ] || [ "$band" = "nil" ]; then
+					[ $idx -eq 1 ] && band="2g" || band="5g"
+				fi
+
+				txpower="100"
+				if [ "$band" = "2g" ]; then
 					hwmode="11g"
 					htmode="HE40"
 					htbsscoex="1"
 					ssid="ImmortalWrt-2.4G"
-					dbdc_main="1"
-					txpower="100"
+					channel="auto"
+				elif [ "$band" = "6g" ]; then
+					hwmode="11a"
+					htmode="HE160"
+					htbsscoex="0"
+					ssid="ImmortalWrt-6G"
 					channel="auto"
 				else
 					band="5g"
@@ -31,8 +45,6 @@ detect_mtwifi() {
 					htbsscoex="0"
 					ssid="ImmortalWrt-5G"
 					channel="36"
-					txpower="100"
-					dbdc_main="0"
 				fi
 				uci -q batch <<-EOF
 					set wireless.${dev}=wifi-device

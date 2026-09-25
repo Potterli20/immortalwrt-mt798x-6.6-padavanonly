@@ -22,19 +22,37 @@ if not l1dat then
 end
 
 function show_usage()
-    print("Usage: l1util list | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>")
+    print("Usage: l1util list | dump | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>")
 end
 
 function show_devs()
+    local devs = {}
     local ret = ""
-    for k, _ in pairs(l1dat.devname_ridx) do
-        if #ret > 0 then
-            ret = ret .. " " .. k
-        else
-            ret = k
+
+    for k, v in pairs(l1dat.devname_ridx) do
+        -- skip MT7986-2.4G for ax7800 project
+        if not(string.find(v.profile_path, "ax7800") and
+          v.INDEX == "MT7986" and v.subidx == 1) then
+            table.insert(devs, k)
         end
     end
+
+    table.sort(devs)
+
+    for _, v in ipairs(devs) do
+        if #ret > 0 then
+            ret = ret .. " " .. v
+        else
+            ret = v
+        end
+    end
+
     print(ret)
+end
+
+function dump_l1dat()
+    local inspect = require "inspect"
+    print(inspect.inspect(l1dat))
 end
 
 function get_dev_prop(dev, prop)
@@ -46,6 +64,10 @@ end
 local action = {
     ["list"] = function()
         show_devs()
+    end,
+
+    ["dump"] = function()
+        dump_l1dat()
     end,
 
     ["get"] = function(dev, prop)

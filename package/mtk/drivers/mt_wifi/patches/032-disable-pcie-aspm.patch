@@ -1,0 +1,22 @@
+diff --git a/mt_wifi/os/linux/pci_main_dev.c b/mt_wifi/os/linux/pci_main_dev.c
+--- a/mt_wifi/os/linux/pci_main_dev.c
++++ b/mt_wifi/os/linux/pci_main_dev.c
+@@ -251,6 +251,18 @@
+ 	int vector;
+ #endif
+ 
++	/*
++	 * MT7916/MT7986 based cards do not tolerate ASPM L0s/L1 - nor the L1
++	 * substates that the kernel programs into the link when it is built
++	 * with the "powersupersave" ASPM policy: the kernel only applies that
++	 * policy from pci_enable_device(), and the first register access
++	 * afterwards ends in a Completion Timeout. The root port then drops
++	 * the link and the card is gone ("pci configuration space can't be
++	 * read"). Disable ASPM for our card before it is enabled, as the
++	 * mainline mt76 driver does.
++	 */
++	pci_disable_link_state(pdev, PCIE_LINK_STATE_L0S | PCIE_LINK_STATE_L1);
++
+ 	/* wake up and enable device */
+ 	rv = pci_enable_device(pdev);
+ 

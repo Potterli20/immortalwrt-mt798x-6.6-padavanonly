@@ -1844,6 +1844,24 @@ define Device/netis_nx32u
 endef
 TARGET_DEVICES += netis_nx32u
 
+define Device/newland_nl-wr9103
+  DEVICE_VENDOR := Newland
+  DEVICE_MODEL := NL-WR9103
+  DEVICE_DTS := mt7981b-newland-nl-wr9103
+  DEVICE_DTS_DIR := ../dts
+  SUPPORTED_DEVICES := newland,nl-wr9103
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 116736k
+  KERNEL_IN_UBI := 1
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += newland_nl-wr9103
+
 define Device/nokia_ea0326gmp
   DEVICE_VENDOR := Nokia
   DEVICE_MODEL := EA0326GMP

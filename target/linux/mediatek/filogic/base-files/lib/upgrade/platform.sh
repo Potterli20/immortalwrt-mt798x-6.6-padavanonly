@@ -74,6 +74,7 @@ platform_do_upgrade() {
 	xiaomi,mi-router-ax3000t-ubootmod|\
     xiaomi,mi-router-wr30u-ubootmod|\
 	h3c,magic-nx30-pro|\
+	newland,nl-wr9103|\
 	honor,fur-602*|\
 	jcg,q30-pro|\
     qihoo,360t7)

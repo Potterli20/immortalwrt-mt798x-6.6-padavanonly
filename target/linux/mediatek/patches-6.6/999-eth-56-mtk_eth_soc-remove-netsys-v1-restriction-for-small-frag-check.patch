@@ -1,0 +1,39 @@
+---
+Port of mtk-openwrt-feeds 241d864218630c9cb380a3657c89f8fc3bdc3434
+("[HIGH][kernel/kernel-6.12][mt7988][eth][Add small fragment check to
+prevent TX DMA errors]") to the kernel 6.6 mediatek ethernet driver.
+
+All TX DMAs across all Netsys versions have a hardware limitation that
+SDL must not be less than 16, so the Netsys version check has to be
+removed.
+
+Without this patch, the TX DMA may behave unexpectedly when processing
+fragments shorter than 16 bytes on MT7981/MT7986/MT7988 (Netsys v2/v3).
+
+Upstream OpenWrt commit for reference:
+  732-01-net-ethernet-mtk_eth_soc-work-around-issue-with-send.patch
+  drivers/net/ethernet/mediatek/mtk_eth_soc.c | 5 ++---
+  1 file changed, 2 insertions(+), 3 deletions(-)
+---
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -2062,8 +2062,7 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 
+-	if (mtk_is_netsys_v1(eth) &&
+-	    skb_is_gso(skb) && mtk_skb_has_small_frag(skb)) {
++	if (skb_is_gso(skb) && mtk_skb_has_small_frag(skb)) {
+ 		segs = skb_gso_segment(skb, dev->features & ~NETIF_F_ALL_TSO);
+ 		if (IS_ERR(segs))
+ 			goto drop;
+@@ -2090,8 +2089,7 @@ static netdev_tx_t mtk_start_xmit(struct sk_buff *skb, struct net_device *dev)
+ 	}
+ 
+ 	skb_list_walk_safe(skb, skb, next) {
+-		if ((mtk_is_netsys_v1(eth) &&
+-		     mtk_skb_has_small_frag(skb) && skb_linearize(skb)) ||
++		if ((mtk_skb_has_small_frag(skb) && skb_linearize(skb)) ||
+ 		    mtk_tx_map(skb, dev, tx_num, ring, gso) < 0) {
+ 				stats->tx_dropped++;
+ 				dev_kfree_skb_any(skb);

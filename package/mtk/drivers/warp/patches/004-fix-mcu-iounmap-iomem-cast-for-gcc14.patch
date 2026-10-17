@@ -1,0 +1,43 @@
+--- a/mcu/warp_ccif.c
++++ b/mcu/warp_ccif.c
+@@ -150,7 +150,7 @@
+ 		disable_irq(ccif->irq);
+ 		free_irq(ccif->irq, bus);
+ 		if (ccif->base_addr)
+-			iounmap(ccif->base_addr);
++			iounmap((void __iomem *)ccif->base_addr);
+ 		warp_os_free_mem(ccif);
+ 	}
+ 
+--- a/mcu/warp_fwdl.c
++++ b/mcu/warp_fwdl.c
+@@ -354,17 +354,17 @@
+ 
+ 	/*unmap */
+ 	if (ctrl->region[0].base_addr) {
+-		iounmap(ctrl->region[0].base_addr);
++		iounmap((void __iomem *)ctrl->region[0].base_addr);
+ 		ctrl->region[0].base_addr = NULL;
+ 	}
+ 
+ 	if (ctrl->region[1].base_addr) {
+-		iounmap(ctrl->region[1].base_addr);
++		iounmap((void __iomem *)ctrl->region[1].base_addr);
+ 		ctrl->region[1].base_addr = NULL;
+ 	}
+ 
+ 	if (ctrl->region[2].base_addr) {
+-		iounmap(ctrl->region[2].base_addr);
++		iounmap((void __iomem *)ctrl->region[2].base_addr);
+ 		ctrl->region[2].base_addr = NULL;
+ 	}
+ 	return ret;
+@@ -412,7 +412,7 @@
+ 
+ static int warp_fwdl_clear_mcu_mode(struct warp_fwdl_ctrl *ctrl) {
+ 	if (ctrl->boot_setting.base_addr) {
+-		iounmap(ctrl->boot_setting.base_addr);
++		iounmap((void __iomem *)ctrl->boot_setting.base_addr);
+ 	}
+ 	ctrl->boot_setting.base_addr = NULL;
+ 	return 0;

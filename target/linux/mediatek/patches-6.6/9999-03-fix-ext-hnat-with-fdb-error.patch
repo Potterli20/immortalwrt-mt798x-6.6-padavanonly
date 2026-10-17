@@ -1,6 +1,6 @@
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -2660,6 +2660,7 @@ static int mtk_poll_rx(struct napi_struc
+@@ -2661,6 +2661,7 @@ static int mtk_poll_rx(struct napi_struc
  		if (sent_ppd && ppd_dev){
  		skb->protocol = eth_hdr(skb)->h_proto;
  		skb->dev = ppd_dev;

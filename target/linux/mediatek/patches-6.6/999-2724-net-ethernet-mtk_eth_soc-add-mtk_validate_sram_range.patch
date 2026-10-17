@@ -190,7 +190,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	}
  }
  
-@@ -6314,11 +6334,18 @@ static int mtk_probe(struct platform_dev
+@@ -6318,11 +6338,18 @@ static int mtk_probe(struct platform_dev
  		 * functions to read from or write to SRAM.
  		 */
  		if (mtk_is_netsys_v3_or_greater(eth)) {
@@ -209,7 +209,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  		}
  	}
  
-@@ -6405,9 +6432,9 @@ static int mtk_probe(struct platform_dev
+@@ -6409,9 +6436,9 @@ static int mtk_probe(struct platform_dev
  					err = -EINVAL;
  					goto err_destroy_sgmii;
  				}

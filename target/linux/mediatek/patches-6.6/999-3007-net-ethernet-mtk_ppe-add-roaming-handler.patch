@@ -15,7 +15,7 @@ WiFi roams.
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -4255,6 +4255,11 @@ static int mtk_open(struct net_device *d
+@@ -4256,6 +4256,11 @@ static int mtk_open(struct net_device *d
  			mtk_ppe_start(eth->ppe[i]);
  #endif
  
@@ -27,7 +27,7 @@ WiFi roams.
  		for (i = 0; i < MTK_MAX_DEVS; i++) {
  			if (!eth->netdev[i])
  				continue;
-@@ -4423,6 +4428,8 @@ static int mtk_stop(struct net_device *d
+@@ -4424,6 +4429,8 @@ static int mtk_stop(struct net_device *d
  
  	mtk_dma_free(eth);
  

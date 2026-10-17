@@ -12,7 +12,7 @@
  /*---------------------------- Module parameters ----------------------------*/
  
  /* monitor all links that often (in milliseconds). <=0 disables monitoring */
-@@ -5970,6 +5973,35 @@ out:
+@@ -5933,6 +5936,35 @@ out:
  	return ret;
  }
  
@@ -48,7 +48,7 @@
  static const struct ethtool_ops bond_ethtool_ops = {
  	.get_drvinfo		= bond_ethtool_get_drvinfo,
  	.get_link		= ethtool_op_get_link,
-@@ -6011,6 +6043,9 @@ static const struct net_device_ops bond_
+@@ -5974,6 +6006,9 @@ static const struct net_device_ops bond_
  	.ndo_xdp_get_xmit_slave = bond_xdp_get_xmit_slave,
  	.ndo_hwtstamp_get	= bond_hwtstamp_get,
  	.ndo_hwtstamp_set	= bond_hwtstamp_set,
@@ -89,7 +89,7 @@
  
  struct nft_counter {
  	u64_stats_t	bytes;
-@@ -38,6 +60,24 @@ static inline void nft_counter_do_eval(s
+@@ -41,6 +63,24 @@ static inline void nft_counter_do_eval(s
  {
  	struct u64_stats_sync *nft_sync;
  	struct nft_counter *this_cpu;
@@ -114,7 +114,7 @@
  
  	local_bh_disable();
  	this_cpu = this_cpu_ptr(priv->counter);
-@@ -46,6 +86,8 @@ static inline void nft_counter_do_eval(s
+@@ -49,6 +89,8 @@ static inline void nft_counter_do_eval(s
  	u64_stats_update_begin(nft_sync);
  	u64_stats_add(&this_cpu->bytes, pkt->skb->len);
  	u64_stats_inc(&this_cpu->packets);

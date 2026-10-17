@@ -1,6 +1,6 @@
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -5339,4 +5339,5 @@ extern struct net_device *blackhole_netd
+@@ -5394,4 +5394,5 @@ extern struct net_device *blackhole_netd
  		atomic_long_add((VAL), &(DEV)->stats.__##FIELD)
  #define DEV_STATS_READ(DEV, FIELD) atomic_long_read(&(DEV)->stats.__##FIELD)
  
@@ -18,7 +18,7 @@
  static inline void dev_base_seq_inc(struct net *net)
  {
  	while (++net->dev_base_seq == 0)
-@@ -3763,6 +3766,9 @@ static struct sk_buff *validate_xmit_skb
+@@ -3769,6 +3772,9 @@ static struct sk_buff *validate_xmit_skb
  		if (IS_ERR(segs)) {
  			goto out_kfree_skb;
  		} else if (segs) {

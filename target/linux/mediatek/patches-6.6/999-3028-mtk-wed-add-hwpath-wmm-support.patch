@@ -116,7 +116,7 @@ Signed-off-by: Rex Lu <rex.lu@mediatek.com>
  #ifdef CONFIG_NET_MEDIATEK_SOC_WED
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -944,6 +944,7 @@ struct net_device_path {
+@@ -948,6 +948,7 @@ struct net_device_path {
  			u16 wcid;
  			u8 bss;
  			u8 amsdu;

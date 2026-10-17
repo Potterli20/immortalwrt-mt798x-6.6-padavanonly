@@ -68,7 +68,7 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: add 9k jumbo frame support
  	if (mtk_is_netsys_v2_or_greater(eth))
  		return 0;
  
-@@ -6201,7 +6213,6 @@ static int mtk_add_mac(struct mtk_eth *e
+@@ -6205,7 +6217,6 @@ static int mtk_add_mac(struct mtk_eth *e
  
  	eth->netdev[id]->irq = eth->irq_fe[0];
  	eth->netdev[id]->dev.of_node = np;

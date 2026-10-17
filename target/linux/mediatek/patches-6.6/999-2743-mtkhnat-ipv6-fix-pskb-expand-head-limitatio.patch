@@ -17,7 +17,7 @@ Subject: [PATCH 9/9] mtkhnat-ipv6-fix-pskb-expand-head-limitation.patch
  
  #include <linux/uaccess.h>
  #include <trace/events/skb.h>
-@@ -2129,6 +2130,9 @@ int pskb_expand_head(struct sk_buff *skb
+@@ -2132,6 +2133,9 @@ int pskb_expand_head(struct sk_buff *skb
  	       skb_shinfo(skb),
  	       offsetof(struct skb_shared_info, frags[skb_shinfo(skb)->nr_frags]));
  

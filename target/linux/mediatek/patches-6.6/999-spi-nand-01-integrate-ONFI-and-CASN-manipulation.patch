@@ -24,7 +24,7 @@
  }
  
  /* Parse the Extended Parameter Page. */
-@@ -108,37 +102,6 @@ ext_out:
+@@ -131,37 +125,6 @@ ext_out:
  }
  
  /*
@@ -62,7 +62,7 @@
   * Check if the NAND chip is ONFI compliant, returns 1 if it is, 0 otherwise.
   */
  int nand_onfi_detect(struct nand_chip *chip)
-@@ -200,7 +163,7 @@ int nand_onfi_detect(struct nand_chip *c
+@@ -223,7 +186,7 @@ int nand_onfi_detect(struct nand_chip *c
  			srcbufs[j] = pbuf + j;
  
  		pr_warn("Could not find a valid ONFI parameter page, trying bit-wise majority to recover it\n");

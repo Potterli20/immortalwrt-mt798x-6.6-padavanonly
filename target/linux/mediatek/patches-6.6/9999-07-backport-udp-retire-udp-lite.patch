@@ -498,7 +498,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 -#endif	/* _UDPLITE_H */
 --- a/net/core/filter.c
 +++ b/net/core/filter.c
-@@ -6724,7 +6724,7 @@ static struct sock *sk_lookup(struct net
+@@ -6739,7 +6739,7 @@ static struct sock *sk_lookup(struct net
  		else
  			sk = __udp4_lib_lookup(net, src4, tuple->ipv4.sport,
  					       dst4, tuple->ipv4.dport,
@@ -507,7 +507,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  #if IS_ENABLED(CONFIG_IPV6)
  	} else {
  		struct in6_addr *src6 = (struct in6_addr *)&tuple->ipv6.saddr;
-@@ -6739,8 +6739,7 @@ static struct sock *sk_lookup(struct net
+@@ -6754,8 +6754,7 @@ static struct sock *sk_lookup(struct net
  			sk = ipv6_bpf_stub->udp6_lib_lookup(net,
  							    src6, tuple->ipv6.sport,
  							    dst6, tuple->ipv6.dport,
@@ -1889,7 +1889,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 -#endif	/* _UDP4_IMPL_H */
 --- a/net/ipv4/udp_offload.c
 +++ b/net/ipv4/udp_offload.c
-@@ -712,8 +712,7 @@ static struct sock *udp4_gro_lookup_skb(
+@@ -714,8 +714,7 @@ static struct sock *udp4_gro_lookup_skb(
  	inet_get_iif_sdif(skb, &iif, &sdif);
  
  	return __udp4_lib_lookup(net, iph->saddr, sport,
@@ -2232,7 +2232,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  #include <net/xfrm.h>
  #include <net/compat.h>
  #include <net/seg6.h>
-@@ -433,10 +432,8 @@ int do_ipv6_setsockopt(struct sock *sk,
+@@ -458,10 +457,8 @@ int do_ipv6_setsockopt(struct sock *sk,
  			if (sk->sk_type == SOCK_RAW)
  				break;
  
@@ -2245,7 +2245,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  					retv = -EBUSY;
  					break;
  				}
-@@ -477,16 +474,11 @@ int do_ipv6_setsockopt(struct sock *sk,
+@@ -502,16 +499,11 @@ int do_ipv6_setsockopt(struct sock *sk,
  				WRITE_ONCE(sk->sk_family, PF_INET);
  				tcp_sync_mss(sk, icsk->icsk_pmtu_cookie);
  			} else {
@@ -2264,7 +2264,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  				WRITE_ONCE(sk->sk_socket->ops, &inet_dgram_ops);
  				WRITE_ONCE(sk->sk_family, PF_INET);
  			}
-@@ -1136,7 +1128,6 @@ int do_ipv6_getsockopt(struct sock *sk,
+@@ -1126,7 +1118,6 @@ int do_ipv6_getsockopt(struct sock *sk,
  	switch (optname) {
  	case IPV6_ADDRFORM:
  		if (sk->sk_protocol != IPPROTO_UDP &&
@@ -3219,7 +3219,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	struct sockaddr *sa = msg->msg_name;
 --- a/security/smack/smack_lsm.c
 +++ b/security/smack/smack_lsm.c
-@@ -4010,7 +4010,6 @@ static int smk_skb_to_addr_ipv6(struct s
+@@ -4032,7 +4032,6 @@ static int smk_skb_to_addr_ipv6(struct s
  			sip->sin6_port = th->source;
  		break;
  	case IPPROTO_UDP:
@@ -3227,7 +3227,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  		uh = skb_header_pointer(skb, offset, sizeof(_udph), &_udph);
  		if (uh != NULL)
  			sip->sin6_port = uh->source;
-@@ -4140,8 +4139,7 @@ static int smack_socket_sock_rcv_skb(str
+@@ -4162,8 +4161,7 @@ static int smack_socket_sock_rcv_skb(str
  #if IS_ENABLED(CONFIG_IPV6)
  	case PF_INET6:
  		proto = smk_skb_to_addr_ipv6(skb, &sadd);
@@ -3264,7 +3264,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 +#endif /* _NET_ALIGNED_DATA_H */
 --- a/net/ipv4/fou_core.c
 +++ b/net/ipv4/fou_core.c
-@@ -1154,8 +1154,7 @@ static int gue_err(struct sk_buff *skb,
+@@ -1158,8 +1158,7 @@ static int gue_err(struct sk_buff *skb,
  	 * recursion. Besides, this kind of encapsulation can't even be
  	 * configured currently. Discard this.
  	 */

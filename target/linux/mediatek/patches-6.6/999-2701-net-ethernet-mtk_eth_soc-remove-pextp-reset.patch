@@ -76,7 +76,7 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: remove pextp reset
  	return 0;
  }
  
-@@ -4858,17 +4832,6 @@ static int mtk_add_mac(struct mtk_eth *e
+@@ -4862,17 +4836,6 @@ static int mtk_add_mac(struct mtk_eth *e
  		}
  	}
  

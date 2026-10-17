@@ -38,7 +38,7 @@ Remove this patch once the cause is found.
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -56,6 +56,18 @@
+@@ -56,6 +56,18 @@ DECLARE_COMPLETION(wait_ser_done);
  				  offsetof(struct mtk_hw_stats, xdp_stats.x) / \
  				  sizeof(u64) }
  
@@ -57,7 +57,7 @@ Remove this patch once the cause is found.
  static const struct mtk_reg_map mtk_reg_map = {
  	.tx_irq_mask		= 0x1a1c,
  	.tx_irq_status		= 0x1a18,
-@@ -1503,6 +1515,19 @@
+@@ -1503,6 +1515,19 @@ static void mtk_get_stats64(struct net_d
  	storage->tx_errors = dev->stats.tx_errors;
  	storage->rx_dropped = dev->stats.rx_dropped;
  	storage->tx_dropped = dev->stats.tx_dropped;
@@ -77,7 +77,7 @@ Remove this patch once the cause is found.
  }
  
  static inline int mtk_max_frag_size(int mtu)
-@@ -2537,6 +2562,7 @@
+@@ -2537,6 +2562,7 @@ static int mtk_poll_rx(struct napi_struc
  							  GFP_ATOMIC);
  			if (unlikely(!new_data)) {
  				netdev->stats.rx_dropped++;
@@ -85,7 +85,7 @@ Remove this patch once the cause is found.
  				goto release_desc;
  			}
  
-@@ -2561,6 +2587,7 @@
+@@ -2561,6 +2587,7 @@ static int mtk_poll_rx(struct napi_struc
  				page_pool_put_full_page(ring->page_pool,
  							page, true);
  				netdev->stats.rx_dropped++;
@@ -93,7 +93,7 @@ Remove this patch once the cause is found.
  				goto skip_rx;
  			}
  
-@@ -2575,6 +2602,7 @@
+@@ -2575,6 +2602,7 @@ static int mtk_poll_rx(struct napi_struc
  
  			if (unlikely(!new_data)) {
  				netdev->stats.rx_dropped++;
@@ -101,7 +101,7 @@ Remove this patch once the cause is found.
  				goto release_desc;
  			}
  
-@@ -2585,6 +2613,7 @@
+@@ -2585,6 +2613,7 @@ static int mtk_poll_rx(struct napi_struc
  						       dma_addr))) {
  				skb_free_frag(new_data);
  				netdev->stats.rx_dropped++;
@@ -109,7 +109,7 @@ Remove this patch once the cause is found.
  				goto release_desc;
  			}
  
-@@ -2597,6 +2626,7 @@
+@@ -2597,6 +2626,7 @@ static int mtk_poll_rx(struct napi_struc
  			skb = napi_build_skb(data, ring->frag_size);
  			if (unlikely(!skb)) {
  				netdev->stats.rx_dropped++;

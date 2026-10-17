@@ -11,7 +11,7 @@
  	if (ret)
 --- a/drivers/spi/spi.c
 +++ b/drivers/spi/spi.c
-@@ -1436,7 +1436,9 @@ int spi_do_calibration(struct spi_contro
+@@ -1440,7 +1440,9 @@ int spi_do_calibration(struct spi_contro
  			dev_info(&spi->dev, "calibration result: 0x%x", *target->cal_item);
  		} else {
  			*target->cal_item = origin;

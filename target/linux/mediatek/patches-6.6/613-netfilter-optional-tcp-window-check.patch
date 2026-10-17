@@ -20,7 +20,7 @@ Subject: [PATCH] netfilter: optional tcp window check
    /* FIXME: Examine ipfilter's timeouts and conntrack transitions more
       closely.  They're more complex. --RR */
  
-@@ -520,6 +523,9 @@ tcp_in_window(struct nf_conn *ct, enum i
+@@ -564,6 +567,9 @@ tcp_in_window(struct nf_conn *ct, enum i
  	s32 receiver_offset;
  	u16 win_raw;
  
@@ -30,7 +30,7 @@ Subject: [PATCH] netfilter: optional tcp window check
  	/*
  	 * Get the required data from the packet.
  	 */
-@@ -1286,7 +1292,7 @@ int nf_conntrack_tcp_packet(struct nf_co
+@@ -1330,7 +1336,7 @@ int nf_conntrack_tcp_packet(struct nf_co
  		 IP_CT_TCP_FLAG_DATA_UNACKNOWLEDGED &&
  		 timeouts[new_state] > timeouts[TCP_CONNTRACK_UNACK])
  		timeout = timeouts[TCP_CONNTRACK_UNACK];

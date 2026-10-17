@@ -38,7 +38,7 @@ Subject: [PATCH] net: phy: sfp: add some checksum fail SFP war
  	return false;
  }
  
-@@ -2269,7 +2291,7 @@ static int sfp_sm_mod_probe(struct sfp *
+@@ -2270,7 +2292,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	struct sfp_eeprom_id id;
  	bool cotsworks_sfbg;
  	unsigned int mask;
@@ -47,7 +47,7 @@ Subject: [PATCH] net: phy: sfp: add some checksum fail SFP war
  	u8 check;
  	int ret;
  
-@@ -2324,6 +2346,18 @@ static int sfp_sm_mod_probe(struct sfp *
+@@ -2325,6 +2347,18 @@ static int sfp_sm_mod_probe(struct sfp *
  	cotsworks = !memcmp(id.base.vendor_name, "COTSWORKS       ", 16);
  	cotsworks_sfbg = !memcmp(id.base.vendor_pn, "SFBG", 4);
  
@@ -66,7 +66,7 @@ Subject: [PATCH] net: phy: sfp: add some checksum fail SFP war
  	/* Cotsworks SFF module EEPROM do not always have valid phys_id,
  	 * phys_ext_id, and connector bytes.  Rewrite SFF EEPROM bytes if
  	 * Cotsworks PN matches and bytes are not correct.
-@@ -2337,7 +2371,7 @@ static int sfp_sm_mod_probe(struct sfp *
+@@ -2338,7 +2372,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	/* Validate the checksum over the base structure */
  	check = sfp_check(&id.base, sizeof(id.base) - 1);
  	if (check != id.base.cc_base) {

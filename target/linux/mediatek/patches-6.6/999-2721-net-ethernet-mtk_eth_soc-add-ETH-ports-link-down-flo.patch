@@ -106,7 +106,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	}
  
  	clear_bit(MTK_RESETTING, &eth->state);
-@@ -5926,6 +5985,11 @@ static int mtk_add_mac(struct mtk_eth *e
+@@ -5930,6 +5989,11 @@ static int mtk_add_mac(struct mtk_eth *e
  		}
  	}
  
@@ -118,7 +118,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	memset(mac->hwlro_ip, 0, sizeof(mac->hwlro_ip));
  	mac->hwlro_ip_cnt = 0;
  
-@@ -6555,6 +6619,9 @@ static int mtk_remove(struct platform_de
+@@ -6565,6 +6629,9 @@ static int mtk_remove(struct platform_de
  	struct mtk_mac *mac;
  	int i;
  

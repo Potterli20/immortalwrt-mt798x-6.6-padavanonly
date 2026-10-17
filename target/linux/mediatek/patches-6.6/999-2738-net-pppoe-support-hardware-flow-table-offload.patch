@@ -23,7 +23,7 @@ Subject: [PATCH 5/9] net: pppoe: support hardware flow table offload
  #define PPP_VERSION	"2.4.2"
  
  /*
-@@ -1607,6 +1612,28 @@ static void ppp_dev_priv_destructor(stru
+@@ -1588,6 +1593,28 @@ static void ppp_dev_priv_destructor(stru
  		ppp_destroy_interface(ppp);
  }
  
@@ -52,7 +52,7 @@ Subject: [PATCH 5/9] net: pppoe: support hardware flow table offload
  static int ppp_fill_forward_path(struct net_device_path_ctx *ctx,
  				 struct net_device_path *path)
  {
-@@ -1637,6 +1664,9 @@ static const struct net_device_ops ppp_n
+@@ -1618,6 +1645,9 @@ static const struct net_device_ops ppp_n
  	.ndo_start_xmit  = ppp_start_xmit,
  	.ndo_siocdevprivate = ppp_net_siocdevprivate,
  	.ndo_get_stats64 = ppp_get_stats64,
@@ -76,7 +76,7 @@ Subject: [PATCH 5/9] net: pppoe: support hardware flow table offload
  #include <linux/nsproxy.h>
  #include <net/net_namespace.h>
  #include <net/netns/generic.h>
-@@ -1003,8 +1008,36 @@ static int pppoe_fill_forward_path(struc
+@@ -1004,8 +1009,36 @@ static int pppoe_fill_forward_path(struc
  	return 0;
  }
  

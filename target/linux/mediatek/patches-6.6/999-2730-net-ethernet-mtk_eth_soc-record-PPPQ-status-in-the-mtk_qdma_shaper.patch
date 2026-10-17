@@ -64,7 +64,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	ofs = MTK_QTX_OFFSET * idx;
  	mtk_w32(eth, val, soc->reg_map->qdma.qtx_sch + ofs);
  }
-@@ -6396,6 +6434,7 @@ static int mtk_probe(struct platform_dev
+@@ -6400,6 +6438,7 @@ static int mtk_probe(struct platform_dev
  	spin_lock_init(&eth->tx_irq_lock);
  	spin_lock_init(&eth->rx_irq_lock);
  	spin_lock_init(&eth->dim_lock);

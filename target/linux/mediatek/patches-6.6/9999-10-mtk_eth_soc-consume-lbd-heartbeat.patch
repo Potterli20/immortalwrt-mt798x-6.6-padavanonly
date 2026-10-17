@@ -28,7 +28,7 @@ accounting.
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -48,6 +48,40 @@
+@@ -48,6 +48,40 @@ EXPORT_SYMBOL(ppd_dev);
  static int mtk_msg_level = -1;
  module_param_named(msg_level, mtk_msg_level, int, 0);
  MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
@@ -69,7 +69,7 @@ accounting.
  DECLARE_COMPLETION(wait_ser_done);
  #define MTK_ETHTOOL_STAT(x) { #x, \
  			      offsetof(struct mtk_hw_stats, x) / sizeof(u64) }
-@@ -6876,6 +6910,11 @@
+@@ -6876,6 +6910,11 @@ static int mtk_probe(struct platform_dev
  	schedule_delayed_work(&eth->reset.monitor_work,
  			      MTK_DMA_MONITOR_TIMEOUT);
  
@@ -81,7 +81,7 @@ accounting.
  	return 0;
  
  err_unreg_netdev:
-@@ -6938,6 +6977,11 @@
+@@ -6938,6 +6977,11 @@ static int mtk_remove(struct platform_de
  	free_netdev(eth->dummy_dev);
  	mtk_mdio_cleanup(eth);
  

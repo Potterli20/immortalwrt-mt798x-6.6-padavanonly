@@ -54,7 +54,7 @@ Subject: [PATCH] net: phy: sfp: add some FS copper SFP fixes
  	SFP_QUIRK_F("FS", "SFP-10GM-T", sfp_fixup_rollball_wait4s),
  
  	// Fiberstore GPON-ONU-34-20BI can operate at 2500base-X, but report 1.2GBd
-@@ -2718,11 +2719,11 @@ static void sfp_sm_main(struct sfp *sfp,
+@@ -2719,11 +2720,11 @@ static void sfp_sm_main(struct sfp *sfp,
  		 * clear.  Probe for the PHY and check the LOS state.
  		 */
  		ret = sfp_sm_probe_for_phy(sfp);

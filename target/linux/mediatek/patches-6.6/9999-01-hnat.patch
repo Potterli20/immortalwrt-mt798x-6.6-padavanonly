@@ -174,7 +174,7 @@
  #define MTK_ETHTOOL_STAT(x) { #x, \
  			      offsetof(struct mtk_hw_stats, x) / sizeof(u64) }
  
-@@ -938,7 +941,6 @@ static void mtk_set_queue_speed(struct m
+@@ -939,7 +942,6 @@ static void mtk_set_queue_speed(struct m
  {
  	const struct mtk_soc_data *soc = eth->soc;
  	u32 ofs, val;
@@ -182,7 +182,7 @@
  	if (!MTK_HAS_CAPS(soc->caps, MTK_QDMA))
  		return;
  
-@@ -1864,6 +1866,12 @@ static int mtk_tx_map(struct sk_buff *sk
+@@ -1865,6 +1867,12 @@ static int mtk_tx_map(struct sk_buff *sk
  	/* TX SG offload */
  	txd = itxd;
  	txd_pdma = qdma_to_pdma(ring, txd);
@@ -195,7 +195,7 @@
  
  	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
  		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
-@@ -2482,6 +2490,9 @@ static int mtk_poll_rx(struct napi_struc
+@@ -2483,6 +2491,9 @@ static int mtk_poll_rx(struct napi_struc
  			mac = RX_DMA_GET_SPORT(trxd.rxd4) - 1;
  		}
  
@@ -205,7 +205,7 @@
  		if (unlikely(mac < 0 || mac >= MTK_MAX_DEVS ||
  			     !eth->netdev[mac]))
  			goto release_desc;
-@@ -2619,9 +2630,6 @@ static int mtk_poll_rx(struct napi_struc
+@@ -2620,9 +2631,6 @@ static int mtk_poll_rx(struct napi_struc
  		skb_hnat_alg(skb) = 0;
  		skb_hnat_filled(skb) = 0;
  		skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
@@ -215,7 +215,7 @@
  
  		if (skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU) {
  			trace_printk("[%s] reason=0x%x(force to CPU) from WAN to Ext\n",
-@@ -2998,14 +3006,12 @@ static int mtk_tx_alloc(struct mtk_eth *
+@@ -2999,14 +3007,12 @@ static int mtk_tx_alloc(struct mtk_eth *
  			ring->phys + ((ring_size - 1) * sz),
  			soc->reg_map->qdma.crx_ptr);
  		mtk_w32(eth, ring->last_free_ptr, soc->reg_map->qdma.drx_ptr);
@@ -230,7 +230,7 @@
  			if (mtk_is_netsys_v3_or_greater(eth) &&
  			    (eth->soc->caps != MT7988_CAPS)) {
  				val |= FIELD_PREP(MTK_QTX_SCH_MIN_RATE_MAN_V3, 1) |
-@@ -4280,9 +4286,6 @@ static int mtk_open(struct net_device *d
+@@ -4281,9 +4287,6 @@ static int mtk_open(struct net_device *d
  			}
  			mtk_gdm_config(eth, target_mac->id, gdm_config);
  		}
@@ -240,7 +240,7 @@
  
  		mtu = mtk_max_gmac_mtu(eth);
  		for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
-@@ -5482,7 +5485,16 @@ static void mtk_pending_work(struct work
+@@ -5483,7 +5486,16 @@ static void mtk_pending_work(struct work
  	 * possible race during FE reset since it can run releasing RTNL lock.
  	 */
  	mtk_prepare_for_reset(eth);
@@ -258,7 +258,7 @@
  	/* stop all devices to make sure that dma is properly shut down */
  	for (i = 0; i < MTK_MAX_DEVS; i++) {
  		if (!eth->netdev[i] || !netif_running(eth->netdev[i]))
-@@ -5520,7 +5532,14 @@ static void mtk_pending_work(struct work
+@@ -5521,7 +5533,14 @@ static void mtk_pending_work(struct work
  
  	mtk_wed_fe_reset_complete();
  	mtk_restore_qdma_cfg(eth);
@@ -274,7 +274,7 @@
  	rtnl_unlock();
  }
  
-@@ -5913,10 +5932,7 @@ static u16 mtk_select_queue(struct net_d
+@@ -5918,10 +5937,7 @@ static u16 mtk_select_queue(struct net_d
  	struct mtk_mac *mac = netdev_priv(dev);
  	unsigned int queue = 0;
  
@@ -286,7 +286,7 @@
  
  	if (queue >= dev->num_tx_queues)
  		queue = 0;
-@@ -7165,6 +7181,36 @@ static struct platform_driver mtk_driver
+@@ -7177,6 +7193,36 @@ static struct platform_driver mtk_driver
  	},
  };
  

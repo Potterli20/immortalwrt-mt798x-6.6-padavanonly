@@ -72,7 +72,7 @@ enabling MAC/PHY EEE capability.
  }
  
  static void mtk_xgdm_mac_link_up(struct mtk_mac *mac,
-@@ -5412,6 +5450,47 @@ static int mtk_set_rxfh(struct net_devic
+@@ -5416,6 +5454,47 @@ static int mtk_set_rxfh(struct net_devic
  	return 0;
  }
  
@@ -120,7 +120,7 @@ enabling MAC/PHY EEE capability.
  static u16 mtk_select_queue(struct net_device *dev, struct sk_buff *skb,
  			    struct net_device *sb_dev)
  {
-@@ -5448,6 +5527,8 @@ static const struct ethtool_ops mtk_etht
+@@ -5452,6 +5531,8 @@ static const struct ethtool_ops mtk_etht
  	.get_rxfh_indir_size	= mtk_get_rxfh_indir_size,
  	.get_rxfh		= mtk_get_rxfh,
  	.set_rxfh		= mtk_set_rxfh,
@@ -129,7 +129,7 @@ enabling MAC/PHY EEE capability.
  };
  
  static const struct net_device_ops mtk_netdev_ops = {
-@@ -5715,6 +5796,8 @@ static int mtk_add_mac(struct mtk_eth *e
+@@ -5719,6 +5800,8 @@ static int mtk_add_mac(struct mtk_eth *e
  	mac->interface = PHY_INTERFACE_MODE_NA;
  	mac->speed = SPEED_UNKNOWN;
  

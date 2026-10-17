@@ -139,7 +139,7 @@
  
  	return 0;
  }
-@@ -6691,6 +6723,7 @@ static int mtk_probe(struct platform_dev
+@@ -6695,6 +6727,7 @@ static int mtk_probe(struct platform_dev
  			goto err_free_dev;
  	}
  
@@ -147,7 +147,7 @@
  	if (eth->soc->offload_version) {
  		u8 ppe_num = eth->soc->ppe_num;
  
-@@ -6711,6 +6744,7 @@ static int mtk_probe(struct platform_dev
+@@ -6715,6 +6748,7 @@ static int mtk_probe(struct platform_dev
  				goto err_deinit_ppe;
  		}
  	}

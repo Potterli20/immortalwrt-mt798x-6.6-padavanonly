@@ -168,7 +168,7 @@
  static void mtk_prepare_for_reset(struct mtk_eth *eth)
  {
  	u32 val;
-@@ -4792,6 +4811,7 @@ static const struct net_device_ops mtk_n
+@@ -4796,6 +4815,7 @@ static const struct net_device_ops mtk_n
  	.ndo_set_mac_address	= mtk_set_mac_address,
  	.ndo_validate_addr	= eth_validate_addr,
  	.ndo_eth_ioctl		= mtk_do_ioctl,
@@ -176,7 +176,7 @@
  	.ndo_change_mtu		= mtk_change_mtu,
  	.ndo_tx_timeout		= mtk_tx_timeout,
  	.ndo_get_stats64        = mtk_get_stats64,
-@@ -5389,6 +5409,9 @@ static int mtk_probe(struct platform_dev
+@@ -5398,6 +5418,9 @@ static int mtk_probe(struct platform_dev
  	netif_napi_add(eth->dummy_dev, &eth->tx_napi, mtk_napi_tx);
  	netif_napi_add(eth->dummy_dev, &eth->rx_napi, mtk_napi_rx);
  

@@ -11,7 +11,7 @@ Subject: [PATCH 2/9] netfilter: nf_flow_table: support hw offload through
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -1078,6 +1078,8 @@ struct netdev_net_notifier {
+@@ -1082,6 +1082,8 @@ struct netdev_net_notifier {
  	struct notifier_block *nb;
  };
  
@@ -20,7 +20,7 @@ Subject: [PATCH 2/9] netfilter: nf_flow_table: support hw offload through
  /*
   * This structure defines the management hooks for network devices.
   * The following hooks can be defined; unless noted otherwise, they are
-@@ -1340,6 +1342,11 @@ struct netdev_net_notifier {
+@@ -1347,6 +1349,11 @@ struct netdev_net_notifier {
   * int (*ndo_bridge_dellink)(struct net_device *dev, struct nlmsghdr *nlh,
   *			     u16 flags);
   *
@@ -32,7 +32,7 @@ Subject: [PATCH 2/9] netfilter: nf_flow_table: support hw offload through
   * int (*ndo_change_carrier)(struct net_device *dev, bool new_carrier);
   *	Called to change device carrier. Soft-devices (like dummy, team, etc)
   *	which do not represent real hardware may define this to allow their
-@@ -1626,6 +1633,7 @@ struct net_device_ops {
+@@ -1640,6 +1647,7 @@ struct net_device_ops {
  	int			(*ndo_bridge_dellink)(struct net_device *dev,
  						      struct nlmsghdr *nlh,
  						      u16 flags);

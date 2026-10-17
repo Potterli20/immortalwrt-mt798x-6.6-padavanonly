@@ -70,7 +70,7 @@ Subject: [PATCH] backport: netfilter: conntrack: remove UDP-Lite conntrack suppo
  #ifdef CONFIG_NF_CT_PROTO_SCTP
  	case IPPROTO_SCTP:
  #endif
-@@ -1950,11 +1947,6 @@ static int nf_conntrack_handle_packet(st
+@@ -1910,11 +1907,6 @@ static int nf_conntrack_handle_packet(st
  	case IPPROTO_ICMPV6:
  		return nf_conntrack_icmpv6_packet(ct, skb, ctinfo, state);
  #endif
@@ -84,7 +84,7 @@ Subject: [PATCH] backport: netfilter: conntrack: remove UDP-Lite conntrack suppo
  		return nf_conntrack_sctp_packet(ct, skb, dataoff,
 --- a/net/netfilter/nf_conntrack_proto.c
 +++ b/net/netfilter/nf_conntrack_proto.c
-@@ -106,9 +106,6 @@ const struct nf_conntrack_l4proto *nf_ct
+@@ -112,9 +112,6 @@ const struct nf_conntrack_l4proto *nf_ct
  #ifdef CONFIG_NF_CT_PROTO_SCTP
  	case IPPROTO_SCTP: return &nf_conntrack_l4proto_sctp;
  #endif
@@ -317,7 +317,7 @@ Subject: [PATCH] backport: netfilter: conntrack: remove UDP-Lite conntrack suppo
  	case IPPROTO_DCCP:
 --- a/net/netfilter/nft_ct.c
 +++ b/net/netfilter/nft_ct.c
-@@ -1278,7 +1278,6 @@ static int nft_ct_expect_obj_init(const
+@@ -1232,7 +1232,6 @@ static int nft_ct_expect_obj_init(const
  	switch (priv->l4proto) {
  	case IPPROTO_TCP:
  	case IPPROTO_UDP:

@@ -920,7 +920,7 @@ its .napi member. Hunk line numbers and context are recomputed.
  	.tx = {
  		.desc_size = sizeof(struct mtk_tx_dma_v2),
  		.dma_max_len = MTK_TX_DMA_BUF_LEN_V2,
-@@ -5923,7 +6190,6 @@ static const struct mtk_soc_data mt7986_
+@@ -5923,7 +6190,6 @@ static const struct mtk_soc_data mt7981_
  	},
  	.rx = {
  		.desc_size = sizeof(struct mtk_rx_dma),

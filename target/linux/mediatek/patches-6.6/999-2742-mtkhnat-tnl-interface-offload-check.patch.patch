@@ -10,7 +10,7 @@ Subject: [PATCH 8/9] mtkhnat-tnl-interface-offload-check.patch
 
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -912,6 +912,7 @@ enum net_device_path_type {
+@@ -916,6 +916,7 @@ enum net_device_path_type {
  	DEV_PATH_MTK_WDMA,
  	DEV_PATH_DSLITE,
  	DEV_PATH_6RD,

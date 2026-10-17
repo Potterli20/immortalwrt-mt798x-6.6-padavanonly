@@ -9,7 +9,7 @@ Subject: [PATCH] net: ethernet: mtk_eth_soc: fix spurious MDIO timeout using rea
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -360,18 +360,19 @@
+@@ -355,18 +355,19 @@ u32 mtk_m32(struct mtk_eth *eth, u32 mas
  
  static int mtk_mdio_busy_wait(struct mtk_eth *eth)
  {

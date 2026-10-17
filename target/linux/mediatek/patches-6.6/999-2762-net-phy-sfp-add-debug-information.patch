@@ -37,7 +37,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  			/* If we have a phy, the "up" state is the union of
  			 * both the PHY and the MAC
  			 */
-@@ -3424,7 +3433,7 @@ static void phylink_sfp_set_config(struc
+@@ -3425,7 +3434,7 @@ static void phylink_sfp_set_config(struc
  	u8 mode = MLO_AN_INBAND;
  	bool changed = false;
  
@@ -46,7 +46,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  		    phylink_an_mode_str(mode), phy_modes(state->interface),
  		    __ETHTOOL_LINK_MODE_MASK_NBITS, supported);
  
-@@ -3516,7 +3525,7 @@ static int phylink_sfp_config_optical(st
+@@ -3517,7 +3526,7 @@ static int phylink_sfp_config_optical(st
  	phy_interface_t interface;
  	int ret;
  
@@ -94,7 +94,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  
  	return NULL;
  }
-@@ -1718,14 +1724,14 @@ static void sfp_hwmon_exit(struct sfp *s
+@@ -1719,14 +1725,14 @@ static void sfp_hwmon_exit(struct sfp *s
  /* Helpers */
  static void sfp_module_tx_disable(struct sfp *sfp)
  {
@@ -111,7 +111,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  		sfp->state & SFP_F_TX_DISABLE ? 1 : 0, 0);
  	sfp_mod_state(sfp, SFP_F_TX_DISABLE, 0);
  }
-@@ -1834,7 +1840,8 @@ static void sfp_sm_phy_detach(struct sfp
+@@ -1835,7 +1841,8 @@ static void sfp_sm_phy_detach(struct sfp
  static int sfp_sm_probe_phy(struct sfp *sfp, int addr, bool is_c45)
  {
  	struct phy_device *phy;
@@ -121,7 +121,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  
  	phy = get_phy_device(sfp->i2c_mii, addr, is_c45);
  	if (phy == ERR_PTR(-ENODEV))
-@@ -1855,6 +1862,30 @@ static int sfp_sm_probe_phy(struct sfp *
+@@ -1856,6 +1863,30 @@ static int sfp_sm_probe_phy(struct sfp *
  		return err;
  	}
  
@@ -152,7 +152,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	err = sfp_add_phy(sfp->sfp_bus, phy);
  	if (err) {
  		phy_device_remove(phy);
-@@ -1937,6 +1968,9 @@ static void sfp_sm_fault(struct sfp *sfp
+@@ -1938,6 +1969,9 @@ static void sfp_sm_fault(struct sfp *sfp
  
  static int sfp_sm_add_mdio_bus(struct sfp *sfp)
  {
@@ -162,7 +162,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  	if (sfp->mdio_protocol != MDIO_I2C_NONE)
  		return sfp_i2c_mdiobus_create(sfp);
  
-@@ -2403,7 +2437,7 @@ static int sfp_sm_mod_probe(struct sfp *
+@@ -2404,7 +2438,7 @@ static int sfp_sm_mod_probe(struct sfp *
  	else
  		sfp->mdio_protocol = MDIO_I2C_NONE;
  
@@ -171,7 +171,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  
  	mutex_lock(&sfp->st_mutex);
  	/* Initialise state bits to use from hardware */
-@@ -2756,7 +2790,7 @@ static void sfp_sm_main(struct sfp *sfp,
+@@ -2757,7 +2791,7 @@ static void sfp_sm_main(struct sfp *sfp,
  
  static void __sfp_sm_event(struct sfp *sfp, unsigned int event)
  {
@@ -180,7 +180,7 @@ Signed-off-by: Bo-Cun Chen <bc-bocun.chen@mediatek.com>
  		mod_state_to_str(sfp->sm_mod_state),
  		dev_state_to_str(sfp->sm_dev_state),
  		sm_state_to_str(sfp->sm_state),
-@@ -2766,7 +2800,7 @@ static void __sfp_sm_event(struct sfp *s
+@@ -2767,7 +2801,7 @@ static void __sfp_sm_event(struct sfp *s
  	sfp_sm_module(sfp, event);
  	sfp_sm_main(sfp, event);
  

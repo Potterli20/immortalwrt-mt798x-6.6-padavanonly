@@ -21,7 +21,7 @@ Subject: [PATCH 3/9] net: 8021q: support hardware flow table offload
  #include "vlan.h"
  #include "vlanproc.h"
  #include <linux/if_vlan.h>
-@@ -779,6 +784,27 @@ static int vlan_dev_get_iflink(const str
+@@ -760,6 +765,27 @@ static int vlan_dev_get_iflink(const str
  	return real_dev->ifindex;
  }
  
@@ -49,7 +49,7 @@ Subject: [PATCH 3/9] net: 8021q: support hardware flow table offload
  static int vlan_dev_fill_forward_path(struct net_device_path_ctx *ctx,
  				      struct net_device_path *path)
  {
-@@ -1072,6 +1098,9 @@ static const struct net_device_ops vlan_
+@@ -1075,6 +1101,9 @@ static const struct net_device_ops vlan_
  #endif
  	.ndo_fix_features	= vlan_dev_fix_features,
  	.ndo_get_iflink		= vlan_dev_get_iflink,

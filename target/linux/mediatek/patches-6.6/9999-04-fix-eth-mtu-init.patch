@@ -25,7 +25,7 @@ validation and initialization successfully.
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -669,6 +669,20 @@ static void mtk_set_mcr_max_rx(struct mt
+@@ -670,6 +670,20 @@ static void mtk_set_mcr_max_rx(struct mt
  	}
  }
  
@@ -46,7 +46,7 @@ validation and initialization successfully.
  static void mtk_mac_config(struct phylink_config *config, unsigned int mode,
  			   const struct phylink_link_state *state)
  {
-@@ -4329,14 +4343,7 @@ static int mtk_open(struct net_device *d
+@@ -4330,14 +4344,7 @@ static int mtk_open(struct net_device *d
  	phylink_start(mac->phylink);
  	netif_tx_start_all_queues(dev);
  
@@ -62,7 +62,7 @@ validation and initialization successfully.
  
  	if (mtk_is_netsys_v2_or_greater(eth))
  		return 0;
-@@ -6240,6 +6247,8 @@ static int mtk_add_mac(struct mtk_eth *e
+@@ -6245,6 +6252,8 @@ static int mtk_add_mac(struct mtk_eth *e
  		goto free_netdev;
  	}
  

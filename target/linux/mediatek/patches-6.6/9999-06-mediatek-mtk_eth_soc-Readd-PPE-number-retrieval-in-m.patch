@@ -9,7 +9,7 @@ Subject: [PATCH] mediatek: mtk_eth_soc: Readd PPE number retrieval in mtk_open
 
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -4262,6 +4262,8 @@ static int mtk_open(struct net_device *d
+@@ -4263,6 +4263,8 @@ static int mtk_open(struct net_device *d
  	struct mtk_mac *target_mac;
  	int i, err, mtu, ppe_num;
  

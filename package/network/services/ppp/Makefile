@@ -30,6 +30,14 @@ PKG_FIXUP:=autoreconf
 PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
+
+# ppp predates C23 and declares many functions with old-style empty
+# prototypes, e.g. "struct spwd *getspnam();" (pppd/session.c) and
+# "dumplog()/dumpppp()/show_time()" (pppdump.c). GCC 15 defaults to
+# -std=gnu23, where "()" means "takes no arguments", which turns the
+# call sites into hard errors. Pin C17 for this package.
+TARGET_CFLAGS += -std=gnu17
+
 CONFIGURE_VARS += \
 	enable_eaptls=no \
 	enable_microsoft_extensions=yes \

@@ -100,6 +100,10 @@ endef
 $(foreach t,$(ATM_DEBUG_TOOLS),$(eval $(call GenAtmPlugin,atm-$(t),$(t))))
 
 TARGET_CFLAGS += -I$(LINUX_DIR)/user_headers/include
+# linux-atm predates C23 and uses `bool` as a struct member name
+# (src/lane/load_lex.h: "Bool_t bool;"). GCC 15 defaults to -std=gnu23 where
+# `bool`/`true`/`false` are keywords, which breaks this legacy code. Pin C17.
+TARGET_CFLAGS += -std=gnu17
 
 define Build/Configure
 	$(call Build/Configure/Default)

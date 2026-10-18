@@ -1,21 +1,21 @@
 --- a/configure.ac
 +++ b/configure.ac
-@@ -344,6 +344,7 @@ AC_CONFIG_FILES([
-     pppd/plugins/pppoatm/Makefile
+@@ -336,6 +336,7 @@ AC_CONFIG_FILES([
      pppd/plugins/pppol2tp/Makefile
      pppd/plugins/radius/Makefile
+     pppd/plugins/dhcpv6relay/Makefile
 +    pppd/plugins/pptp/Makefile
      pppdump/Makefile
      pppstats/Makefile
      scripts/Makefile
 --- a/pppd/plugins/Makefile.am
 +++ b/pppd/plugins/Makefile.am
-@@ -21,5 +21,5 @@ winbind_la_LDFLAGS = $(PLUGIN_LDFLAGS)
+@@ -17,5 +17,5 @@ winbind_la_LDFLAGS = $(PLUGIN_LDFLAGS)
  winbind_la_SOURCES = winbind.c
  
  if !SUNOS
--SUBDIRS = pppoe pppoatm pppol2tp radius
-+SUBDIRS = pppoe pppoatm pppol2tp radius pptp
+-SUBDIRS = pppoe pppoatm pppol2tp radius dhcpv6relay
++SUBDIRS = pppoe pppoatm pppol2tp radius dhcpv6relay pptp
  endif
 --- /dev/null
 +++ b/pppd/plugins/pptp/Makefile.am

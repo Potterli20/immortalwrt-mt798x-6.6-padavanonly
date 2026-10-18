@@ -10,7 +10,7 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=dnsmasq
 PKG_UPSTREAM_VERSION:=2.93
 PKG_VERSION:=$(subst test,~~test,$(subst rc,~rc,$(PKG_UPSTREAM_VERSION)))
-PKG_RELEASE:=1
+PKG_RELEASE:=3
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_UPSTREAM_VERSION).tar.xz
 PKG_SOURCE_URL:=https://thekelleys.org.uk/dnsmasq/
@@ -68,6 +68,7 @@ $(call Package/dnsmasq/Default)
   DEPENDS+=+PACKAGE_dnsmasq_full_dnssec:libnettle \
 	+PACKAGE_dnsmasq_full_ipset:kmod-ipt-ipset \
 	+PACKAGE_dnsmasq_full_conntrack:libnetfilter-conntrack \
+	+PACKAGE_dnsmasq_full_nftset:libnftnl \
 	+PACKAGE_dnsmasq_full_nftset:nftables-json
   VARIANT:=full
   PROVIDES:=dnsmasq
@@ -154,6 +155,7 @@ ifeq ($(BUILD_VARIANT),full)
 		$(if $(CONFIG_PACKAGE_dnsmasq_$(BUILD_VARIANT)_broken_rtc),-DHAVE_BROKEN_RTC) \
 		$(if $(CONFIG_PACKAGE_dnsmasq_$(BUILD_VARIANT)_tftp),,-DNO_TFTP)
 	COPTS += $(if $(CONFIG_LIBNETTLE_MINI),-DNO_GMP,)
+	LIBS += $(if $(CONFIG_PACKAGE_dnsmasq_$(BUILD_VARIANT)_nftset),-lnftnl -lmnl)
 else
 	COPTS += -DNO_AUTH -DNO_IPSET -DNO_ID
 endif
@@ -162,6 +164,7 @@ MAKE_FLAGS := \
 	$(TARGET_CONFIGURE_OPTS) \
 	CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS)" \
 	LDFLAGS="$(TARGET_LDFLAGS)" \
+	LIBS="$(LIBS)" \
 	COPTS="$(COPTS)" \
 	PREFIX="/usr"
 

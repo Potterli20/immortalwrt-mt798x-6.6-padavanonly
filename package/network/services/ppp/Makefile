@@ -9,18 +9,16 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=ppp
-PKG_VERSION:=2.5.1
+PKG_VERSION:=2.5.4
 PKG_RELEASE:=1
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL:=https://github.com/ppp-project/ppp
-PKG_SOURCE_DATE:=2024-09-18
-PKG_SOURCE_VERSION:=d5aeec65752d4a9b3bb46771d0b221c4a4a6539e
-PKG_MIRROR_HASH:=b98125933d8160ff3476b053414e787e65a94948c0ecee53f6261cd403ff4b03
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://download.samba.org/pub/ppp
+PKG_HASH:=379a630a40d858a1347f6592d671791dde12101697a743ef9900012f3765be31
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
 PKG_LICENSE:=BSD-4-Clause
-PKG_CPE_ID:=cpe:/a:samba:ppp
+PKG_CPE_ID:=cpe:/a:point-to-point_protocol_project:point-to-point_protocol
 
 PKG_ASLR_PIE_REGULAR:=1
 PKG_BUILD_DEPENDS:=libpcap
@@ -30,25 +28,20 @@ PKG_FIXUP:=autoreconf
 PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
-
-# ppp predates C23 and declares many functions with old-style empty
-# prototypes, e.g. "struct spwd *getspnam();" (pppd/session.c) and
-# "dumplog()/dumpppp()/show_time()" (pppdump.c). GCC 15 defaults to
-# -std=gnu23, where "()" means "takes no arguments", which turns the
-# call sites into hard errors. Pin C17 for this package.
-TARGET_CFLAGS += -std=gnu17
-
-CONFIGURE_VARS += \
-	enable_eaptls=no \
-	enable_microsoft_extensions=yes \
-	enable_peap=no
-
 CONFIGURE_ARGS += \
-	with_openssl=no \
-	with_pam=no \
-	with_pcap=no \
-	with_srp=no \
-	with_static_pcap=yes
+	--disable-cbcp \
+	--disable-eaptls \
+	--disable-mslanman \
+	--disable-peap \
+	--disable-systemd \
+	--enable-ipv6cp \
+	--enable-microsoft-extensions \
+	--enable-plugins \
+	--with-static-pcap \
+	--without-atm \
+	--without-openssl \
+	--without-pam \
+	--without-pcap
 
 define Package/ppp/Default
   SECTION:=net
@@ -86,7 +79,7 @@ endef
 
 define Package/ppp-mod-pppoa
 $(call Package/ppp/Default)
-  DEPENDS:=@(PACKAGE_ppp||PACKAGE_ppp-multilink) +linux-atm +kmod-pppoa
+  DEPENDS:=@(PACKAGE_ppp||PACKAGE_ppp-multilink) +kmod-pppoa
   TITLE:=PPPoA plugin
 endef
 
@@ -193,8 +186,8 @@ not initiate a session. Can be useful to debug pppoe.
 endef
 
 ifeq ($(BUILD_VARIANT),multilink)
-  CONFIGURE_VARS += \
-	enable_multilink=yes
+  CONFIGURE_ARGS += \
+	--enable-multilink
 endif
 
 define Build/InstallDev

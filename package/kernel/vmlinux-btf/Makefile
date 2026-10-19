@@ -25,7 +25,7 @@ define Package/vmlinux-btf
   SECTION:=kernel
   CATEGORY:=Kernel
   TITLE:=Kernel vmlinux.btf for CO-RE compatibility
-  DEPENDS:=@KERNEL_DEBUG_INFO
+  DEPENDS:=@KERNEL_DEBUG_INFO @!TARGET_ROOTFS_EXT4FS
 endef
 
 define Package/vmlinux-btf/description
@@ -37,6 +37,10 @@ define Package/vmlinux-btf/description
   Only needed when the running kernel has no built-in BTF: with
   CONFIG_KERNEL_DEBUG_INFO_BTF=y the kernel already exposes
   /sys/kernel/btf/vmlinux and this package is redundant.
+
+  Hidden for ext4 rootfs images: the ~3.7 MB blob is stored uncompressed
+  and overruns the fixed-size rootfs partition, making make_ext4fs fail
+  with "failed to allocate ... blocks, out of space?".
 endef
 
 define Package/vmlinux-btf/postinst

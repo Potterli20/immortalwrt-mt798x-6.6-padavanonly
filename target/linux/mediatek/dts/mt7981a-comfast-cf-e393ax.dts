@@ -129,10 +129,8 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	status = "okay";
-	#address-cells = <1>;
-	#size-cells = <0>;
 
-	spi_nand: spi_nand@0 {
+	spi_nand: spi_nand@1 {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "spi-nand";

@@ -281,7 +281,7 @@
 	#size-cells = <0>;
 	status = "okay";
 
-	flash@0 {
+	flash@1 {
 		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "spi-nand";
@@ -417,6 +417,8 @@
 };
 
 &wifi {
+	#address-cells = <1>;
+	#size-cells = <0>;
 	nvmem-cells = <&eeprom_factory_0>;
 	nvmem-cell-names = "eeprom";
 	status = "okay";

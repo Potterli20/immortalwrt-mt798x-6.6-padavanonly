@@ -56,6 +56,8 @@
 	fragment@4 {
 		target = <&spi0>;
 		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&spi0_flash_pins>;
 			status = "okay";
@@ -145,6 +147,8 @@
 	fragment@5 {
 		target = <&wifi>;
 		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
 			nvmem-cells = <&eeprom_factory_0>;
 			nvmem-cell-names = "eeprom";
 

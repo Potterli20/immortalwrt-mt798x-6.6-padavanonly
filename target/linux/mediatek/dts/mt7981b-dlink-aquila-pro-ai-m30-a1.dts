@@ -280,6 +280,8 @@
 	pinctrl-0 = <&i2c_pins_g0>;
 
 	gca230718@40 {
+		#address-cells = <1>;
+		#size-cells = <0>;
 		compatible = "unknown,gca230718";
 		reg = <0x40>;
 

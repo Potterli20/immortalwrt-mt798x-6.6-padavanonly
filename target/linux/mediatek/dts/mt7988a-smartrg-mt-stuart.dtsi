@@ -385,7 +385,9 @@
 	pinctrl-0 = <&i2c1_pins>;
 	status = "okay";
 
-	system-leds {
+	system-leds@30 {
+		#address-cells = <1>;
+		#size-cells = <0>;
 		compatible = "srg,sysled";
 		reg = <0x30>;
 
@@ -545,9 +547,13 @@
 	status = "okay";
 
 	pcie@0,0 {
+		#address-cells = <3>;
+		#size-cells = <2>;
 		reg = <0x0000 0 0 0 0>;
 
 		mt7996@0,0 {
+			#address-cells = <1>;
+			#size-cells = <0>;
 			reg = <0x0000 0 0 0 0>;
 			nvmem-cells = <&eeprom_factory_0>;
 			nvmem-cell-names = "eeprom";

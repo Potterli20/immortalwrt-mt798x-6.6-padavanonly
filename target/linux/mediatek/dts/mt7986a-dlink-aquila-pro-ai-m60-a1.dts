@@ -312,6 +312,8 @@
 };
 
 &wifi {
+	#address-cells = <1>;
+	#size-cells = <0>;
 	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&wf_2g_5g_pins>;
@@ -348,6 +350,8 @@
 	pinctrl-0 = <&i2c_pins_3_4>;
 
 	gca230718@40 {
+		#address-cells = <1>;
+		#size-cells = <0>;
 		compatible = "unknown,gca230718";
 		reg = <0x40>;
 

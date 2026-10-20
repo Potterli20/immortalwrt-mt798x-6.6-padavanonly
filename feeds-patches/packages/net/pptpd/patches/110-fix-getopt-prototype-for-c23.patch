@@ -1,0 +1,22 @@
+--- a/our_getopt.h
++++ b/our_getopt.h
+@@ -139,7 +139,7 @@
+    errors, only prototype getopt for the GNU C library.  */
+ extern int getopt (int __argc, char *const *__argv, const char *__shortopts);
+ # else /* not __GNU_LIBRARY__ */
+-extern int getopt ();
++extern int getopt (int __argc, char *const *__argv, const char *__shortopts);
+ # endif /* __GNU_LIBRARY__ */
+ 
+ # ifndef __need_getopt
+--- a/getopt.c
++++ b/getopt.c
+@@ -219,7 +219,7 @@
+    whose names are inconsistent.  */
+ 
+ #ifndef getenv
+-extern char *getenv ();
++extern char *getenv (const char *);
+ #endif
+ 
+ static char *

@@ -7,11 +7,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gengetopt
-PKG_VERSION:=2.23
+PKG_VERSION:=2.23.1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 PKG_SOURCE_URL:=@GNU/$(PKG_NAME)
-PKG_HASH:=b941aec9011864978dd7fdeb052b1943535824169d2aa2b0e7eae9ab807584ac
+PKG_HASH:=3b9def48422bd45f78af95936200b7f9287369a3db76c4907c42fe10f4922ab6
 
 PKG_SUBDIRS:=$$$$(foreach dir,gl src skels,$$$$(wildcard $$$$(dir)) )
 

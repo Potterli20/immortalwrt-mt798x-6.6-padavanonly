@@ -8,12 +8,12 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=automake
 PKG_CPE_ID:=cpe:/a:gnu:automake
-PKG_VERSION:=1.18.1
+PKG_VERSION:=1.19
 PKG_API_VERSION:=$(word 2,$(subst ., ,$(PKG_VERSION)))
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=@GNU/automake
-PKG_HASH:=63e585246d0fc8772dffdee0724f2f988146d1a3f1c756a3dc5cfbefa3c01915
+PKG_HASH:=79e8b1f7a967e87ce8a9ded76bee7f793d0ce1886ab2002feb1b0510f578b75a
 
 HOST_BUILD_PARALLEL:=1
 
@@ -26,7 +26,7 @@ HOST_CONFIGURE_VARS += \
 	PERL="/usr/bin/env perl"
 
 define Host/Configure
-	(cd $(HOST_BUILD_DIR); $(AM_TOOL_PATHS) STAGING_DIR_HOST="" ./bootstrap)
+	(cd $(HOST_BUILD_DIR); mkdir -p .git; $(AM_TOOL_PATHS) STAGING_DIR_HOST="" ./bootstrap)
 	$(call Host/Configure/Default)
 endef
 

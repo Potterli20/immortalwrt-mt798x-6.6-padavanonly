@@ -1,11 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=popt
-PKG_VERSION:=1.16
+PKG_VERSION:=1.19
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=http://rpm5.org/files/popt
-PKG_HASH:=e728ed296fe9f069a0e005003c3d6b2dde3d9cad453422a10d6558616d304cc8
+PKG_SOURCE_URL:=https://sources.buildroot.net/popt/ \
+		http://rpm5.org/files/popt
+PKG_HASH:=c25a4838fc8e4c1c8aacb8bd620edb3084a3d63bf8987fdad3ca2758c63240f9
 
 HOST_FIXUP:=autoreconf
 

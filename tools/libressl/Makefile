@@ -8,8 +8,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=libressl
-PKG_VERSION:=4.2.1
-PKG_HASH:=6d5c2f58583588ea791f4c8645004071d00dfa554a5bf788a006ca1eb5abd70b
+PKG_VERSION:=4.3.3
+PKG_HASH:=ff97c432457f349e6ba3d416ab903bc7468f1436f0f32efe5fff808de292c7b8
 
 PKG_CPE_ID:=cpe:/a:openbsd:libressl
 

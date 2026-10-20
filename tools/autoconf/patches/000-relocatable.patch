@@ -119,19 +119,18 @@
    unshift @INC, $pkgdatadir;
  
    $buildauxdir = $ENV{'autom4te_buildauxdir'} || $pkgdatadir . '/build-aux';
-@@ -116,9 +119,9 @@ Written by David J. MacKenzie and Akim D
- ";
- 
- # Lib files.
--my $autoconf    = $ENV{'AUTOCONF'}    || '@bindir@/@autoconf-name@';
--my $autoheader  = $ENV{'AUTOHEADER'}  || '@bindir@/@autoheader-name@';
--my $autom4te    = $ENV{'AUTOM4TE'}    || '@bindir@/@autom4te-name@';
-+my $autoconf    = $ENV{'AUTOCONF'}    || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autoconf-name@' : '@bindir@/@autoconf-name@');
-+my $autoheader  = $ENV{'AUTOHEADER'}  || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autoheader-name@' : '@bindir@/@autoheader-name@');
-+my $autom4te    = $ENV{'AUTOM4TE'}    || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autom4te-name@' : '@bindir@/@autom4te-name@');
- my $automake    = $ENV{'AUTOMAKE'}    || 'automake';
- my $aclocal     = $ENV{'ACLOCAL'}     || 'aclocal';
- my $libtoolize  = $ENV{'LIBTOOLIZE'}  || 'libtoolize';
+@@ -126,8 +129,8 @@ Written by David J. MacKenzie and Akim D
+ # For each program, the value is the actual command to use, with options.
+ my %C = (
+-  autoconf    => $ENV{'AUTOCONF'}    || '@bindir@/@autoconf-name@',
+-  autoheader  => $ENV{'AUTOHEADER'}  || '@bindir@/@autoheader-name@',
+-  autom4te    => $ENV{'AUTOM4TE'}    || '@bindir@/@autom4te-name@',
++  autoconf    => $ENV{'AUTOCONF'}    || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autoconf-name@' : '@bindir@/@autoconf-name@'),
++  autoheader  => $ENV{'AUTOHEADER'}  || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autoheader-name@' : '@bindir@/@autoheader-name@'),
++  autom4te    => $ENV{'AUTOM4TE'}    || ($ENV{'STAGING_DIR_HOST'} ? $ENV{'STAGING_DIR_HOST'} . '/bin/@autom4te-name@' : '@bindir@/@autom4te-name@'),
+   automake    => $ENV{'AUTOMAKE'}    || 'automake',
+   aclocal     => $ENV{'ACLOCAL'}     || 'aclocal',
+   libtoolize  => $ENV{'LIBTOOLIZE'}  || 'libtoolize',
 --- a/bin/autoscan.in
 +++ b/bin/autoscan.in
 @@ -28,9 +28,12 @@ use 5.006;

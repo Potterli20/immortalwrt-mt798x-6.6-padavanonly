@@ -94,6 +94,7 @@ define Build/Configure/Default
 		LDFLAGS="$(TARGET_LDFLAGS) $(EXTRA_LDFLAGS)" \
 		cmake \
 			--no-warn-unused-cli \
+			-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 			-DCMAKE_SYSTEM_NAME=Linux \
 			-DCMAKE_SYSTEM_VERSION=1 \
 			-DCMAKE_SYSTEM_PROCESSOR=$(ARCH) \
@@ -147,6 +148,7 @@ define Host/Configure/Default
 		LDFLAGS="$(HOST_LDFLAGS)" \
 		cmake \
 			--no-warn-unused-cli \
+			-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 			-DCMAKE_BUILD_TYPE=Release \
 			-DCMAKE_C_COMPILER_LAUNCHER="$(CMAKE_C_COMPILER_LAUNCHER)" \
 			-DCMAKE_C_COMPILER="$(CMAKE_HOST_C_COMPILER)" \

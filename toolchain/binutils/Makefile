@@ -38,6 +38,10 @@ PATCH_DIR:=./patches/$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/toolchain-build.mk
 
+# pkg-config would otherwise give the host build the target libc headers (upstream does the same)
+export ZSTD_CFLAGS=-I$(STAGING_DIR_HOST)/include -pthread
+export ZSTD_LIBS=-L$(STAGING_DIR_HOST)/lib -lzstd -lpthread
+
 ifdef CONFIG_GCC_USE_GRAPHITE
   GRAPHITE_CONFIGURE:= --with-isl=$(STAGING_DIR_HOST)
 else
@@ -52,6 +56,7 @@ HOST_CONFIGURE_ARGS = \
 	--with-sysroot=$(TOOLCHAIN_DIR) \
 	--with-system-zlib \
 	--with-zstd \
+	--without-debuginfod \
 	--enable-deterministic-archives \
 	--enable-plugins \
 	--enable-lto \

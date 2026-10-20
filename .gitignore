@@ -44,4 +44,5 @@ git-src
 .config-*
 ref
 *.patch
+!tools/*/patches/*.patch
 /package/*

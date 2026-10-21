@@ -69,6 +69,8 @@
 		compatible = "mediatek,eth-mac";
 		reg = <0>;
 		phy-mode = "2500base-x";
+		nvmem-cell-names = "mac-address";
+		nvmem-cells = <&macaddr_factory_4 2>;
 
 		fixed-link {
 			speed = <2500>;
@@ -82,6 +84,8 @@
 		reg = <1>;
 		phy-mode = "gmii";
 		phy-handle = <&int_gbe_phy>;
+		nvmem-cell-names = "mac-address";
+		nvmem-cells = <&macaddr_factory_4 3>;
 	};
 };
 
@@ -132,6 +136,24 @@
 				label = "Factory";
 				reg = <0x0180000 0x0200000>;
 				read-only;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					/*
+					 * e2p header: MAC field at offset 0x4.
+					 * This is only a deterministic fallback: board.d
+					 * 02_network reads H3C's own ethaddr from pdt_data_1 and
+					 * overrides lan/wan plus the per-band .dat on firstboot.
+					 */
+					macaddr_factory_4: macaddr@4 {
+						compatible = "mac-base";
+						reg = <0x4 0x6>;
+						#nvmem-cell-cells = <1>;
+					};
+				};
 			};
 
 			partition@380000 {
@@ -247,5 +269,26 @@
 &wifi {
 	status = "okay";
 
+	#address-cells = <1>;
+	#size-cells = <0>;
+
 	mediatek,mtd-eeprom = <&factory 0x0>;
+
+	/*
+	 * mt_wifi has no DT EEPROM support of its own, but mt_wifi_get_band_mac()
+	 * does read these per-band MAC cells (see files-6.6/.../mt_wifi_mtd.c).
+	 * A MacAddress in the per-band .dat outranks them, and 02_network seeds
+	 * that from pdt_data_1, so these only surface when the .dat is unseeded.
+	 */
+	band@0 {
+		reg = <0>;
+		nvmem-cell-names = "mac-address";
+		nvmem-cells = <&macaddr_factory_4 0>;
+	};
+
+	band@1 {
+		reg = <1>;
+		nvmem-cell-names = "mac-address";
+		nvmem-cells = <&macaddr_factory_4 1>;
+	};
 };

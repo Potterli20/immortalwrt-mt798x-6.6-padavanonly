@@ -75,9 +75,12 @@ start_service() {
 	uci -q commit "firewall"
 	/etc/init.d/firewall restart >"/dev/null" 2>&1
 
-	# Save Memory
-    echo 4096 > /proc/sys/vm/min_free_kbytes
-    echo 3 > /proc/sys/vm/drop_caches
+	# Memory: never lower vm.min_free_kbytes here. S11sysctl already sized the
+	# atomic reserve for this RAM amount, and cutting it starves the GFP_ATOMIC
+	# paths of WED/WARP (buf_alloc_task) and HWNAT. drop_caches is opt-in.
+	local save_memory
+	config_get_bool "save_memory" "config" "save_memory" "0"
+	[ "$save_memory" -eq "1" ] && echo 3 > /proc/sys/vm/drop_caches
 
 	# Wget IPv4 only
 	if [ -f /etc/wgetrc ]; then

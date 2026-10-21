@@ -608,7 +608,7 @@ Signed-off-by: Daniel Golle <daniel@makrotopia.org>
 +		/* If the mac address is invalid, use random mac address */
 +		eth_hw_addr_random(eth->netdev[i]);
 +		dev_err(eth->dev, "generated random MAC address %pM\n",
-+			eth->netdev[i]);
++			eth->netdev[i]->dev_addr);
 +	}
 +
 +	return 0;

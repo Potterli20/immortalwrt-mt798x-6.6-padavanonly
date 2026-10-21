@@ -323,12 +323,27 @@ mediatek_setup_macs()
 		base_mac=$(cat /sys/class/net/eth0/address)
 	fi
 
-	if [ -f ${b0dat} ] && ! grep -q "MacAddress=" ${b0dat}; then
-			local b0mac="$(macaddr_add "$base_mac" 3)"
+	# eth_random_addr() clears the multicast bit and sets the local-assignment
+	# one, so a base_mac that only comes from eth0 after a failed vendor-MAC
+	# lookup is random on every boot. The .dat seeding below runs only while
+	# the key is absent, so such an address would be baked in for good; drop
+	# it and let a boot that can read the vendor MAC seed it instead.
+	local seed_mac="$base_mac"
+	case $seed_mac in
+	[0-9a-fA-F][0-9a-fA-F]:*)
+		[ "$((0x$(echo ${seed_mac%%:*} | tr a-f A-F) & 2))" -eq 2 ] && seed_mac=""
+		;;
+	*)
+		seed_mac=""
+		;;
+	esac
+
+	if [ -n "$seed_mac" ] && [ -f ${b0dat} ] && ! grep -q "MacAddress=" ${b0dat}; then
+			local b0mac="$(macaddr_add "$seed_mac" 3)"
 			echo "MacAddress=$b0mac" >> ${b0dat}
 		fi
-	if [ -f ${b1dat} ] && ! grep -q "MacAddress=" ${b1dat}; then
-			local b1mac="$(macaddr_add "$base_mac" 4)"
+	if [ -n "$seed_mac" ] && [ -f ${b1dat} ] && ! grep -q "MacAddress=" ${b1dat}; then
+			local b1mac="$(macaddr_add "$seed_mac" 4)"
 			echo "MacAddress=$b1mac" >> ${b1dat}
 	fi
 

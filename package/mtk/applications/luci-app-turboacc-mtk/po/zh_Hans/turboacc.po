@@ -12,10 +12,6 @@ msgstr ""
 msgid "Acceleration Status"
 msgstr "加速状态"
 
-#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:294
-msgid "Apply this setting after reboot."
-msgstr "重启后应用此项设置。"
-
 #: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:205
 msgid "Bind Entrys"
 msgstr "已绑定连接数"
@@ -187,6 +183,74 @@ msgstr "网络加速"
 msgid "TurboACC settings"
 msgstr "网络加速设置"
 
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:330
+msgid "FIN bind lifetime"
+msgstr "FIN 绑定老化时间"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:306
+msgid "Also offload connections over macvlan interfaces (hnat_setting type 12)."
+msgstr "同时把 macvlan 接口的连接也卸载到 PPE（hnat_setting 类型 12）。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:305
+msgid "Enable ethernet macvlan HNAT"
+msgstr "启用有线 macvlan HNAT"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:312
+msgid "Let the PPE push flow counters back into nf_conntrack (hnat_setting type 7). Keep it on if accounting or conntrack statistics are in use."
+msgstr "让 PPE 把流量计数写回 nf_conntrack（hnat_setting 类型 7）。在用流量统计或 conntrack 观测时请保持开启。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:311
+msgid "Sync HNAT counters to conntrack"
+msgstr "HNAT 计数回写 conntrack"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:317
+msgid "HNAT binding threshold"
+msgstr "HNAT 绑定阈值"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:318
+msgid "hnat_setting type 1, 0~65535. Empty means leave the driver default alone."
+msgstr "hnat_setting 类型 1，0~65535。留空表示不改驱动默认值。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:323
+msgid "TCP bind lifetime"
+msgstr "TCP 绑定老化时间"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:324
+msgid "hnat_setting type 2, 0~65535. Age out bound TCP flows."
+msgstr "hnat_setting 类型 2，0~65535。已绑定 TCP 流的老化时间。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:330
+msgid "hnat_setting type 3, 0~65535."
+msgstr "hnat_setting 类型 3，0~65535。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:335
+msgid "UDP bind lifetime"
+msgstr "UDP 绑定老化时间"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:336
+msgid "hnat_setting type 4, 0~65535. Shorten it when QUIC/UDP floods the flow table."
+msgstr "hnat_setting 类型 4，0~65535。QUIC/UDP 流把表占满时可调短。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:341
+msgid "TCP keep alive interval"
+msgstr "TCP keep alive 间隔"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:342
+msgid "hnat_setting type 5, 0~255."
+msgstr "hnat_setting 类型 5，0~255。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:347
+msgid "UDP keep alive interval"
+msgstr "UDP keep alive 间隔"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:348
+msgid "hnat_setting type 6, 0~255."
+msgstr "hnat_setting 类型 6，0~255。"
+
+#: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:354
+msgid "Written to /etc/modprobe.d/mtkhnat.conf as the mtkhnat <code>ppe_cnt</code> module parameter, so it only takes effect after reboot. Keep 2 unless the SoC really exposes a single PPE."
+msgstr "以模块参数 mtkhnat.ppe_cnt 写入 /etc/modprobe.d/mtkhnat.conf，重启后才生效。除非该 SoC 确实只有一个 PPE，否则保持 2。"
+
 #~ msgid "Enable hardware offloading for wireless connections."
 #~ msgstr "为无线连接启用硬件加速。"
 
@@ -201,3 +265,6 @@ msgstr "网络加速设置"
 
 #~ msgid "Conntrack Entrys"
 #~ msgstr "活动连接数"
+
+#~ msgid "Apply this setting after reboot."
+#~ msgstr "重启后应用此项设置。"

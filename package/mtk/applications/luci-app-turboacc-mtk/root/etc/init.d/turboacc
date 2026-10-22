@@ -21,8 +21,11 @@ start_service() {
 		rmmod "shortcut_fe_cm" 2>"/dev/null"
 	fi
 
-	if [ "$fastpath" != "mediatek_hnat" ] && lsmod | grep -q "mtkhnat"; then
-		echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
+	if [ "$fastpath" != "mediatek_hnat" ]; then
+		rm -f "/etc/modprobe.d/mtkhnat.conf"
+		if lsmod | grep -q "mtkhnat"; then
+			echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
+		fi
 	fi
 
 	case "$fastpath" in
@@ -52,13 +55,40 @@ start_service() {
 		echo "$fastpath_mh_eth_hnat" > "$hnat_path/hook_toggle"
 
 		if [ "$fastpath_mh_eth_hnat" -eq "1" ]; then
-			local fastpath_mh_eth_hnat_v6 fastpath_mh_eth_hnat_bind_rate
-
 			config_get_bool "fastpath_mh_eth_hnat_v6" "config" "fastpath_mh_eth_hnat_v6" "1"
 			echo "8 $fastpath_mh_eth_hnat_v6" > "$hnat_path/hnat_setting"
 
 			config_get "fastpath_mh_eth_hnat_bind_rate" "config" "fastpath_mh_eth_hnat_bind_rate" "30"
 			echo "11 $fastpath_mh_eth_hnat_bind_rate" > "$hnat_path/hnat_setting"
+
+			config_get_bool "fastpath_mh_eth_hnat_macvlan" "config" "fastpath_mh_eth_hnat_macvlan" "0"
+			echo "12 $fastpath_mh_eth_hnat_macvlan" > "$hnat_path/hnat_setting"
+
+			config_get_bool "fastpath_mh_eth_hnat_nf_stat" "config" "fastpath_mh_eth_hnat_nf_stat" "1"
+			echo "7 $fastpath_mh_eth_hnat_nf_stat" > "$hnat_path/hnat_setting"
+
+			# 阈值与老化时间：留空就不写，避免覆盖 eqos 直接下发的值
+			local hnat_opt hnat_idx hnat_name hnat_val
+			for hnat_opt in \
+				"1 fastpath_mh_eth_hnat_bind_threshold" \
+				"2 fastpath_mh_eth_hnat_tcp_life" \
+				"3 fastpath_mh_eth_hnat_fin_life" \
+				"4 fastpath_mh_eth_hnat_udp_life" \
+				"5 fastpath_mh_eth_hnat_tcp_ka" \
+				"6 fastpath_mh_eth_hnat_udp_ka"
+			do
+				hnat_idx="${hnat_opt%% *}"
+				hnat_name="${hnat_opt#* }"
+				config_get hnat_val "config" "$hnat_name" ""
+				if [ -n "$hnat_val" ]; then
+					echo "$hnat_idx $hnat_val" > "$hnat_path/hnat_setting"
+				fi
+			done
+
+			# ppe_cnt 是 mtkhnat 的模块参数，权限 0，只能开机生效
+			local hnat_ppenum
+			config_get "hnat_ppenum" "config" "fastpath_mh_eth_hnat_ppenum" "2"
+			echo "options mtkhnat ppe_cnt=$hnat_ppenum" > "/etc/modprobe.d/mtkhnat.conf"
 		fi
 		;;
 	esac

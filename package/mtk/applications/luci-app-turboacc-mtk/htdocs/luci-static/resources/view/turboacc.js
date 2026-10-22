@@ -302,8 +302,56 @@ return view.extend({
 		o.placeholder = 30;
 		o.depends('fastpath_mh_eth_hnat', '1');
 
+		o = s.option(form.Flag, 'fastpath_mh_eth_hnat_macvlan', _('Enable ethernet macvlan HNAT'),
+			_('Also offload connections over macvlan interfaces (hnat_setting type 12).'));
+		o.default = o.disabled;
+		o.rmempty = false;
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Flag, 'fastpath_mh_eth_hnat_nf_stat', _('Sync HNAT counters to conntrack'),
+			_('Let the PPE push flow counters back into nf_conntrack (hnat_setting type 7). Keep it on if accounting or conntrack statistics are in use.'));
+		o.default = o.enabled;
+		o.rmempty = false;
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_bind_threshold', _('HNAT binding threshold'),
+			_('hnat_setting type 1, 0~65535. Empty means leave the driver default alone.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_tcp_life', _('TCP bind lifetime'),
+			_('hnat_setting type 2, 0~65535. Age out bound TCP flows.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_fin_life', _('FIN bind lifetime'),
+			_('hnat_setting type 3, 0~65535.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_udp_life', _('UDP bind lifetime'),
+			_('hnat_setting type 4, 0~65535. Shorten it when QUIC/UDP floods the flow table.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_tcp_ka', _('TCP keep alive interval'),
+			_('hnat_setting type 5, 0~255.'));
+		o.optional = true;
+		o.datatype = 'range(0,255)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_udp_ka', _('UDP keep alive interval'),
+			_('hnat_setting type 6, 0~255.'));
+		o.optional = true;
+		o.datatype = 'range(0,255)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
 		o = s.option(form.ListValue, 'fastpath_mh_eth_hnat_ppenum', _('Number of HNAT PPE'),
-			_('Apply this setting after reboot.'));
+			_('Written to /etc/modprobe.d/mtkhnat.conf as the mtkhnat <code>ppe_cnt</code> module parameter, so it only takes effect after reboot. Keep 2 unless the SoC really exposes a single PPE.'));
 		o.rmempty = false;
 		o.value(1);
 		o.value(2);

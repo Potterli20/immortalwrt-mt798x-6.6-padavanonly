@@ -1,0 +1,45 @@
+Subject: [PATCH] wapp: pass the SR target wdev index and threshold value
+
+Three MAP_R3 wapp SR handlers dereferenced nothing and instead cast the
+address of req->data.value down to the one-byte argument the callee
+expects, so on aarch64 they handed over the low byte of a kernel pointer:
+
+  - SrBHDownMeshSRThreshold()/SrFHDownMeshSRThreshold() take INT_8 i1Rssi,
+    so the threshold carried in the message is what belongs there.
+  - SrMeshForbidSrBssid() takes UINT_8 u1WdevIdx and uses it to index
+    pAd->wdev_list[] to derive band and OwnMacIdx. The handler had already
+    resolved the wdev by req->data.ifindex, so the matched loop index is
+    the argument; the truncated pointer could index past WDEV_NUM_MAX.
+
+Found with -Wpointer-to-int-cast on aarch64. Same convention as the other
+callers: sr_cmd.c passes (INT_8)i4Rssi and (UINT_8)idevidx.
+
+--- a/mt_wifi/embedded/wapp/wapp.c
++++ b/mt_wifi/embedded/wapp/wapp.c
+@@ -2541,7 +2541,7 @@
+ 			if (wdev->if_dev && (RtmpOsGetNetIfIndex(wdev->if_dev) == req->data.ifindex)) {
+ 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+ 					"(%s) ifindex = %u\n", __func__, req->data.ifindex);
+-				SrBHDownMeshSRThreshold(pAd, (INT_8)&req->data.value);
++				SrBHDownMeshSRThreshold(pAd, (INT_8)req->data.value);
+ 			}
+ 		}
+ 	}
+@@ -2564,7 +2564,7 @@
+ 			if (wdev->if_dev && (RtmpOsGetNetIfIndex(wdev->if_dev) == req->data.ifindex)) {
+ 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+ 					"(%s) ifindex = %u\n", __func__, req->data.ifindex);
+-				SrFHDownMeshSRThreshold(pAd, (INT_8)&req->data.value);
++				SrFHDownMeshSRThreshold(pAd, (INT_8)req->data.value);
+ 			}
+ 		}
+ 	}
+@@ -2587,7 +2587,7 @@
+ 			if (wdev->if_dev && (RtmpOsGetNetIfIndex(wdev->if_dev) == req->data.ifindex)) {
+ 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+ 					"(%s) ifindex = %u\n", __func__, req->data.ifindex);
+-				SrMeshForbidSrBssid(pAd, (UINT_8)&req->data.value);
++				SrMeshForbidSrBssid(pAd, (UINT_8)i);
+ 			}
+ 		}
+ 	}

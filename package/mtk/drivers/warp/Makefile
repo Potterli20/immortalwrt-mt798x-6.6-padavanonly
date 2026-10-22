@@ -53,9 +53,14 @@ MTK_WIFI_DIR:=$(TOPDIR)/../ko_module/wlan_driver/jedi
 endif
 USE_BIN_DIR:=$(MTK_WIFI_DIR)/warp_driver/bin
 
+# warp shares the vendor tree's unused-variable/function/label noise
+WARP_QUIET_CFLAGS = -Wno-unused-variable -Wno-unused-but-set-variable \
+	-Wno-unused-function -Wno-unused-result -Wno-unused-label
+
 define Build/Compile
 	$(MAKE) -C "$(LINUX_DIR)" V=1 \
 		$(KERNEL_MAKE_FLAGS) \
+		KCFLAGS+='$(WARP_QUIET_CFLAGS)' \
 		M="$(PKG_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)=$(CONFIG_$(c)))) \
 		modules

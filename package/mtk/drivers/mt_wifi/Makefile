@@ -303,9 +303,15 @@ define KernelPackage/mt_wifi/config
 	source "$(SOURCE)/config.in"
 endef
 
+# vendor tree's structural -Wall noise only; keep format/cast/enum diagnostics visible
+MT_WIFI_QUIET_CFLAGS = -Wno-implicit-fallthrough -Wno-address -Wno-attribute-warning \
+	-Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function \
+	-Wno-unused-result -Wno-misleading-indentation -Wno-vla
+
 define Build/Compile
 	+$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \
 		$(KERNEL_MAKE_FLAGS) \
+		KCFLAGS+='$(MT_WIFI_QUIET_CFLAGS)' \
 		M="$(PKG_BUILD_DIR)/mt_wifi_ap" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_$c),CONFIG_$(c)=$(CONFIG_MTK_$(c)))) \

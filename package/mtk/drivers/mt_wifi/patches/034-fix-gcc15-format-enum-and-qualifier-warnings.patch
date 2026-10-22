@@ -1,0 +1,176 @@
+Subject: [PATCH] fix gcc-15 format, enum and qualifier diagnostics
+
+Remaining -Wall diagnostics in the vendor tree, plus one memory-safety bug
+they exposed:
+
+ - cmm_info.c/rrm.c/rrm_tlv.c: kernel 6.6.y now defines MIN() in
+   include/linux/minmax.h, so the local macros collide with it. #undef first
+   and keep the vendor definition; behaviour is unchanged.
+ - cmm_cfg.c: Set_PS_Flush_Proc() fed &MacTab.fPsSTAFlushEnable (BOOLEAN),
+   &PsFlushThldTotalMsduNum and &PsFlushPerStaMaxMsduNum (UINT16) to
+   sscanf("%d"), which writes four bytes each and clobbered the adjacent
+   MacTab fields. Parse into INTs and assign with the right width.
+ - hdev_ctrl.c: hc_set_mac_cap()/hc_set_phy_cap() were defined with UINT32
+   while hdev_ctrl.h declares enum MAC_CAP/PHY_CAP. Same width; match the
+   prototype.
+ - ap_cfg.c: CurrentState is an enum WNM_NOTIFY_STATE but was seeded from
+   enum WNM_NOTIFY_EVENT. WAIT_WNM_NOTIFY_REQ is the same value (0).
+ - mt7981.c: rx_fe_def[] initialises a struct whose only member is an array,
+   so it needs a second level of braces.
+ - rt_linux.h/rt_main_dev.c: dev_addr is const in this kernel; restore the
+   vendor's UCHAR * view.
+ - fwdl_mt.c: the fortify memmove builtins reject a volatile destination.
+
+Deliberately left alone: the RTMP_OS_TASK_CALLBACK and get_wireless_stats
+function-pointer casts (compat shims), and the vendor MIN() macros that
+actually compute the maximum.
+
+diff -ru a/mt_wifi/chips/mt7981.c b/mt_wifi/chips/mt7981.c
+--- a/mt_wifi/chips/mt7981.c
++++ b/mt_wifi/chips/mt7981.c
+@@ -1285,7 +1285,7 @@
+ #if defined(CONFIG_WLAN_SERVICE)
+ static struct _rx_fe_loss_ee_def rx_fe_def[] = {
+ 	/* adie 7976 */
+-	{ 0x3f6, 0x3f7, 0x3f8, 0x3f9,  /* 2G */
++	{ { 0x3f6, 0x3f7, 0x3f8, 0x3f9,  /* 2G */
+ 	  0x3fa, 0x3fd, 0x400, 0x403,  /* 5G LB */
+ 	  0x3fb, 0x3fe, 0x401, 0x404,  /* 5G LM */
+ 	  0x3fc, 0x3ff, 0x402, 0x405,  /* 5G LH */
+@@ -1293,7 +1293,7 @@
+ 	  0x407, 0x40b, 0x40f, 0x413,  /* 6G LB2 */
+ 	  0x408, 0x40c, 0x410, 0x414,  /* 6G HB1 */
+ 	  0x409, 0x40d, 0x411, 0x415   /* 6G HB2 */
+-	 }
++	 } }
+ };
+ 
+ static UINT32 mt7981_get_rx_fe_loss(
+diff -ru a/mt_wifi/embedded/ap/ap_cfg.c b/mt_wifi/embedded/ap/ap_cfg.c
+--- a/mt_wifi/embedded/ap/ap_cfg.c
++++ b/mt_wifi/embedded/ap/ap_cfg.c
+@@ -26985,7 +26985,7 @@
+ 		}
+ 
+ 		NdisZeroMemory(WNMNotifyPeerEntry, sizeof(*WNMNotifyPeerEntry));
+-		WNMNotifyPeerEntry->CurrentState = WNM_NOTIFY_REQ;
++		WNMNotifyPeerEntry->CurrentState = WAIT_WNM_NOTIFY_REQ;
+ 		WNMNotifyPeerEntry->ControlIndex = APIndex;
+ 		NdisMoveMemory(WNMNotifyPeerEntry->PeerMACAddr, PeerMACAddr, MAC_ADDR_LEN);
+ 		WNMNotifyPeerEntry->DialogToken = 1;
+diff -ru a/mt_wifi/embedded/common/cmm_cfg.c b/mt_wifi/embedded/common/cmm_cfg.c
+--- a/mt_wifi/embedded/common/cmm_cfg.c
++++ b/mt_wifi/embedded/common/cmm_cfg.c
+@@ -11009,6 +11009,8 @@
+ #ifdef PS_STA_FLUSH_SUPPORT
+ INT Set_PS_Flush_Proc(RTMP_ADAPTER *pAd, RTMP_STRING *arg)
+ {
++	INT i4Enable = 0, i4TotalMsduNum = 0, i4PerStaMaxMsduNum = 0;
++
+ 	if (arg == NULL || strlen(arg) == 0)
+ 		goto error;
+ 
+@@ -11018,9 +11020,10 @@
+ 
+ 		return TRUE;
+ 	} else if (sscanf(arg, "%d-%d-%d",
+-				&pAd->MacTab.fPsSTAFlushEnable,
+-				&pAd->MacTab.PsFlushThldTotalMsduNum,
+-				&pAd->MacTab.PsFlushPerStaMaxMsduNum) == 3) {
++				&i4Enable, &i4TotalMsduNum, &i4PerStaMaxMsduNum) == 3) {
++		pAd->MacTab.fPsSTAFlushEnable = i4Enable ? TRUE : FALSE;
++		pAd->MacTab.PsFlushThldTotalMsduNum = (UINT16)i4TotalMsduNum;
++		pAd->MacTab.PsFlushPerStaMaxMsduNum = (UINT16)i4PerStaMaxMsduNum;
+ 		pAd->MacTab.fPsSTAFlushManualMode = TRUE;
+ 		MtCmdPsStaFlushCtrl(pAd);
+ 		MTWF_PRINT("fPsSTAFlushEnable=%d, PsFlushThldTotalMsduNum=%d, PsFlushPerStaMaxMsduNum=%d\n",
+diff -ru a/mt_wifi/embedded/common/cmm_info.c b/mt_wifi/embedded/common/cmm_info.c
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -36,6 +36,7 @@
+ #endif
+ 
+ #define MCAST_WCID_TO_REMOVE 0 /* Pat: TODO */
++#undef MIN
+ #define MIN(a, b)					((a) < (b) ? (a) : (b))
+ #ifndef IAP_VENDOR1_FEATURE_SUPPORT
+ INT UNII4BandSupportRegions[] = {25, 26};
+diff -ru a/mt_wifi/embedded/common/rrm.c b/mt_wifi/embedded/common/rrm.c
+--- a/mt_wifi/embedded/common/rrm.c
++++ b/mt_wifi/embedded/common/rrm.c
+@@ -2699,6 +2699,7 @@
+ 	struct wifi_dev *wdev,
+ 	PRTMP_ADAPTER pAd)
+ {
++#undef MIN
+ #define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 
+ 	BSS_TABLE *ScanTab = NULL;
+diff -ru a/mt_wifi/embedded/common/rrm_tlv.c b/mt_wifi/embedded/common/rrm_tlv.c
+--- a/mt_wifi/embedded/common/rrm_tlv.c
++++ b/mt_wifi/embedded/common/rrm_tlv.c
+@@ -847,6 +847,7 @@
+ 	IN PCHAR pSsid,
+ 	IN UINT8 SsidLen)
+ {
++#undef MIN
+ #define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 	UINT loop;
+ 	HEADER_802_11 ActHdr;
+diff -ru a/mt_wifi/embedded/hw_ctrl/hdev_ctrl.c b/mt_wifi/embedded/hw_ctrl/hdev_ctrl.c
+--- a/mt_wifi/embedded/hw_ctrl/hdev_ctrl.c
++++ b/mt_wifi/embedded/hw_ctrl/hdev_ctrl.c
+@@ -2372,7 +2372,7 @@
+ /*
+ *
+ */
+-VOID hc_set_mac_cap(void *hdev_ctrl, UINT32 caps)
++VOID hc_set_mac_cap(void *hdev_ctrl, enum MAC_CAP caps)
+ {
+ 	struct hdev_ctrl *ctrl = hdev_ctrl;
+ 
+@@ -2382,7 +2382,7 @@
+ /*
+ *
+ */
+-VOID hc_set_phy_cap(void *hdev_ctrl, UINT32 caps)
++VOID hc_set_phy_cap(void *hdev_ctrl, enum PHY_CAP caps)
+ {
+ 	struct hdev_ctrl *ctrl = hdev_ctrl;
+ 
+diff -ru a/mt_wifi/include/os/rt_linux.h b/mt_wifi/include/os/rt_linux.h
+--- a/mt_wifi/include/os/rt_linux.h
++++ b/mt_wifi/include/os/rt_linux.h
+@@ -938,7 +938,7 @@
+ #endif
+ 
+ #define RTMP_OS_NETDEV_GET_DEVNAME(_pNetDev)	((_pNetDev)->name)
+-#define RTMP_OS_NETDEV_GET_PHYADDR(_pNetDev)	((_pNetDev)->dev_addr)
++#define RTMP_OS_NETDEV_GET_PHYADDR(_pNetDev)	((UCHAR *)(_pNetDev)->dev_addr)
+ 
+ /* Get & Set NETDEV interface hardware type */
+ #define RTMP_OS_NETDEV_GET_TYPE(_pNetDev)			((_pNetDev)->type)
+diff -ru a/mt_wifi/mcu/fwdl_mt.c b/mt_wifi/mcu/fwdl_mt.c
+--- a/mt_wifi/mcu/fwdl_mt.c
++++ b/mt_wifi/mcu/fwdl_mt.c
+@@ -799,7 +799,7 @@
+ 
+ 				if ((emi_addr_offset + region->img_size) <= pChipCap->emi_phy_addr_size) {
+ 					target_vir_addr = vir_addr + emi_addr_offset;
+-					memmove(target_vir_addr, region->img_ptr, region->img_size);
++					memmove((void *)target_vir_addr, region->img_ptr, region->img_size);
+ 					MTWF_DBG(pAd, DBG_CAT_FW, DBG_SUBCAT_ALL, DBG_LVL_INFO,
+ 							"emi_addr_offset = 0x%08x, img_dest_addr = 0x%08x, img_size = 0x%08x\n",
+ 							emi_addr_offset, region->img_dest_addr, region->img_size);
+diff -ru a/mt_wifi/os/linux/rt_main_dev.c b/mt_wifi/os/linux/rt_main_dev.c
+--- a/mt_wifi/os/linux/rt_main_dev.c
++++ b/mt_wifi/os/linux/rt_main_dev.c
+@@ -704,7 +704,7 @@
+ #endif
+ 	{
+ 		if ((pNetDev->type == ARPHRD_ETHER)
+-			&& os_equal_mem(pNetDev->dev_addr, &pData[6], pNetDev->addr_len))
++			&& os_equal_mem((UCHAR *)pNetDev->dev_addr, &pData[6], pNetDev->addr_len))
+ 			break;
+ 	}
+ 

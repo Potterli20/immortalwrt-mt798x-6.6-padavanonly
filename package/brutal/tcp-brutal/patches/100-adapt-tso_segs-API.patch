@@ -1,0 +1,41 @@
+--- a/brutal_cc.c
++++ b/brutal_cc.c
+@@ -224,6 +224,29 @@
+     return tcp_sk(sk)->snd_ssthresh;
+ }
+ 
++/*
++ * The BBRv3 patch series replaced tcp_congestion_ops.min_tso_segs with a
++ * tso_segs(sk, mss_now) callback that must return the final segment count.
++ * tcp_tso_autosize() is static in tcp_output.c and not callable from a
++ * module, so mirror it here on top of brutal's own burst-derived minimum to
++ * keep the pre-change behaviour.
++ */
++static u32 brutal_tso_segs(struct sock *sk, unsigned int mss_now)
++{
++    struct tcp_sock *tp = tcp_sk(sk);
++    unsigned long bytes = sk->sk_pacing_rate >> READ_ONCE(sk->sk_pacing_shift);
++    u32 min_segs = brutal_min_tso_segs(sk);
++    u32 r;
++
++    r = tcp_min_rtt(tp) >> READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_tso_rtt_log);
++    if (r < BITS_PER_TYPE(sk->sk_gso_max_size))
++        bytes += sk->sk_gso_max_size >> r;
++
++    bytes = min_t(unsigned long, bytes, sk->sk_gso_max_size);
++
++    return max_t(u32, bytes / mss_now, min_segs);
++}
++
+ struct tcp_congestion_ops tcp_brutal_ops = {
+     .flags = TCP_CONG_NON_RESTRICTED,
+     .name = "brutal",
+@@ -233,7 +256,7 @@
+     .cong_control = brutal_main,
+     .undo_cwnd = brutal_undo_cwnd,
+     .ssthresh = brutal_ssthresh,
+-    .min_tso_segs = brutal_min_tso_segs,
++    .tso_segs = brutal_tso_segs,
+ };
+ 
+ static int __init brutal_register(void)

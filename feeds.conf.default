@@ -6,7 +6,7 @@ src-git lucibandix https://github.com/timsaya/luci-app-bandix
 src-git bandix https://github.com/timsaya/openwrt-bandix
 src-git socat https://github.com/chenmozhijin/luci-app-socat
 src-git tailscale_community https://github.com/tokisaki-galaxy/luci-app-tailscale-community.git
-src-git tcp_brutal https://github.com/Potterli20/openwrt-tcp-brutal
+# kmod-brutal / brutalctl 已内置在 package/brutal，不再走 feed
 src-git rtp2httpd https://github.com/stackia/rtp2httpd.git
 src-git mtk_openwrt_feed https://github.com/mediatek/mtk-openwrt-feeds
 #src-git natflow https://github.com/ptpt52/natflow

@@ -42,7 +42,8 @@ EXPORT_SYMBOL(ppe_dev_register_hook);
 void (*ppe_dev_unregister_hook)(struct net_device *dev) = NULL;
 EXPORT_SYMBOL(ppe_dev_unregister_hook);
 
-static int ppe_cnt = 2;
+/* 0 = 用 dts 的 mtketh-ppe-num，缺失时取 MAX_PPE_NUM */
+static int ppe_cnt;
 module_param(ppe_cnt, int, 0);
 
 static void hnat_sma_build_entry(struct timer_list *t)
@@ -699,7 +700,7 @@ static int hnat_probe(struct platform_device *pdev)
 	if (err < 0)
 		return -EINVAL;
 
-	strncpy(hnat_priv->wan, "eth0", IFNAMSIZ);
+	strncpy(hnat_priv->wan, (char *)name, IFNAMSIZ - 1);
 	dev_info(&pdev->dev, "wan = %s\n", hnat_priv->wan);
 
 	err = of_property_read_string(np, "mtketh-lan", &name);
@@ -710,7 +711,10 @@ static int hnat_probe(struct platform_device *pdev)
 	dev_info(&pdev->dev, "lan = %s\n", hnat_priv->lan);
 
 	err = of_property_read_string(np, "mtketh-ppd", &name);
-	strncpy(hnat_priv->ppd, "eth0", IFNAMSIZ);
+	if (err < 0)
+		strncpy(hnat_priv->ppd, "eth0", IFNAMSIZ);
+	else
+		strncpy(hnat_priv->ppd, (char *)name, IFNAMSIZ - 1);
 	dev_info(&pdev->dev, "ppd = %s\n", hnat_priv->ppd);
 
 	/*get total gmac num in hnat*/
@@ -732,7 +736,17 @@ static int hnat_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "wan dsa port = %d\n", hnat_priv->wan_dsa_port);
 	}
 
-	hnat_priv->ppe_num = ppe_cnt;
+	/* dts 里的 mtketh-ppe-num 以前没人读；ppe_cnt 模块参数非 0 时优先它 */
+	err = of_property_read_u32_index(np, "mtketh-ppe-num", 0, &val);
+	hnat_priv->ppe_num = (err < 0) ? MAX_PPE_NUM : val;
+	if (ppe_cnt)
+		hnat_priv->ppe_num = ppe_cnt;
+	if (!hnat_priv->ppe_num || hnat_priv->ppe_num > MAX_PPE_NUM) {
+		dev_warn(&pdev->dev, "bad ppe num %d, valid 1~%d\n",
+			 hnat_priv->ppe_num, MAX_PPE_NUM);
+		hnat_priv->ppe_num = (hnat_priv->ppe_num > MAX_PPE_NUM) ?
+					MAX_PPE_NUM : 1;
+	}
 
 	dev_info(&pdev->dev, "ppe num = %d\n", hnat_priv->ppe_num);
 

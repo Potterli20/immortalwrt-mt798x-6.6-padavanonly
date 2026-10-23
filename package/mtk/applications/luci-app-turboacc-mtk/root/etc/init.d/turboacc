@@ -5,6 +5,23 @@
 START=90
 STOP=10
 USE_PROCD=1
+
+hnat_set_ppenum() {
+	# $1: ppe_cnt 值；留空则把该行还原成不带参数的 mtkhnat
+	local f
+
+	[ -d "/etc/modules.d" ] || return 0
+
+	for f in /etc/modules.d/*; do
+		grep -qs "^mtkhnat" "$f" || continue
+		if [ -n "$1" ]; then
+			sed -i "s/^mtkhnat.*/mtkhnat ppe_cnt=$1/" "$f"
+		else
+			sed -i "s/^mtkhnat.*/mtkhnat/" "$f"
+		fi
+	done
+}
+
 start_service() {
 	config_load "turboacc"
 
@@ -22,7 +39,7 @@ start_service() {
 	fi
 
 	if [ "$fastpath" != "mediatek_hnat" ]; then
-		rm -f "/etc/modprobe.d/mtkhnat.conf"
+		hnat_set_ppenum ""
 		if lsmod | grep -q "mtkhnat"; then
 			echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
 		fi
@@ -85,10 +102,11 @@ start_service() {
 				fi
 			done
 
-			# ppe_cnt 是 mtkhnat 的模块参数，权限 0，只能开机生效
+			# kmodloader 只解析 /etc/modules.d，模块参数写在 mtkhnat 那行尾巴上，
+			# 下一次开机加载时生效（/etc/modprobe.d 它不看）
 			local hnat_ppenum
-			config_get "hnat_ppenum" "config" "fastpath_mh_eth_hnat_ppenum" "2"
-			echo "options mtkhnat ppe_cnt=$hnat_ppenum" > "/etc/modprobe.d/mtkhnat.conf"
+			config_get "hnat_ppenum" "config" "fastpath_mh_eth_hnat_ppenum" ""
+			hnat_set_ppenum "$hnat_ppenum"
 		fi
 		;;
 	esac

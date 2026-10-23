@@ -351,7 +351,7 @@ return view.extend({
 		o.depends('fastpath_mh_eth_hnat', '1');
 
 		o = s.option(form.ListValue, 'fastpath_mh_eth_hnat_ppenum', _('Number of HNAT PPE'),
-			_('Written to /etc/modprobe.d/mtkhnat.conf as the mtkhnat <code>ppe_cnt</code> module parameter, so it only takes effect after reboot. Keep 2 unless the SoC really exposes a single PPE.'));
+			_('Appended to the mtkhnat line in /etc/modules.d as <code>ppe_cnt</code>, which kmodloader reads when loading the module at the next boot. Keep 2 unless the SoC really exposes a single PPE.'));
 		o.rmempty = false;
 		o.value(1);
 		o.value(2);

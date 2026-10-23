@@ -248,8 +248,8 @@ msgid "hnat_setting type 6, 0~255."
 msgstr "hnat_setting 类型 6，0~255。"
 
 #: package/mtk/applications/luci-app-turboacc-mtk/htdocs/luci-static/resources/view/turboacc.js:354
-msgid "Written to /etc/modprobe.d/mtkhnat.conf as the mtkhnat <code>ppe_cnt</code> module parameter, so it only takes effect after reboot. Keep 2 unless the SoC really exposes a single PPE."
-msgstr "以模块参数 mtkhnat.ppe_cnt 写入 /etc/modprobe.d/mtkhnat.conf，重启后才生效。除非该 SoC 确实只有一个 PPE，否则保持 2。"
+msgid "Appended to the mtkhnat line in /etc/modules.d as <code>ppe_cnt</code>, which kmodloader reads when loading the module at the next boot. Keep 2 unless the SoC really exposes a single PPE."
+msgstr "以 <code>ppe_cnt</code> 的形式追加到 /etc/modules.d 里的 mtkhnat 行，kmodloader 在下次开机加载模块时读取，所以改完要重启。除非该 SoC 确实只有一个 PPE，否则保持 2。"
 
 #~ msgid "Enable hardware offloading for wireless connections."
 #~ msgstr "为无线连接启用硬件加速。"

@@ -29,6 +29,34 @@ struct mtk_hnat *hnat_priv;
 static struct socket *_hnat_roam_sock;
 static struct work_struct _hnat_roam_work;
 
+/*
+ * g_ppdev / g_wandev 以前有 8 处直接拿 __dev_get_by_name()（不加引用）赋值，
+ * 只有 debugfs 那条用 dev_get_by_name()（加引用），而模块卸载时两处都无条件
+ * dev_put()，等于给没持有的指针减引用。现在统一从这里进出：新值先 hold，
+ * 旧值再 put，指针相同就不动，任何时刻恰好持有一份引用。
+ */
+void hnat_set_ppdev(struct net_device *dev)
+{
+	if (!hnat_priv || dev == hnat_priv->g_ppdev)
+		return;
+	if (dev)
+		dev_hold(dev);
+	if (hnat_priv->g_ppdev)
+		dev_put(hnat_priv->g_ppdev);
+	hnat_priv->g_ppdev = dev;
+}
+
+void hnat_set_wandev(struct net_device *dev)
+{
+	if (!hnat_priv || dev == hnat_priv->g_wandev)
+		return;
+	if (dev)
+		dev_hold(dev);
+	if (hnat_priv->g_wandev)
+		dev_put(hnat_priv->g_wandev);
+	hnat_priv->g_wandev = dev;
+}
+
 int (*ra_sw_nat_hook_rx)(struct sk_buff *skb) = NULL;
 EXPORT_SYMBOL(ra_sw_nat_hook_rx);
 int (*ra_sw_nat_hook_tx)(struct sk_buff *skb, int gmac_no) = NULL;
@@ -385,7 +413,7 @@ static int hnat_hw_init(u32 ppe_id)
 		cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_MIB_CAH_CTRL, MIB_CAH_EN, 1);
 	}
 
-	hnat_priv->g_wandev = __dev_get_by_name(&init_net, hnat_priv->wan);
+	hnat_set_wandev(__dev_get_by_name(&init_net, hnat_priv->wan));
 
 	dev_info(hnat_priv->dev, "PPE%d hwnat start\n", ppe_id);
 	
@@ -558,11 +586,8 @@ static void hnat_release_netdev(void)
 		kfree(ext_entry);
 	}
 
-	if (hnat_priv->g_ppdev)
-		dev_put(hnat_priv->g_ppdev);
-
-	if (hnat_priv->g_wandev)
-		dev_put(hnat_priv->g_wandev);
+	hnat_set_ppdev(NULL);
+	hnat_set_wandev(NULL);
 }
 
 static struct notifier_block nf_hnat_netdevice_nb __read_mostly = {

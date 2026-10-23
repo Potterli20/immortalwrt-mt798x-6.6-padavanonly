@@ -965,6 +965,10 @@ enum FoeIpAct {
 extern const struct of_device_id of_hnat_match[];
 extern struct mtk_hnat *hnat_priv;
 
+/* g_ppdev / g_wandev 只能经这两个口子进出，保证恰好持有一份引用 */
+void hnat_set_ppdev(struct net_device *dev);
+void hnat_set_wandev(struct net_device *dev);
+
 int hnat_dsa_fill_stag(const struct net_device *netdev,
 		       struct foe_entry *entry,
 		       struct flow_offload_hw_path *hw_path,

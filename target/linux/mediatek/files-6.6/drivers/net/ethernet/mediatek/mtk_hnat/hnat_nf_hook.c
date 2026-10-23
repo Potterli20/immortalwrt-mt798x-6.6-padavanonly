@@ -120,7 +120,7 @@ static inline struct net_device *get_dev_from_index(int index)
 static inline struct net_device *get_wandev_from_index(int index)
 {
 	if (!hnat_priv->g_wandev)
-		hnat_priv->g_wandev = __dev_get_by_name(&init_net, hnat_priv->wan);
+		hnat_set_wandev(__dev_get_by_name(&init_net, hnat_priv->wan));
 
 	if (hnat_priv->g_wandev && hnat_priv->g_wandev->ifindex == index)
 		return hnat_priv->g_wandev;
@@ -342,7 +342,7 @@ void ppd_dev_setting(void)
 {
 	br_dev = __dev_get_by_name(&init_net, "br-lan");
 	eth1_dev = __dev_get_by_name(&init_net, "eth1");
-        hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
+        hnat_set_ppdev(__dev_get_by_name(&init_net, "eth0"));
         atomic_set(&eth1_in_br, 0);
                 if (br_dev) {
 			struct net_device *dev;
@@ -365,14 +365,14 @@ void ppd_dev_setting(void)
         if (br_dev){
         if (br_dev->flags & IFF_UP){
 		if (netif_carrier_ok(br_dev))
-			hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth1");
+			hnat_set_ppdev(__dev_get_by_name(&init_net, "eth1"));
                 }
 	}
         br_dev = __dev_get_by_name(&init_net, "eth0");
         if (br_dev){
         if (br_dev->flags & IFF_UP){
 		if (netif_carrier_ok(br_dev))
-                hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
+			hnat_set_ppdev(__dev_get_by_name(&init_net, "eth0"));
                 }
 	}	
 	/* ppd 回落值就是 eth0，只有 dts 明确给了别的名字才不再做上面那通猜测 */
@@ -381,7 +381,7 @@ void ppd_dev_setting(void)
 							      hnat_priv->ppd);
 
 		if (dt_ppd)
-			hnat_priv->g_ppdev = dt_ppd;
+			hnat_set_ppdev(dt_ppd);
 		else
 			pr_info("%s : dts ppd %s not ready\n",
 				__func__, hnat_priv->ppd);
@@ -432,19 +432,17 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 		break;
 	case NETDEV_UNREGISTER:
 		ppd_dev_setting();
-		if (hnat_priv->g_ppdev == dev) {
-			hnat_priv->g_ppdev = NULL;
-		}
-		if (hnat_priv->g_wandev == dev) {
-			hnat_priv->g_wandev = NULL;
-			dev_put(dev);
-		}
+		if (hnat_priv->g_ppdev == dev)
+			hnat_set_ppdev(NULL);
+		if (hnat_priv->g_wandev == dev)
+			hnat_set_wandev(NULL);
 
 		break;
 	case NETDEV_REGISTER:
 		ppd_dev_setting();
 		if (IS_WAN(dev) && !hnat_priv->g_wandev)
-			hnat_priv->g_wandev = __dev_get_by_name(&init_net, hnat_priv->wan);
+			hnat_set_wandev(__dev_get_by_name(&init_net,
+							   hnat_priv->wan));
 
 		break;
 	case MTK_FE_RESET_NAT_DONE:
@@ -858,7 +856,8 @@ unsigned int do_hnat_mape_w2l_fast(struct sk_buff *skb, const struct net_device 
 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), VLAN_CFI_MASK | (in->ifindex & VLAN_VID_MASK));
 
 		if (!hnat_priv->g_ppdev)
-			hnat_priv->g_ppdev = __dev_get_by_name(&init_net, hnat_priv->ppd);
+			hnat_set_ppdev(__dev_get_by_name(&init_net,
+							 hnat_priv->ppd));
 
 		skb->dev = hnat_priv->g_ppdev;
 		skb->protocol = htons(ETH_P_IP);
@@ -2496,7 +2495,8 @@ mtk_hnat_br_nf_local_in(void *priv, struct sk_buff *skb,
 	    !is_multicast_ether_addr(eth_hdr(skb)->h_dest)) {
  		
 		if (!hnat_priv->g_ppdev)
-			hnat_priv->g_ppdev = __dev_get_by_name(&init_net, hnat_priv->ppd);
+			hnat_set_ppdev(__dev_get_by_name(&init_net,
+							 hnat_priv->ppd));
 
 		if (!do_hnat_ext_to_ge(skb, state->in, __func__))
 			return NF_STOLEN;

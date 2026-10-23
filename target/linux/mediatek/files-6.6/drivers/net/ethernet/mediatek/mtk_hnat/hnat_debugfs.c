@@ -1771,9 +1771,8 @@ static ssize_t hnat_ppd_if_write(struct file *file, const char __user *buffer,
 	dev = dev_get_by_name(&init_net, p);
 
 	if (dev) {
-		if (hnat_priv->g_ppdev)
-			dev_put(hnat_priv->g_ppdev);
-		hnat_priv->g_ppdev = dev;
+		hnat_set_ppdev(dev);
+		dev_put(dev);	/* 查询带的那份交回去，helper 已另持一份 */
 
 		strncpy(hnat_priv->ppd, p, IFNAMSIZ - 1);
 		pr_info("hnat_priv ppd = %s\n", hnat_priv->ppd);

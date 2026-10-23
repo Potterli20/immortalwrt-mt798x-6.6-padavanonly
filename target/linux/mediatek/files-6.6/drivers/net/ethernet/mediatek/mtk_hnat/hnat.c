@@ -766,6 +766,9 @@ static int hnat_probe(struct platform_device *pdev)
 	hnat_priv->ppe_num = (err < 0) ? MAX_PPE_NUM : val;
 	if (ppe_cnt)
 		hnat_priv->ppe_num = ppe_cnt;
+	/* GMAC1 形态只有一条 GMAC 通路，第二个 PPE 不存在 */
+	if (IS_GMAC1_MODE && hnat_priv->ppe_num > 1)
+		hnat_priv->ppe_num = 1;
 	if (!hnat_priv->ppe_num || hnat_priv->ppe_num > MAX_PPE_NUM) {
 		dev_warn(&pdev->dev, "bad ppe num %d, valid 1~%d\n",
 			 hnat_priv->ppe_num, MAX_PPE_NUM);

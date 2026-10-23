@@ -375,8 +375,21 @@ void ppd_dev_setting(void)
                 hnat_priv->g_ppdev = __dev_get_by_name(&init_net, "eth0");
                 }
 	}	
+	/* ppd 回落值就是 eth0，只有 dts 明确给了别的名字才不再做上面那通猜测 */
+	if (strcmp(hnat_priv->ppd, "eth0")) {
+		struct net_device *dt_ppd = __dev_get_by_name(&init_net,
+							      hnat_priv->ppd);
+
+		if (dt_ppd)
+			hnat_priv->g_ppdev = dt_ppd;
+		else
+			pr_info("%s : dts ppd %s not ready\n",
+				__func__, hnat_priv->ppd);
+	}
 	pr_info("%s : now rx dev: %s, tx dev: %s\n", 
-		__func__, hnat_priv->g_ppdev->name, ppd_dev->name);
+		__func__,
+		hnat_priv->g_ppdev ? hnat_priv->g_ppdev->name : "(none)",
+		ppd_dev ? ppd_dev->name : "(none)");
 }
 
 

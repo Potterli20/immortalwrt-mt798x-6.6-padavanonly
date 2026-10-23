@@ -57,6 +57,20 @@ void hnat_set_wandev(struct net_device *dev)
 	hnat_priv->g_wandev = dev;
 }
 
+/* ppd_dev 定义在 mtk_eth_soc.c 并 EXPORT_SYMBOL，这里是唯一写入方 */
+extern struct net_device *ppd_dev;
+
+void hnat_set_ppd_dev(struct net_device *dev)
+{
+	if (dev == ppd_dev)
+		return;
+	if (dev)
+		dev_hold(dev);
+	if (ppd_dev)
+		dev_put(ppd_dev);
+	ppd_dev = dev;
+}
+
 int (*ra_sw_nat_hook_rx)(struct sk_buff *skb) = NULL;
 EXPORT_SYMBOL(ra_sw_nat_hook_rx);
 int (*ra_sw_nat_hook_tx)(struct sk_buff *skb, int gmac_no) = NULL;
@@ -588,6 +602,7 @@ static void hnat_release_netdev(void)
 
 	hnat_set_ppdev(NULL);
 	hnat_set_wandev(NULL);
+	hnat_set_ppd_dev(NULL);
 }
 
 static struct notifier_block nf_hnat_netdevice_nb __read_mostly = {

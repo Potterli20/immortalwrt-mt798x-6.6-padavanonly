@@ -969,6 +969,10 @@ extern struct mtk_hnat *hnat_priv;
 void hnat_set_ppdev(struct net_device *dev);
 void hnat_set_wandev(struct net_device *dev);
 
+/* ppd_dev 由 mtk_eth_soc.c 定义并导出，GMAC xmit 路径也直接解引用，
+ * 本模块作为唯一写入方负责持有引用，设备注销和卸载时交还 */
+void hnat_set_ppd_dev(struct net_device *dev);
+
 int hnat_dsa_fill_stag(const struct net_device *netdev,
 		       struct foe_entry *entry,
 		       struct flow_offload_hw_path *hw_path,

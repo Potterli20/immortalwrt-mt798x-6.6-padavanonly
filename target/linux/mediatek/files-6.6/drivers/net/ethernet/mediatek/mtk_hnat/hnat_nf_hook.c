@@ -34,8 +34,6 @@
 
 extern struct net_device *ppd_dev;
 extern atomic_t eth1_in_br;
-struct net_device *br_dev;
-struct net_device *eth1_dev;
 #define do_ge2ext_fast(dev, skb)                                               \
 	(skb_hnat_is_hashed(skb) && !is_from_extge(skb) && \
 	 skb_hnat_reason(skb) == HIT_BIND_FORCE_TO_CPU)
@@ -340,27 +338,25 @@ static void gmac_ppe_fwd_enable(struct net_device *dev)
 
 void ppd_dev_setting(void)
 {
-	br_dev = __dev_get_by_name(&init_net, "br-lan");
-	eth1_dev = __dev_get_by_name(&init_net, "eth1");
-        hnat_set_ppdev(__dev_get_by_name(&init_net, "eth0"));
-        atomic_set(&eth1_in_br, 0);
-                if (br_dev) {
-			struct net_device *dev;
-                        struct list_head *pos;
-                        netdev_for_each_lower_dev(br_dev, dev, pos) {
-                        if (dev->flags & IFF_UP) {
-				if (netif_carrier_ok(dev)){
-					ppd_dev = __dev_get_by_name(&init_net, dev->name);
-                    if (!strncmp(dev->name, "eth0",4))     
-						break;
-					if (!strncmp(dev->name, "eth1",4))     
-						break;
-					if (!strncmp(dev->name, "lan",3))     
-						break;
-				}
-			}
-                    }
-                }
+	struct net_device *br_dev = __dev_get_by_name(&init_net, "br-lan");
+
+	hnat_set_ppdev(__dev_get_by_name(&init_net, "eth0"));
+	atomic_set(&eth1_in_br, 0);
+	if (br_dev) {
+		struct net_device *dev;
+		struct list_head *pos;
+
+		netdev_for_each_lower_dev(br_dev, dev, pos) {
+			if (!(dev->flags & IFF_UP) || !netif_carrier_ok(dev))
+				continue;
+			hnat_set_ppd_dev(__dev_get_by_name(&init_net,
+							   dev->name));
+			if (!strncmp(dev->name, "eth0", 4) ||
+			    !strncmp(dev->name, "eth1", 4) ||
+			    !strncmp(dev->name, "lan", 3))
+				break;
+		}
+	}
         br_dev = __dev_get_by_name(&init_net, "eth1");
         if (br_dev){
         if (br_dev->flags & IFF_UP){
@@ -436,6 +432,8 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 			hnat_set_ppdev(NULL);
 		if (hnat_priv->g_wandev == dev)
 			hnat_set_wandev(NULL);
+		if (ppd_dev == dev)
+			hnat_set_ppd_dev(NULL);
 
 		break;
 	case NETDEV_REGISTER:

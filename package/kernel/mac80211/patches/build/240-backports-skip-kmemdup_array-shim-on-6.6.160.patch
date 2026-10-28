@@ -1,0 +1,30 @@
+From: Potterli20 <potterli20@users.noreply.github.com>
+Subject: [PATCH] backports: skip kmemdup_array shim on stable 6.6.160
+
+Linux 6.6.160 backported kmemdup_array into mm/util.c and declared it in
+include/linux/string.h. The backport shim is gated on LINUX_VERSION_IS_LESS(6,9,0)
+and therefore still emitted for 6.6.x, which clashes with the kernel's extern
+declaration:
+
+  backport-include/linux/string.h:52:1: error: static declaration of
+  'kmemdup_array' follows non-static declaration
+
+Keep the shim for older kernels but drop it inside the 6.6.y range that
+already provides it.
+
+--- a/backport-include/linux/string.h
++++ b/backport-include/linux/string.h
+@@ -48,11 +48,14 @@
+ #define strscpy_pad(dst, src, ...)	\
+ 	CONCATENATE(__strscpy_pad, COUNT_ARGS(__VA_ARGS__))(dst, src, __VA_ARGS__)
+ 
++/* kmemdup_array was backported into stable 6.6.160; shim it only when absent */
++#if !LINUX_VERSION_IN_RANGE(6,6,160, 6,7,0)
+ static inline void *
+ kmemdup_array(const void *src, size_t count, size_t element_size, gfp_t gfp)
+ {
+ 	return kmemdup(src, size_mul(element_size, count), gfp);
+ }
++#endif
+ 
+ #endif /* <6.9 */

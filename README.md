@@ -1,9 +1,53 @@
 <img src="https://avatars.githubusercontent.com/u/53193414?s=200&v=4" alt="logo" width="200" height="200" align="right">
 
-# Project ImmortalWrt
-- [ImmortalWrt-mt798x-6.6](https://github.com/padavanonly/immortalwrt-mt798x-6.6)
+# Project ImmortalWrt — mt798x / 内核 6.6 分支
 
-In this branch, bump the kernel version 6.6.95 to 6.6.13x, and other updates.
+- 上游项目：[ImmortalWrt](https://github.com/immortalwrt/immortalwrt)
+- 本仓库：[Potterli20/immortalwrt-mt798x-6.6-padavanonly](https://github.com/Potterli20/immortalwrt-mt798x-6.6-padavanonly)
+- 默认分支：`openwrt-24.10-6.6`，基于 ImmortalWrt `openwrt-24.10`，内核 pin 在 **6.6.160**（见 `include/kernel-6.6`）
+
+## Fork 关系（谁 fork 了谁）
+
+```
+immortalwrt/immortalwrt
+└── padavanonly/immortalwrt-mt798x-6.6           本线路源头（曾名 immortalwrt-mt798x-24.10，旧链接由 GitHub 重定向）
+    ├── Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly      本仓库的 upstream remote
+    │   ├── Potterli20/immortalwrt-mt798x-6.6-padavanonly  ← 本仓库（origin remote）
+    │   ├── huniangitb/immortalwrt-mt798x-6.6-padavanonly  private/q30p：JCG Q30 Pro 私人构建线
+    │   ├── GTX680/immortalwrt-mt798x-6.6-padavanonly      autocore/tempinfo 等零散修复
+    │   └── biuyoudeaad/immortalwrt-mt798x-6.6-padavanonly JCG Q30 Pro / Cudy TR3000 马甲板支持
+    ├── 561410590/immortalwrt-mt798x-6.6          mtwifi-sync-*：mt_wifi 驱动同步线（当前基线比本仓库旧）
+    └── MedyMa/immortalwrt-mt798x-6.6            mt798x-mt799x-6.6-mtwifi：mt7988 + Wi-Fi 7（BE14/mt_hwifi/NPU）
+```
+
+本仓库配置的两个 remote：
+
+| remote | 地址 |
+|---|---|
+| `origin` | `git@github.com:Potterli20/immortalwrt-mt798x-6.6-padavanonly` |
+| `upstream` | `git@github.com:Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly` |
+
+## 本仓库的分支
+
+| 分支 | 末端提交 | 相对 `openwrt-24.10-6.6` |
+|---|---|---|
+| `openwrt-24.10-6.6` | 2026-10-28 | 默认分支 |
+| `mtk-switch` | 2026-05-01 mt753x 交换机脚本 | 已完全并入默认分支（独有 0） |
+| `dev-an8811` | 2026-04-23 rg-x60-new 扩展布局 | 落后 372 / 独有 5 |
+| `dual-system-dev` | 2026-04-18 cmcc_a10 双系统 mtd 布局 | 落后 403 / 独有 2 |
+| `drop-dead-kernel-mirror` | 2026-07-01 移除失效内核镜像 | 落后 690 / 独有 745（长期分叉，未回收） |
+
+数字按 `git rev-list --left-right --count` 于 2026-10-28 统计；末端提交只说明该分支最后一次改动，不代表完整用途。
+
+## 构建配置来自 `defconfig/`
+
+`defconfig/*.config` 是按芯片/机型整理的种子，Quickstart 第 5 步把它们拷成 `.config`。里面同时打开了
+`CONFIG_TARGET_MULTI_PROFILE` 与 `CONFIG_TARGET_PER_DEVICE_ROOTFS`，一次构建会出多台机型的镜像。
+内核与 mt_wifi 的可选特性（`CONFIG_MTK_*`）也在这里指定，不在仓库根目录跟踪 `.config`。
+
+> 2026-10-28 修正：所有种子尾部有一段 `is not set` 转储，其中
+> `# CONFIG_MTK_BAND_STEERING is not set` 会盖掉前面的 `CONFIG_MTK_BAND_STEERING=y`（kconfig 后出现的为准），
+> 导致按种子构建的固件里 band steering 一直是关闭的。现已删除该行。
 
 ImmortalWrt is a fork of [OpenWrt](https://openwrt.org), with more packages ported, more devices supported, default optimized profiles and localization modifications for mainland China users.<br/>
 Compared to upstream, we allow to use (non-upstreamable) modifications/hacks to provide better feature/performance/support.
@@ -22,6 +66,10 @@ To build your own firmware you need a GNU/Linux, BSD or macOS system (case sensi
 
   ### Requirements
   To build with this project, Debian 11 is preferred. And you need use the CPU based on AMD64 architecture, with at least 4GB RAM and 25 GB available disk space. Make sure the __Internet__ is accessible.
+
+  > 实测参考：本仓库一次 mediatek/filogic 构建后，工作树约 **41 GB**（`build_dir` 32 GB、`dl` 3.6 GB、
+  > `staging_dir` 2.7 GB、`feeds` 1.1 GB、`.git` 555 MB、`bin` 468 MB），25 GB 的说法偏小；
+  > 想省空间可以事后删 `build_dir`（下次会全量重编），`dl` 建议留着。
 
   The following tools are needed to compile ImmortalWrt, the package names vary between distributions.
 
@@ -57,8 +105,14 @@ To build your own firmware you need a GNU/Linux, BSD or macOS system (case sensi
   - For more details, please see [Build system setup](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem) documentation.
 
   ### Quickstart
-  1. Run `git clone -b openwrt-24.10-6.6 --single-branch --filter=blob:none https://github.com/padavanonly/immortalwrt-mt798x-24.10 immortalwrt-mt798x-24.10` to clone the source code.
-  2. Run `cd immortalwrt-mt798x-24.10` to enter source directory.
+  1. Clone this fork (需要别的上游时，把 URL 换成 `padavanonly/immortalwrt-mt798x-6.6` 或 `Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly`，分支名同为 `openwrt-24.10-6.6`)：
+
+     ```bash
+     git clone -b openwrt-24.10-6.6 --single-branch \
+       https://github.com/Potterli20/immortalwrt-mt798x-6.6-padavanonly immortalwrt-mt798x-6.6-padavanonly
+     ```
+
+  2. Run `cd immortalwrt-mt798x-6.6-padavanonly` to enter source directory.
   3. Run `./scripts/feeds update -a` to obtain all the latest package definitions defined in feeds.conf / feeds.conf.default
   4. Run `./scripts/feeds install -a` to install symlinks for all obtained packages into package/feeds/
   5. Copy the configuration file for your device from the `defconfig` directory to the project root directory and rename it `.config`

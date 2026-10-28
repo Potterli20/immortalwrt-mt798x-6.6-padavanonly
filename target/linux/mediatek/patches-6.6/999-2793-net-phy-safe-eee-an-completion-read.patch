@@ -1,0 +1,36 @@
+Subject: [PATCH] net: phy: validate EEE AN status reads and C22 transport
+
+The vendor AN-completion check in genphy_c45_read_eee_lpa tests register
+bits without checking either read for a negative errno. -EOPNOTSUPP from
+a Clause 45-only RollBall bridge has BMSR_ANEGCOMPLETE set when treated as
+an integer bitmap, so an unsupported read can wrongly permit reading and
+reporting link-partner EEE capabilities before negotiation is complete.
+
+Propagate MDIO read errors. When C45 AN is not complete and the bus has
+no C22 read callback, return not-ready without issuing unsupported C22 I/O.
+Keep the existing C22 fallback for transports that implement it. Do not
+change EEE enable settings or any advertised speed.
+---
+--- a/drivers/net/phy/phy-c45.c
++++ b/drivers/net/phy/phy-c45.c
+@@ -800,10 +800,18 @@
+ 	/* Auto negotiation complete bit must be set to read correct lpa's EEE.
+ 	 */
+ 	val = phy_read_mmd(phydev, MDIO_MMD_AN, MDIO_STAT1);
++	if (val < 0)
++		return val;
+ 	if (!(val & MDIO_AN_STAT1_COMPLETE)) {
+-		/* Some devices rely on CL22 to detect AN complete. */
++		/* Some devices rely on CL22 to detect AN complete. A C45-only
++		 * transport cannot provide that fallback; EEE is not ready.
++		 */
++		if (!phydev->mdio.bus->read)
++			return 0;
+ 		val = phy_read(phydev, MII_BMSR);
+-		if(!(val & BMSR_ANEGCOMPLETE))
++		if (val < 0)
++			return val;
++		if (!(val & BMSR_ANEGCOMPLETE))
+ 			return 0;
+ 	}
+ 

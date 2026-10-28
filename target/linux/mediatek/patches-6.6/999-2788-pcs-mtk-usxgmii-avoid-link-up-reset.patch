@@ -1,0 +1,60 @@
+Subject: [PATCH] net: pcs: mtk-usxgmii: preserve established USXGMII link
+
+The link-up callback currently resets the PCS and XFI PHY after a
+successful USXGMII in-band negotiation. Avoid that second reset, following
+ImmortalWrt master e695009c15c623f4f6a83376b505faaf7a4ae5b5's 6.18
+975-net-phy-mtk-usxgmii-fix-link-flapping.patch.
+
+Unlike that tree's generic 739-05 PCS driver, this 6.6 driver does not
+configure the XFI PMA/PMD from pcs_config(). Complete that setup there for
+USXGMII before link state can be reported, propagating a setup error through
+the existing negative pcs_config return convention. Keep one setup per
+down-link retry and retain the fixed-rate 5GBASE-R/10GBASE-R sequences.
+
+---
+--- a/drivers/net/pcs/pcs-mtk-usxgmii.c
++++ b/drivers/net/pcs/pcs-mtk-usxgmii.c
+@@ -127,6 +127,7 @@
+ 	struct mtk_usxgmii_pcs *mpcs = pcs_to_mtk_usxgmii_pcs(pcs);
+ 	unsigned int an_ctrl = 0, link_timer = 0, xfi_mode = 0, adapt_mode = 0;
+ 	bool mode_changed = false;
++	int ret;
+ 
+ 	if (interface == PHY_INTERFACE_MODE_USXGMII) {
+ 		an_ctrl = FIELD_PREP(USXGMII_AN_SYNC_CNT, 0x1FF) | USXGMII_AN_ENABLE;
+@@ -211,6 +212,13 @@
+ 	if (an_ctrl & USXGMII_AN_ENABLE)
+ 		mtk_m32(mpcs, RG_PHY_TOP_SPEED_CTRL1, USXGMII_IF_FORCE_EN, 0);
+ 
++	/* Complete USXGMII PMA/PMD setup before reporting in-band link. */
++	if (interface == PHY_INTERFACE_MODE_USXGMII) {
++		ret = phy_set_mode_ext(mpcs->xfi_tphy, PHY_MODE_ETHERNET, interface);
++		if (ret)
++			return ret;
++	}
++
+ 	return mode_changed;
+ }
+ 
+@@ -301,7 +309,9 @@
+ 	if (!state->link) {
+ 		mtk_usxgmii_pcs_config(pcs, mpcs->neg_mode,
+ 				       state->interface, NULL, false);
+-		phy_set_mode_ext(mpcs->xfi_tphy, PHY_MODE_ETHERNET, state->interface);
++		if (state->interface != PHY_INTERFACE_MODE_USXGMII)
++			phy_set_mode_ext(mpcs->xfi_tphy, PHY_MODE_ETHERNET,
++					 state->interface);
+ 		return;
+ 	}
+ 
+@@ -323,6 +333,10 @@
+ 				    int speed, int duplex)
+ {
+ 	struct mtk_usxgmii_pcs *mpcs = pcs_to_mtk_usxgmii_pcs(pcs);
++
++	/* Preserve the USXGMII link already established through in-band AN. */
++	if (interface == PHY_INTERFACE_MODE_USXGMII)
++		return;
+ 
+ 	/* Reconfiguring USXGMII to ensure the quality of the RX signal
+ 	 * after the line side link up.

@@ -9,14 +9,14 @@
  static int mtk_msg_level = -1;
  module_param_named(msg_level, mtk_msg_level, int, 0);
  MODULE_PARM_DESC(msg_level, "Message level (-1=defaults,0=none,...,16=all)");
-@@ -2454,6 +2456,7 @@ static int mtk_poll_rx(struct napi_struc
- 	int done = 0, bytes = 0;
- 	dma_addr_t dma_addr = DMA_MAPPING_ERROR;
- 	int ppe_idx = 0;
-+	int sent_ppd = 0;
+@@ -2464,6 +2466,7 @@ static int mtk_poll_rx(struct napi_struc
+ 		struct net_device *netdev;
+ 		u32 hash, reason;
+ 		int mac = 0;
++		int sent_ppd = 0;
  
- 	if (unlikely(!ring))
- 		goto rx_done;
+ 		idx = NEXT_DESP_IDX(ring->calc_idx, ring->dma_size);
+ 		rxd = ring->dma + idx * eth->soc->rx.desc_size;
 @@ -2492,8 +2495,11 @@ static int mtk_poll_rx(struct napi_struc
  		}
  

@@ -1962,6 +1962,22 @@ define Device/openwrt_one
 endef
 TARGET_DEVICES += openwrt_one
 
+define Device/pgy_x1pro-v1-ubootmod
+  DEVICE_VENDOR := PGY
+  DEVICE_MODEL := X1Pro
+  DEVICE_VARIANT := v1 MOD
+  DEVICE_DTS := mt7981b-pgy-x1pro-v1-ubootmod
+  DEVICE_DTS_DIR := ../dts
+  UBINIZE_OPTS := -E 5
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 114688k
+  KERNEL_IN_UBI := 1
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware automount
+endef
+TARGET_DEVICES += pgy_x1pro-v1-ubootmod
+
 define Device/qihoo_360t7
   DEVICE_VENDOR := Qihoo
   DEVICE_MODEL := 360T7

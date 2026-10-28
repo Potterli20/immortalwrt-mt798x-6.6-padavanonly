@@ -14,7 +14,8 @@ zbtlink,zbt-z8102ax)
 	;;
 cudy,tr3000-256mb-v1|\
 cudy,tr3000-v1|\
-cudy,tr3000-v1-ubootmod)
+cudy,tr3000-v1-ubootmod|\
+pgy,x1pro-v1-ubootmod)
 	ucidef_add_gpio_switch "modem_power" "Modem power" "modem_power" "1"
 	;;
 huasifei,wh3000-pro)

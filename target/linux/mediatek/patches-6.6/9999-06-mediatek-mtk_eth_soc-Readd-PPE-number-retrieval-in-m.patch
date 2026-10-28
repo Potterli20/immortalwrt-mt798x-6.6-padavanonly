@@ -15,6 +15,6 @@ Subject: [PATCH] mediatek: mtk_eth_soc: Readd PPE number retrieval in mtk_open
  
 +	ppe_num = eth->soc->ppe_num;
 +
- 	err = phylink_of_phy_connect(mac->phylink, mac->of_node, 0);
- 	if (err) {
- 		netdev_err(dev, "%s: could not attach PHY: %d\n", __func__,
+ 	/* we run 2 netdevs on the same dma ring so we only bring it up once */
+ 	if (!refcount_read(&eth->dma_refcnt)) {
+ 		const struct mtk_soc_data *soc = eth->soc;

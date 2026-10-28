@@ -93,6 +93,8 @@ mtwifi_defs.chip_cfgs = {
     ["dtim_period"] = { "DtimPeriod", "1"},
     ["whnat"] = { "WHNAT", "1"},
     ["bandsteering"] = { "BandSteering", "0"},
+    ["mbo"] = { "MboSupport", "1"},
+    ["map"] = { "MapEnable", "0"},
 }
 
 mtwifi_defs.reinstall_cfgs = {

@@ -131,7 +131,6 @@
 			factory: partition@180000 {
 				label = "Factory";
 				reg = <0x180000 0x200000>;
-				read-only;
 
 				compatible = "nvmem-cells";
 				nvmem-layout {
@@ -156,7 +155,6 @@
 			partition@380000 {
 				label = "fip";
 				reg = <0x380000 0x200000>;
-				read-only;
 			};
 
 			ubi: partition@580000 {

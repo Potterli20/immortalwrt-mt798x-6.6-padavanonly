@@ -1145,6 +1145,44 @@ endef
 $(eval $(call KernelPackage,tcp-scalable))
 
 
+define KernelPackage/tcp-veno
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=TCP-Veno congestion control algorithm
+  KCONFIG:=CONFIG_TCP_CONG_VENO
+  FILES:=$(LINUX_DIR)/net/ipv4/tcp_veno.ko
+  AUTOLOAD:=$(call AutoProbe,tcp_veno)
+endef
+
+define KernelPackage/tcp-veno/description
+  TCP-Veno is a sender-side only variant of TCP Reno for wired/fixed
+  wireless networks. It compares the current RTT against the smallest
+  RTT seen on the flow to tell a congestive loss from a non-congestive
+  bit error: in the congestive case it reacts like Reno, in the other
+  case it cuts the window by only a fifth and keeps growing every RTT.
+endef
+
+$(eval $(call KernelPackage,tcp-veno))
+
+
+define KernelPackage/tcp-dctcp
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=DCTCP congestion control algorithm
+  KCONFIG:=CONFIG_TCP_CONG_DCTCP
+  FILES:=$(LINUX_DIR)/net/ipv4/tcp_dctcp.ko
+  AUTOLOAD:=$(call AutoProbe,tcp_dctcp)
+endef
+
+define KernelPackage/tcp-dctcp/description
+  DCTCP (Data Center TCP) keeps an EWMA estimate of the fraction of ECN
+  marked packets (alpha) and scales the window reduction by it, so a
+  shallow queue signals congestion without a loss. Needs an ECN marking
+  AQM on the path and net.ipv4.tcp_ecn enabled for locally initiated
+  flows.
+endef
+
+$(eval $(call KernelPackage,tcp-dctcp))
+
+
 define KernelPackage/ax25
   SUBMENU:=$(NETWORK_SUPPORT_MENU)
   TITLE:=AX25 support

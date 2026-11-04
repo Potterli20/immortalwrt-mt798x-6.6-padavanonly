@@ -107,6 +107,7 @@ case "$board" in
 		[ "$PHYNBR" = "0" ] && macaddr_add $addr 2 > /sys${DEVPATH}/macaddress
 		[ "$PHYNBR" = "1" ] && macaddr_add $addr 3 > /sys${DEVPATH}/macaddress
 		;;
+	fzs,5gcpe-p5|\
 	jcg,q30-pro|\
 	netcore,n60|\
 	netcore,n60-pro)

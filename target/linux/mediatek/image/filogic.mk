@@ -1080,6 +1080,21 @@ define Device/edgecore_eap111
 endef
 TARGET_DEVICES += edgecore_eap111
 
+define Device/fzs_5gcpe-p5
+  DEVICE_VENDOR := FZS
+  DEVICE_MODEL := 5GCPE P5
+  DEVICE_DTS := mt7981b-fzs-5gcpe-p5
+  DEVICE_DTS_DIR := ../dts
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  UBINIZE_OPTS := -E 5
+  KERNEL_IN_UBI := 1
+  DEVICE_PACKAGES := kmod-usb3 kmod-usb-net-qmi-wwan kmod-usb-net-cdc-mbim \
+    kmod-usb-serial-option uqmi
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += fzs_5gcpe-p5
+
 define Device/gatonetworks_gdsp
   DEVICE_VENDOR := GatoNetworks
   DEVICE_MODEL := gdsp

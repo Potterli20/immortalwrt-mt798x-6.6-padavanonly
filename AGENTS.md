@@ -17,6 +17,12 @@
 - `include/kernel-6.6` pin `LINUX_VERSION-6.6 = .160` + `LINUX_KERNEL_HASH-6.6.160`，即从 kernel.org 取主线稳定树；`.config` 中 `CONFIG_KERNEL_GIT_CLONE_URI=""`。
 - 若要改用 unifreq 的树，走 `CONFIG_KERNEL_GIT_CLONE_URI` / `CONFIG_KERNEL_GIT_REF`（版本名生成逻辑见 `include/kernel-version.mk`），同时核对 `include/kernel-6.6` 里的 hash 与 `target/linux/generic` 补丁是否重复。
 
+## 依赖名本地改动
+
+- `make` 刷的 `WARNING: Makefile '...' has a dependency on '...', which does not exist` 已经清零，复验方式是重扫包索引后跑 `./scripts/package-metadata.pl mk tmp/.packageinfo`（或直接 `make prepare-tmpinfo`），rebase 之后要再确认一次。
+- 树内三处：`package/utils/busybox` 去掉 `+USE_GLIBC:libcrypt-compat`（openwrt main 和 immortalwrt master 都查不到这个包，本树还是 musl）；`package/firmware/linux-firmware/mediatek.mk` 去掉 `+LINUX_6_18:kmod-phy-mediatek-2p5g`、`aeonsemi.mk` 去掉 `+LINUX_6_18:kmod-phy-aeonsemi-as21xxx`（本树只有 6.6，`LINUX_6_18` 符号和这两个驱动都不存在，将来 bump 到 6.18 再按上游恢复）。`aeonsemi.mk` 顺手把 `as21x1x_fw.bin` 的安装目录改成 `/lib/firmware/aeonsemi`（原来平铺在 `/lib/firmware`，驱动按子路径找不着，上游 master 也是错的）。
+- feed 侧改动全部写进 `scripts/apply-feed-patches.sh`（幂等，`./scripts/feeds update -a` 之后重跑）：natcap `libustream-ssl` → `libustream-openssl`；mtk flowtable 去掉 `kmod-nf-flow-netlink`（只有 MTK SDK 内核有那补丁）；gst1-plugins-bad 放开被注释的 `videoparsersbad` 子包并补上真正链接的 `codecparsers video`，`gst1-mod-videoparsersbad` 这个包名随之恢复（morse 的 aws-kvs 依赖它）。
+
 ## 备注
 
 - 构建机是 gcc 15（默认 C23）+ cmake 4，相关修复已进仓库（见 `git log` 里 `package:` / `tools:` / `feeds-patches:` 系列提交），后续 rebase 时保留这些改动。

@@ -34,6 +34,16 @@
   而 luci-base → rpcd-mod-luci → rpcd 那条链是 `select`，于是任何「主题/应用依赖 luci-lua-runtime
   又依赖 morse-mode(+rpcd-mod-ucode)」的组合都成环。改成 select 后环消失，代价是装任意
   rpcd 模块会自动带上 rpcd 本身。
+- 同名包撞车两处，撤掉重复的那侧（`./scripts/feeds install -a` 之后重跑
+  `scripts/apply-feed-patches.sh` 会再撤一次）：`kmod-oaf` 由 `packages/open-app-filter`
+  提供（同一份 Makefile 还出 `appfilter` 守护进程，217heidai 的 `oaf` 只出 ko，撤它会连带把
+  `luci-app-oaf`/`luci-app-appfilter` 的 `+appfilter` 依赖撤掉，所以留 packages 那份）；
+  `quectel-cm` 由 `packages` 提供（本树的 qmi_wwan/cdc_mbim 模组补丁照主线驱动打，
+  x-wrt 那份依赖 `kmod-qmi-wwan-q`，luci-proto-quectel 也是对着上游包写的）。
+- feed 侧另两条也在同一个脚本里：`x/p910nd-xwrt` 删 `PROVIDES:=p910nd`（跟同一行的
+  `CONFLICTS:=p910nd` 正好一条 select 一条 depends 成环，保留 CONFLICTS，`+p910nd` 从此只解析到
+  packages 那份）；`openmanet/utils/openvlm` 删 `+alsa-utils`（`+kmod-usb-audio` 已让它
+  depends on kmod-sound-core，alsa-utils 经 alsa-lib 又把 sound-core select 回来）。
 
 ## 备注
 

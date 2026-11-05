@@ -2,7 +2,7 @@
 
 ## 上游与参考源
 
-- 当前分支 `openwrt-24.10-6.6`；`origin` = Potterli20/immortalwrt-mt798x-6.6-padavanonly，`upstream` = Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly。
+- 当前分支 `openwrt-24.10-6.6`；`origin` = Potterli20/immortalwrt-mt798x-6.6-padavanonly，`upstream` = Yuzhii0718/immortalwrt-mt798x-6.6-padavanonly，本地另配了 remote `fat4` = fat4-alt/immortalwrt-mt798x-6.6。
 - rebase / 补丁移植参考：<https://github.com/chasey-dev/immortalwrt-mt798x-rebase>
   - ImmortalWrt + MTK OpenWrt feeds 补丁导入。默认分支 `25.12`；对照本分支优先看 `rework-24.10`，其余有 `openwrt-25.12`、`25.12-dev-wifi7`、`rework-21.02`。
 - 内核更新来源：<https://github.com/unifreq/linux-6.6.y>（分支 `main`，2026-10-20 核对为 6.6.159）。
@@ -13,8 +13,8 @@
 
 ## 当前内核接线
 
-- `target/linux/ramips/Makefile` 设 `KERNEL_PATCHVER:=6.6`。
-- `include/kernel-6.6` pin `LINUX_VERSION-6.6 = .160` + `LINUX_KERNEL_HASH-6.6.160`，即从 kernel.org 取主线稳定树；`.config` 中 `CONFIG_KERNEL_GIT_CLONE_URI=""`。
+- `target/linux/ramips/Makefile` 与 `target/linux/mediatek/Makefile` 都设 `KERNEL_PATCHVER:=6.6`。
+- `include/kernel-6.6` pin `LINUX_VERSION-6.6 = .161` + `LINUX_KERNEL_HASH-6.6.161`，即从 kernel.org 取主线稳定树；`.config` 中 `CONFIG_KERNEL_GIT_CLONE_URI=""`。bump 小版本要同时改这两行，再跑 `make target/linux/prepare`（挪开内核构建目录更准，看 0 FAILED / 0 fuzz）和 `make target/linux/compile`，失效的补丁用 quilt 在 `target/linux/mediatek/patches-6.6`（316 条）和 `target/linux/generic/{backport,hack,pending}-6.6` 里重挂锚点。
 - 若要改用 unifreq 的树，走 `CONFIG_KERNEL_GIT_CLONE_URI` / `CONFIG_KERNEL_GIT_REF`（版本名生成逻辑见 `include/kernel-version.mk`），同时核对 `include/kernel-6.6` 里的 hash 与 `target/linux/generic` 补丁是否重复。
 
 ## 依赖名本地改动

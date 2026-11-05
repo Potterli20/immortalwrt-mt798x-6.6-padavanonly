@@ -22,6 +22,7 @@
 - `make` 刷的 `WARNING: Makefile '...' has a dependency on '...', which does not exist` 已经清零，复验方式是重扫包索引后跑 `./scripts/package-metadata.pl mk tmp/.packageinfo`（或直接 `make prepare-tmpinfo`），rebase 之后要再确认一次。
 - 树内三处：`package/utils/busybox` 去掉 `+USE_GLIBC:libcrypt-compat`（openwrt main 和 immortalwrt master 都查不到这个包，本树还是 musl）；`package/firmware/linux-firmware/mediatek.mk` 去掉 `+LINUX_6_18:kmod-phy-mediatek-2p5g`、`aeonsemi.mk` 去掉 `+LINUX_6_18:kmod-phy-aeonsemi-as21xxx`（本树只有 6.6，`LINUX_6_18` 符号和这两个驱动都不存在，将来 bump 到 6.18 再按上游恢复）。`aeonsemi.mk` 顺手把 `as21x1x_fw.bin` 的安装目录改成 `/lib/firmware/aeonsemi`（原来平铺在 `/lib/firmware`，驱动按子路径找不着，上游 master 也是错的）。
 - feed 侧改动全部写进 `scripts/apply-feed-patches.sh`（幂等，`./scripts/feeds update -a` 之后重跑）：natcap `libustream-ssl` → `libustream-openssl`；mtk flowtable 去掉 `kmod-nf-flow-netlink`（只有 MTK SDK 内核有那补丁）；gst1-plugins-bad 放开被注释的 `videoparsersbad` 子包并补上真正链接的 `codecparsers video`，`gst1-mod-videoparsersbad` 这个包名随之恢复（morse 的 aws-kvs 依赖它）。
+- `package/luci-lib-chartjs-4` 是本树补的 Chart.js 4.5.0，走 luci.mk、bundle 直接进仓库（同上游 luci-lib-chartjs 打包 `nlbw.chart.min.js` 的做法，所以 `LUCI_MINIFY_JS:=0`），再靠 `resources/preload/chartjs4.js` 注入全局 `Chart`——morselinkeval 的 JS 只认全局 `Chart`、自己不会 loadScript。这样 morse feed 那行 `+luci-lib-chartjs-4` 依赖不用改。`.gitignore` 里的 `/package/*` 会吞掉新包目录（fancontrol 那批当年是靠 `-f` 加进去的），已补 `!/package/luci-lib-chartjs-4/`。
 
 ## 备注
 

@@ -46,3 +46,4 @@ ref
 *.patch
 !tools/*/patches/*.patch
 /package/*
+!/package/luci-lib-chartjs-4/

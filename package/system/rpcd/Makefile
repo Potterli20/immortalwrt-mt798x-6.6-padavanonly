@@ -78,7 +78,7 @@ define BuildPlugin
   define Package/rpcd-mod-$(1)
     $(Package/rpcd/default)
     TITLE+= ($(1) plugin)
-    DEPENDS+=rpcd $(2)
+    DEPENDS+=+rpcd $(2)
     EXTRA_DEPENDS:=$(4)
   endef
 

@@ -24,6 +24,17 @@
 - feed 侧改动全部写进 `scripts/apply-feed-patches.sh`（幂等，`./scripts/feeds update -a` 之后重跑）：natcap `libustream-ssl` → `libustream-openssl`；mtk flowtable 去掉 `kmod-nf-flow-netlink`（只有 MTK SDK 内核有那补丁）；gst1-plugins-bad 放开被注释的 `videoparsersbad` 子包并补上真正链接的 `codecparsers video`，`gst1-mod-videoparsersbad` 这个包名随之恢复（morse 的 aws-kvs 依赖它）。
 - `package/luci-lib-chartjs-4` 是本树补的 Chart.js 4.5.0，走 luci.mk、bundle 直接进仓库（同上游 luci-lib-chartjs 打包 `nlbw.chart.min.js` 的做法，所以 `LUCI_MINIFY_JS:=0`），再靠 `resources/preload/chartjs4.js` 注入全局 `Chart`——morselinkeval 的 JS 只认全局 `Chart`、自己不会 loadScript。这样 morse feed 那行 `+luci-lib-chartjs-4` 依赖不用改。`.gitignore` 里的 `/package/*` 会吞掉新包目录（fancontrol 那批当年是靠 `-f` 加进去的），已补 `!/package/luci-lib-chartjs-4/`。
 
+## kconfig 递归依赖
+
+- `make menuconfig` 原先报 5 条 `recursive dependency detected`，现已清零。复验命令：
+  `cp .config /tmp/k.conf && KCONFIG_CONFIG=/tmp/k.conf ./scripts/config/conf --olddefconfig Config.in`
+  （直接喂 `tmp/.config-package.in` 会虚报——少了 Config.in 的上下文，实测 95 条假环）。
+- 树内一处偏离：`package/system/rpcd/Makefile` 的 `BuildPlugin` 把 `DEPENDS+=rpcd $(2)` 改成
+  `DEPENDS+=+rpcd $(2)`。上游一直写裸 `rpcd`，生成的 kconfig 是 `depends on PACKAGE_rpcd`，
+  而 luci-base → rpcd-mod-luci → rpcd 那条链是 `select`，于是任何「主题/应用依赖 luci-lua-runtime
+  又依赖 morse-mode(+rpcd-mod-ucode)」的组合都成环。改成 select 后环消失，代价是装任意
+  rpcd 模块会自动带上 rpcd 本身。
+
 ## 备注
 
 - 构建机是 gcc 15（默认 C23）+ cmake 4，相关修复已进仓库（见 `git log` 里 `package:` / `tools:` / `feeds-patches:` 系列提交），后续 rebase 时保留这些改动。

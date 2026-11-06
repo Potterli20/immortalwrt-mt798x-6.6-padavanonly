@@ -14,7 +14,9 @@
 ## 当前内核接线
 
 - `target/linux/ramips/Makefile` 与 `target/linux/mediatek/Makefile` 都设 `KERNEL_PATCHVER:=6.6`。
-- `include/kernel-6.6` pin `LINUX_VERSION-6.6 = .161` + `LINUX_KERNEL_HASH-6.6.161`，即从 kernel.org 取主线稳定树；`.config` 中 `CONFIG_KERNEL_GIT_CLONE_URI=""`。bump 小版本要同时改这两行，再跑 `make target/linux/prepare`（挪开内核构建目录更准，看 0 FAILED / 0 fuzz）和 `make target/linux/compile`，失效的补丁用 quilt 在 `target/linux/mediatek/patches-6.6`（316 条）和 `target/linux/generic/{backport,hack,pending}-6.6` 里重挂锚点。
+- `include/kernel-6.6` pin `LINUX_VERSION-6.6 = .161` + `LINUX_KERNEL_HASH-6.6.161`，即从 kernel.org 取主线稳定树；`.config` 中 `CONFIG_KERNEL_GIT_CLONE_URI=""`。bump 小版本要同时改这两行，再跑 `make target/linux/prepare`（挪开内核构建目录更准，看 0 FAILED / 0 fuzz）和 `make target/linux/compile`，失效的补丁用 quilt 在 `target/linux/mediatek/patches-6.6`（322 条）和 `target/linux/generic/{backport,hack,pending}-6.6` 里重挂锚点。
+- `target/linux/mediatek/patches-6.6` 于 2026-11-06 跟 `mediatek/mtk-openwrt-feeds`（分支 `main`，`24.10/files/target/linux/mediatek/patches-6.6` 共 31 条，MTK 对该目录最后改动 2026-01-06）对过一次账，并补进缺的：`999-pcie-04`、`999-pcie-05`、`999-wdt-01`，cpufreq 换到 MTK 2025-07-23 重构后的 `999-cpufreq-01`~`05`（本地原 `-02` 改名 `-03`，本地原 `999-pcie-04` 改名 `-06`），`999-pcie-03` 同时跟到新版（WiFi 复位块移到 PERST 之前、极性改成 assert→delay→deassert；`wifi-reset-gpios` 没写进任何 dts，所以对现有 profile 无行为变化）。MTK 原文件锚点是 6.6.102 前后，直接拷会 fuzz，全部按 6.6.161 重新导出过；复现方式是取 `dl/linux-6.6.161.tar.xz` 里的单文件，按文件名顺序逐补丁打快照再 `diff -u` 重导。仍未取：`999-2733-add-netlink-support-for-dsa`（mt7530 netlink）、`999-xHCI-01`~`03`、`999-clk-01`/`999-clk-02(usb-pipe)`（mt7988 专属）、`999-2702-crypto-avoid-rcu-stall`（`CONFIG_CRYPTO_DEV_SAFEXCEL` 未开）；`999-5000`~`5106` 那批 hnat 修复挂不上，因为本树 `files-6.6` 的 `mtk_hnat` 是另一代际（无 `foe_entry.data[]`/`NETSYS_V3` 分支）。
+- 注意 `.gitignore` 第 46 行的 `*.patch` 会吞掉所有新建补丁（现有那些都是历史上 `-f` 加进去的），往 `target/linux/*/patches-*` 里放新文件必须 `git add -f`，rebase 后核对用 `git ls-files target/linux/mediatek/patches-6.6 | wc -l`（当前 322）。
 - 若要改用 unifreq 的树，走 `CONFIG_KERNEL_GIT_CLONE_URI` / `CONFIG_KERNEL_GIT_REF`（版本名生成逻辑见 `include/kernel-version.mk`），同时核对 `include/kernel-6.6` 里的 hash 与 `target/linux/generic` 补丁是否重复。
 
 ## 依赖名本地改动

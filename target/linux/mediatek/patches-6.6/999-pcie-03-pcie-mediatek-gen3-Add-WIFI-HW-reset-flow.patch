@@ -33,7 +33,7 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  #include <linux/pci.h>
  #include <linux/phy/phy.h>
  #include <linux/platform_device.h>
-@@ -157,6 +160,8 @@ struct mtk_pcie_irq {
+@@ -157,6 +160,8 @@
   * @clks: PCIe clocks
   * @num_clks: PCIe clocks count for this port
   * @max_link_width: PCIe slot max supported link width
@@ -42,7 +42,7 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
   * @irq: PCIe controller interrupt number
   * @num_irqs: PCIe irqs count
   * @irqs: PCIe controller interrupts information
-@@ -181,6 +186,9 @@ struct mtk_gen3_pcie {
+@@ -181,6 +186,9 @@
  	int num_clks;
  	int max_link_width;
  
@@ -52,20 +52,20 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
  	int irq;
  	int num_irqs;
  	struct mtk_pcie_irq *irqs;
-@@ -447,6 +455,12 @@ static int mtk_pcie_startup_port(struct
- 	val |= PCIE_MAC_RSTB | PCIE_PHY_RSTB | PCIE_BRG_RSTB | PCIE_PE_RSTB;
- 	writel_relaxed(val, pcie->base + PCIE_RST_CTRL_REG);
+@@ -442,6 +450,12 @@
+ 	val |= PCIE_DISABLE_DVFSRC_VLT_REQ;
+ 	writel_relaxed(val, pcie->base + PCIE_MISC_CTRL_REG);
  
 +	if (pcie->wifi_reset) {
-+		gpiod_set_value_cansleep(pcie->wifi_reset, 0);
-+		msleep(pcie->wifi_reset_delay_ms);
 +		gpiod_set_value_cansleep(pcie->wifi_reset, 1);
++		msleep(pcie->wifi_reset_delay_ms);
++		gpiod_set_value_cansleep(pcie->wifi_reset, 0);
 +	}
 +
- 	/*
- 	 * Described in PCIe CEM specification sections 2.2 (PERST# Signal)
- 	 * and 2.2.1 (Initial Power-Up (G3 to S0)).
-@@ -1078,6 +1092,21 @@ static int mtk_pcie_parse_port(struct mt
+ 	/* Assert all reset signals */
+ 	val = readl_relaxed(pcie->base + PCIE_RST_CTRL_REG);
+ 	val |= PCIE_MAC_RSTB | PCIE_PHY_RSTB | PCIE_BRG_RSTB | PCIE_PE_RSTB;
+@@ -1078,6 +1092,20 @@
  		return ret;
  	}
  
@@ -81,7 +81,6 @@ Signed-off-by: Jianguo Zhang <jianguo.zhang@mediatek.com>
 +					"failed to request WIFI reset gpio\n");
 +			return ret;
 +		}
-+
 +	}
 +
  	return 0;

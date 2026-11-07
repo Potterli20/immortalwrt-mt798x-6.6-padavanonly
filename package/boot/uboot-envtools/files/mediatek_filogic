@@ -2,7 +2,7 @@
 # Copyright (C) 2021 OpenWrt.org
 #
 
-[ -e /etc/config/ubootenv ] && exit 0
+[ -s /etc/config/ubootenv ] && exit 0
 
 touch /etc/config/ubootenv
 
@@ -81,6 +81,10 @@ huasifei,wh3000-emmc)
 asus,rt-ax59u)
 	ubootenv_add_uci_config "/dev/mtd0" "0x100000" "0x20000" "0x20000"
 	;;
+supergateway,s20*)
+	envdev=$(find_mmc_part "u-boot-env")
+	ubootenv_add_uci_config "$envdev" "0x0" "0x80000"
+	;;
 bananapi,bpi-r3|\
 bananapi,bpi-r3-mini|\
 bananapi,bpi-r4|\
@@ -91,8 +95,7 @@ bt,rb300|\
 cmcc,rax3000me|\
 jdcloud,re-cp-03|\
 konka,komi-a31|\
-sn,r1|\
-supergateway,s20*)
+sn,r1)
 	. /lib/upgrade/fit.sh
 	export_fitblk_bootdev
 	case "$CI_METHOD" in

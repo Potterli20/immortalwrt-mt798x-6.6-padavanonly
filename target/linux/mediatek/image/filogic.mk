@@ -2287,7 +2287,7 @@ TARGET_DEVICES += sn_r1-fit
 define Device/supergateway_s20-common
   DEVICE_VENDOR := Super Gateway
   DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
+  DEVICE_PACKAGES := uboot-envtools kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
     kmod-usb3 kmod-nvme kmod-mmc kmod-fs-f2fs kmod-fs-ext4 kmod-fs-vfat \
     mkf2fs f2fsck e2fsprogs blkid blockdev losetup automount
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata

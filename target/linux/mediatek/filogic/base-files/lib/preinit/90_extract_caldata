@@ -28,6 +28,11 @@ do_extract_caldata() {
 		caldata_validate && exit 0
 		caldata_extract_mmc "factory" 0x0 0x1000
 		;;
+	supergateway,s20p)
+		FIRMWARE=MT7986_iPAiLNA_EEPROM_AX6000.bin
+		caldata_validate && exit 0
+		caldata_extract_mmc "factory" 0x0 0x5000
+		;;
 	esac
 }
 

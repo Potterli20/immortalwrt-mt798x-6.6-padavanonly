@@ -10,12 +10,39 @@ ImmortalWrt 是 [OpenWrt](https://openwrt.org) 的分支：移植了更多软件
 | 默认分支 | `openwrt-24.10-6.6`（基于 ImmortalWrt `openwrt-24.10`） |
 | 内核 | pin 在 **6.6.162**，取 kernel.org 主线稳定树，版本与 hash 见 `include/kernel-6.6` |
 | Wi-Fi 驱动 | MTK `mt_wifi` 7.6.7.3（Padavan 同源，配套 `luci-app-mtwifi-cfg`）；种子都走这条路，wpad / mac80211 是关闭的 |
-| 机型主线 | `target/linux/mediatek/filogic`（mt7981 / mt7986 为主，另有 mt7987 / mt7988 板子） |
+| 机型主线 | `target/linux/mediatek/filogic`，156 个机型条目（mt7981 × 101、mt7986 × 48、mt7988 × 7） |
 | 出厂地址 | <http://192.168.6.1>，用户 `root`，密码为空（锐捷 `ruijie,rg-x60*` / `ew-6000gx-pro*` 是 192.168.110.1） |
 
-> 表内信息核对于 2026-11-05，内核 pin 于 2026-11-07 跟到 6.6.162。维护性的坑与约定集中写在 [AGENTS.md](AGENTS.md)，改构建脚本前请先看。
+> 表内信息核对于 2026-11-07。维护性的坑与约定集中写在 [AGENTS.md](AGENTS.md)，改构建脚本前请先看。
 
-## Fork 关系（谁 fork 了谁）
+## 目录
+
+- [本线特性](#本线特性)
+- [Fork 关系](#fork-关系)
+- [分支](#分支)
+- [构建](#构建)
+- [日常维护](#日常维护)
+- [获取镜像](#获取镜像)
+- [相关仓库](#相关仓库)
+- [支持信息](#支持信息)
+
+## 本线特性
+
+相对 ImmortalWrt `openwrt-24.10`，这条线的主要差异：
+
+- **内核跟随更紧**：pin 在 kernel.org 主线稳定树（当前 6.6.162），并逐条跟进
+  `mediatek/mtk-openwrt-feeds` 的内核补丁，`patches-6.6` 现有 323 条（含 an8801sb PHY、PCIe、cpufreq、WDT 等）。
+- **无线走 MTK 原厂驱动**：`mt_wifi` 7.6.7.3 + `luci-app-mtwifi-cfg`，wpad / mac80211 关闭；
+  WHNAT、band steering、mtwifi 专有参数都在 LuCI 里可直接调。
+- **机型覆盖面大**：filogic 下 156 个机型条目，含同板不同 flash / 内存 / 射频前端的变体。
+- **开箱可用**：`defconfig/` 提供 11 份种子（多 profile 一次出多台机型），feed 侧问题由
+  `scripts/apply-feed-patches.sh` 就地修好，`make` 不再刷依赖告警与 kconfig 递归依赖。
+- **允许不可上游的 hack**：这条线接受为特性、性能与机型支持而做的非上游改动，代价是 rebase 时需要按
+  AGENTS.md 逐项复验。
+
+## Fork 关系
+
+谁 fork 了谁：
 
 ```
 immortalwrt/immortalwrt
@@ -41,13 +68,13 @@ immortalwrt/immortalwrt
 
 | 分支 | 末端提交 | 相对 `openwrt-24.10-6.6` |
 |---|---|---|
-| `openwrt-24.10-6.6` | 2026-11-05 | 默认分支 |
-| `mtk-switch` | 2026-06-26 mt753x 交换机脚本 | 已完全并入默认分支（独有 0） |
-| `dev-an8811` | 2026-04-23 rg-x60-new 扩展布局 | 落后 393 / 独有 5 |
-| `dual-system-dev` | 2026-04-18 cmcc_a10 双系统 mtd 布局 | 落后 424 / 独有 2 |
-| `drop-dead-kernel-mirror` | 2026-07-31 移除失效内核镜像 | 落后 711 / 独有 745（长期分叉，未回收） |
+| `openwrt-24.10-6.6` | 2026-11-07 | 默认分支 |
+| `mtk-switch` | 2026-05-01 mt753x 交换机脚本语法修复 | 已完全并入默认分支（独有 0） |
+| `dev-an8811` | 2026-04-23 rg-x60-new 扩展布局 | 落后 402 / 独有 5 |
+| `dual-system-dev` | 2026-04-18 cmcc_a10 双系统 mtd 布局 | 落后 433 / 独有 2 |
+| `drop-dead-kernel-mirror` | 2026-07-01 移除失效内核镜像 | 落后 720 / 独有 745（长期分叉，未回收） |
 
-数字按 `git rev-list --left-right --count` 于 2026-11-05 统计；末端提交只说明该分支最后一次改动，不代表完整用途。日常只用默认分支即可，后四条是待回收或历史分支。
+数字按 `git rev-list --left-right --count openwrt-24.10-6.6...upstream/<分支>` 于 2026-11-07 统计；末端提交只说明该分支最后一次改动，不代表完整用途。日常只用默认分支即可，后三条是待回收或历史分支。
 
 ## 构建
 
@@ -81,11 +108,14 @@ sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bis
 
 </details>
 
-方式二：用 ImmortalWrt 官方初始化脚本
+<details>
+<summary>方式二：用 ImmortalWrt 官方初始化脚本</summary>
 
 ```bash
 sudo bash -c 'bash <(curl -s https://build-scripts.immortalwrt.org/init_build_environment.sh)'
 ```
+
+</details>
 
 注意：
 
@@ -184,6 +214,19 @@ DAE 选项，其余部分基本同源；改机型时建议直接 diff 两个种�
 > `# CONFIG_MTK_BAND_STEERING is not set` 会盖掉前面的 `CONFIG_MTK_BAND_STEERING=y`（kconfig 后出现的为准），
 > 导致按种子构建的固件里 band steering 一直是关闭的。现已删除该行，`nowifi` / `bpir3_mini` 两份没有这个开关。
 
+## 日常维护
+
+同步上游或改构建脚本之后，这几件事最容易漏：
+
+- `feeds/` 不在版本控制里：每次 `./scripts/feeds update -a && ./scripts/feeds install -a` 之后都要重跑
+  `./scripts/apply-feed-patches.sh`，否则依赖告警、kconfig 递归依赖、同名包撞车会重新出现。脚本幂等，可以随便重复跑。
+- 内核小版本 bump 要同时改 `include/kernel-6.6` 的 `LINUX_VERSION-6.6` 与 `LINUX_KERNEL_HASH-6.6.*` 两行，
+  再 `make target/linux/prepare V=s` 确认失败数为 0。判失败请匹配 `Hunk #N FAILED`，
+  不要 `grep -i failed`——有两个补丁的文件名里本身带 `failed`，会假命中。
+- 往 `target/linux/*/patches-*/` 加新补丁必须 `git add -f`：`.gitignore` 里的 `*.patch` 会把它们静默吞掉。
+  同理，`/package/*` 也会吞掉新包目录（`luci-lib-chartjs-4` 就是这样补进去的），新包记得确认 `git status` 里有它。
+- `.config` 不入库。改了机型或特性，请把差异同步回 `defconfig/` 对应种子，而不是只留本地。
+
 ## 获取镜像
 
 本仓库**没有** Release 固件，官方 [ImmortalWrt Firmware Selector](https://firmware-selector.immortalwrt.org/)
@@ -200,7 +243,8 @@ DAE 选项，其余部分基本同源；改机型时建议直接 diff 两个种�
 
 ## 支持信息
 
-支持机型列表见 [OpenWrt Hardware Database](https://openwrt.org/supported_devices)。
+本仓库实际支持的机型以 `target/linux/mediatek/image/filogic.mk` 里的 `TARGET_DEVICES +=` 为准（当前 156 条）；
+通用机型资料见 [OpenWrt Hardware Database](https://openwrt.org/supported_devices)。
 
 文档：
 

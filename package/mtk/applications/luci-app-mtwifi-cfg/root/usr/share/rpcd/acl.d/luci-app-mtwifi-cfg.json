@@ -1,0 +1,10 @@
+{
+	"luci-app-mtwifi-cfg": {
+		"description": "Grant access to mtwifi configuration",
+		"read": {
+			"file": {
+				"/sbin/l1util": ["exec"]
+			}
+		}
+	}
+}

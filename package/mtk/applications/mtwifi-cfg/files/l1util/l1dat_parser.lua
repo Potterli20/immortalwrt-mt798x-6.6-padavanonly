@@ -56,6 +56,27 @@ function l1dat_parser.token_get(str, n, v)
     return tmp[tonumber(n)] or v
 end
 
+-- Every band of one physical card shares a single WHNAT switch, so map
+-- each devname to the first band (lowest subidx) of the same card.
+function l1dat_parser.whnat_owners(devs)
+    local owners = {}
+
+    for name, dev in pairs(devs.devname_ridx) do
+        local owner, owner_subidx
+        for candidate_name, candidate in pairs(devs.devname_ridx) do
+            if candidate.INDEX == dev.INDEX and candidate.mainidx == dev.mainidx then
+                local subidx = candidate.subidx or 1
+                if not owner_subidx or subidx < owner_subidx then
+                    owner, owner_subidx = candidate_name, subidx
+                end
+            end
+        end
+        owners[name] = owner
+    end
+
+    return owners
+end
+
 function l1dat_parser.add_default_value(l1cfg)
     for k, v in ipairs(l1cfg) do
 

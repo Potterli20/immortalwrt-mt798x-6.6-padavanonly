@@ -55,6 +55,38 @@ function save_profile(cfgs, path)
     os.execute("sync")
 end
 
+-- WHNAT is a per-card switch: every band of the same card shares the value
+-- stored in the uci section of its first band.
+local function whnat_value(owner)
+    local section = utils.trim(utils.read_pipe("uci -q get wireless." .. owner))
+    if not section or section == "" then return end
+
+    local value = utils.trim(utils.read_pipe("uci -q get wireless." .. owner .. ".whnat"))
+    if value == "" then
+        -- luci-app-mtwifi-cfg defaults the flag to enabled.
+        return "1"
+    elseif value == "1" or value == "0" then
+        return value
+    end
+    nixio.syslog("err", "mtwifi-cfg: invalid WHNAT value for " .. owner)
+end
+
+local function whnat_sync(devname, value, current_path)
+    local owners = l1parser.whnat_owners(l1dat)
+    local owner = owners[devname]
+    if not owner then return end
+
+    for name, dev in pairs(l1dat.devname_ridx) do
+        if owners[name] == owner and dev.profile_path ~= current_path then
+            local dev_dats = load_profile(dev.profile_path)
+            if dev_dats and tostring(dev_dats.WHNAT) ~= value then
+                dev_dats.WHNAT = value
+                save_profile(dev_dats, dev.profile_path)
+            end
+        end
+    end
+end
+
 function diff_cfg(cfg1, cfg2)
     local diff = {}
 
@@ -308,7 +340,7 @@ function mtwifi_cfg_iwpriv_hook(cfg)
     mtwifi_cfg_foreach_vif(cfg, "sta", apcli_hook)
 end
 
-function set_chip_cfg(cfg, dats)
+function set_chip_cfg(cfg, dats, whnat)
     local dev_dats
     local uci
     local dat_key
@@ -318,12 +350,17 @@ function set_chip_cfg(cfg, dats)
     for k,v in pairs(defs.chip_cfgs) do
         uci = k
         dat_key = v[1]
-        
-        -- reset chip cfgs to default
-        dats[dat_key] = v[2]
 
-        -- setup current dev cfg
-        set_dev_dat(dats, dat_key, cfg.config[uci])
+        if dat_key == "WHNAT" and whnat then
+            -- shared by all bands, keep the value from the card owner
+            dats[dat_key] = whnat
+        else
+            -- reset chip cfgs to default
+            dats[dat_key] = v[2]
+
+            -- setup current dev cfg
+            set_dev_dat(dats, dat_key, cfg.config[uci])
+        end
     end
 
     -- setup other dev cfg
@@ -359,6 +396,15 @@ function mtwifi_cfg_setup(argv)
         return
     end
     local dats_orig = load_profile(profile)
+
+    -- On a multi-band card the switch lives in the owner (first) band's uci
+    -- section, so the value applies no matter which band page was saved.
+    local whnat_owner = l1parser.whnat_owners(l1dat)[devname]
+    local whnat
+    if whnat_owner and (whnat_owner ~= devname or cfg.config.dbdc_main) then
+        whnat = whnat_value(whnat_owner)
+        if whnat then dats.WHNAT = whnat end
+    end
 
     local vif_num, bssid_num, apcli_num = vif_count(cfg)
 
@@ -416,7 +462,8 @@ function mtwifi_cfg_setup(argv)
     end
 
     -- setup chip cfgs
-    set_chip_cfg(cfg, dats)
+    set_chip_cfg(cfg, dats, whnat)
+    if whnat then whnat_sync(devname, whnat, profile) end
 
     -- setup dev cfgs
     if cfg.config.twt then

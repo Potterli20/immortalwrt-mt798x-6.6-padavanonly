@@ -22,7 +22,7 @@ if not l1dat then
 end
 
 function show_usage()
-    print("Usage: l1util list | dump | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>")
+    print("Usage: l1util list | dump | whnat | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>")
 end
 
 function show_devs()
@@ -68,6 +68,10 @@ local action = {
 
     ["dump"] = function()
         dump_l1dat()
+    end,
+
+    ["whnat"] = function()
+        print(require("cjson").encode(l1parser.whnat_owners(l1dat)))
     end,
 
     ["get"] = function(dev, prop)

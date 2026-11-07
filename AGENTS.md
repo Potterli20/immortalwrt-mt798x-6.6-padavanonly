@@ -55,3 +55,11 @@
 ## 备注
 
 - 构建机是 gcc 15（默认 C23）+ cmake 4，相关修复已进仓库（见 `git log` 里 `package:` / `tools:` / `feeds-patches:` 系列提交），后续 rebase 时保留这些改动。
+- 2026-11-08 核对过一圈同类 fork（PoorMilk/NW874、qiuvip123、JIANCXG/237、BFMHSADW、sky2016cn、yuxiangch、flover-luffy、MedyMa），除下文记的几项外没有可取内容，别重复翻：
+  - yuxiangch 的 S20 三连已合两条（`183b96bf6` u-boot-env、`d6112fb4b` 校准）；第三条 `dd9144511`（gmac1 加 `label = "wan"`）不能取——本树 `mtk_eth_soc` 只 `alloc_etherdev_mqs()` 出 `eth%d`，整个驱动没有读 `label` 的地方，改了 `02_network` 写 `wan` 会让 WAN 绑不到 `eth1`。
+  - `9999-02-mtk_enhance.patch` 与 sky2016cn 版**只差文件头和 hunk 行号**（他 `@@ -2462`，本树 `@@ -2464` 带函数上下文），正文一致；`iwinfo_mtk.c` 两边等价，不必再对。
+  - BFMHSADW `f6ae9e318` 删 N60 Pro 的 `mediatek,nmbm` + `bmt-*`：这些属性正是 `mtk_bmt_nmbm.c` 读的（`bmt-max-ratio`、`bmt-max-reserved-blocks`），删掉等于放弃坏块映射，只在无 NMBM 的 U-Boot 布局上成立，本树保持原样。
+  - JIANCXG 的 adblock-fast 工具增补（`gawk grep sed coreutils-sort`）本身合理，但本树 11 份种子都没选 adblock-fast，加了白装。
+  - qiuvip123 新增全是 A31 专有（Argon/iStore、ubi 改 896 PEB 对齐其 U-Boot 的 NMBM 视图）；本树 `mt7981b-konka-komi-a31.dts` 是 `0x7a80000` 无 nmbm，跟着改会缩小可用空间。
+  - flover-luffy 的 packages 同步项本树多数已同版或更新（libxml2 2.14.5、wireless-regdb 2026.05.30、dnsmasq 2.93、openssl 3.0.22、ca-certificates 20260816）；mac80211 本树走 mt_wifi 不适用。
+  - MedyMa `4c24840d4`（WHNAT）已按 24.10 l1profile 重做落地；其后续 8 条（samba4 C23、hnat fence、NPU 统计、WARP/hWiFi 加固）要么已被他自己 revert、要么属 mt7988 那一代，本树 hnat 是另一代接不上。

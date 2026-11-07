@@ -8,12 +8,12 @@ ImmortalWrt 是 [OpenWrt](https://openwrt.org) 的分支：移植了更多软件
 |---|---|
 | 本仓库 | [Potterli20/immortalwrt-mt798x-6.6-padavanonly](https://github.com/Potterli20/immortalwrt-mt798x-6.6-padavanonly) |
 | 默认分支 | `openwrt-24.10-6.6`（基于 ImmortalWrt `openwrt-24.10`） |
-| 内核 | pin 在 **6.6.161**，取 kernel.org 主线稳定树，版本与 hash 见 `include/kernel-6.6` |
+| 内核 | pin 在 **6.6.162**，取 kernel.org 主线稳定树，版本与 hash 见 `include/kernel-6.6` |
 | Wi-Fi 驱动 | MTK `mt_wifi` 7.6.7.3（Padavan 同源，配套 `luci-app-mtwifi-cfg`）；种子都走这条路，wpad / mac80211 是关闭的 |
 | 机型主线 | `target/linux/mediatek/filogic`（mt7981 / mt7986 为主，另有 mt7987 / mt7988 板子） |
 | 出厂地址 | <http://192.168.6.1>，用户 `root`，密码为空（锐捷 `ruijie,rg-x60*` / `ew-6000gx-pro*` 是 192.168.110.1） |
 
-> 表内信息核对于 2026-11-05。维护性的坑与约定集中写在 [AGENTS.md](AGENTS.md)，改构建脚本前请先看。
+> 表内信息核对于 2026-11-05，内核 pin 于 2026-11-07 跟到 6.6.162。维护性的坑与约定集中写在 [AGENTS.md](AGENTS.md)，改构建脚本前请先看。
 
 ## Fork 关系（谁 fork 了谁）
 

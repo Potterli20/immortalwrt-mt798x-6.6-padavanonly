@@ -72,3 +72,158 @@ msgstr "覆盖默认 MAC 地址 - 可用地址的范围可能受限于驱动"
 
 msgid "Enables The 802.11k standard provides information to discover the best available access point"
 msgstr "启用 802.11k 自动寻找发现最佳可用接入点的信息"
+
+# 下面这批是 LuCI 无线页面（wireless-mtk.js 顶替 view/network/wireless.js 后）沿用的核心字符串。
+# 本树 feeds/luci 的 luci-mod-network 没有 po 目录，任何 zh_Hans 目录下都查不到这些 msgid，
+# 于是整页退化成英文；luci.core 的 load_catalog 会把同语言的所有 .lmo 合并成一张表，
+# 所以放在本包里同样生效。
+
+msgid "BSS Transition Management"
+msgstr "BSS 切换管理（802.11v）"
+
+msgid "Enable neighbor report via radio measurements"
+msgstr "通过无线测量启用邻居报告"
+
+msgid "Enable beacon report via radio measurements"
+msgstr "通过无线测量启用信标报告"
+
+msgid "Enables fast roaming among access points that belong to the same Mobility Domain"
+msgstr "在同一移动域（Mobility Domain）的接入点之间启用快速漫游"
+
+msgid "Enables 802.11v allows client devices to exchange information about the network topology,tating overall improvement of the wireless network."
+msgstr "启用 802.11v，允许客户端设备交换网络拓扑信息，从而整体改善无线网络表现。"
+
+msgid "MAP Support"
+msgstr "MAP 支持"
+
+msgid "MBO Support"
+msgstr "MBO 支持"
+
+msgid "Multi Band Operation vendor recommendation"
+msgstr "多频段操作（MBO）厂商建议值"
+
+msgid "Multi AP Protocol (EasyMesh) proxy, needs the WAPP service"
+msgstr "多 AP 协议（EasyMesh）代理，需要 WAPP 服务"
+
+msgid "RSSI threshold for joining"
+msgstr "接入 RSSI 阈值"
+
+msgid "Distance to farthest network member in meters."
+msgstr "到网络中最远成员的距离（米）。"
+
+msgid "Local time zone as specified in 8.3 of IEEE Std 1003.1-2004"
+msgstr "本地时区（格式见 IEEE Std 1003.1-2004 第 8.3 节）"
+
+msgid "UTC time at which the TSF timer is 0"
+msgstr "TSF 计时器为 0 的 UTC 时间"
+
+msgid "extended sleep mode for stations"
+msgstr "STA 扩展休眠模式"
+
+msgid "Default %d"
+msgstr "默认 %d"
+
+msgid "ARP, IPv4 and IPv6 (even 802.1Q) with multicast destination MACs are unicast to the STA MAC address. Note: This is not Directed Multicast Service (DMS) in 802.11v. Note: might break receiver STA multicast expectations."
+msgstr "目标 MAC 为组播的 ARP、IPv4/IPv6（含 802.1Q）帧会被单播到 STA 的 MAC 地址。注意：这与 802.11v 的定向组播服务（DMS）不同；可能导致接收端 STA 的组播预期失效。"
+
+msgid "Always use 40MHz channels even if the secondary channel overlaps. Using this option does not comply with IEEE 802.11n-2009!"
+msgstr "即使次信道重叠也强制使用 40MHz 信道。启用后不符合 IEEE 802.11n-2009 规范！"
+
+msgid "Configures data rates based on the coverage cell density. Normal configures basic rates to 6, 12, 24 Mbps if legacy 802.11b rates are not used else to 5.5, 11 Mbps. High configures basic rates to 12, 24 Mbps if legacy 802.11b rates are not used else to the 11 Mbps rate. Very High configures 24 Mbps as the basic rate. Supported rates lower than the minimum basic rate are not offered."
+msgstr "按覆盖密度配置速率。普通：未启用 802.11b 旧速率时基础速率为 6/12/24 Mbps，否则为 5.5/11 Mbps；高：未启用 802.11b 时为 12/24 Mbps，否则为 11 Mbps；超高：以 24 Mbps 作为基础速率。低于最低基础速率的速率不再提供。"
+
+msgid "Legacy or badly behaving devices may require legacy 802.11b rates to interoperate. Airtime efficiency may be significantly reduced where these are used. It is recommended to not allow 802.11b rates where possible."
+msgstr "老旧或兼容性差的设备可能需要 802.11b 旧速率才能互通，但启用后空口效率会明显下降，建议尽量不要放开 802.11b 速率。"
+
+msgid "Where Wi-Fi Multimedia (WMM) Mode QoS is disabled, clients may be limited to 802.11a/802.11g rates."
+msgstr "关闭 WMM（Wi-Fi 多媒体）QoS 时，客户端可能被限制在 802.11a/802.11g 速率。"
+
+msgid "Where the ESSID is hidden, clients may fail to roam and airtime efficiency may be significantly reduced."
+msgstr "隐藏 ESSID 时，客户端可能无法漫游，空口效率也会明显下降。"
+
+msgid "Specifies the maximum transmit power the wireless radio may use. Depending on regulatory requirements and wireless usage, the actual transmit power may be reduced by the driver."
+msgstr "指定无线射频可使用的最大发射功率。受法规与使用场景限制，驱动可能会降低实际发射功率。"
+
+msgid "Note: Some wireless drivers do not fully support 802.11w. E.g. mwlwifi may have problems"
+msgstr "注意：部分无线驱动并不完全支持 802.11w，例如 mwlwifi 可能存在问题"
+
+msgid "Complicates key reinstallation attacks on the client side by disabling retransmission of EAPOL-Key frames that are used to install keys. This workaround might cause interoperability issues and reduced robustness of key negotiation especially in environments with heavy traffic load."
+msgstr "通过禁止重传用于安装密钥的 EAPOL-Key 帧，提高客户端侧密钥重装攻击的难度。该规避措施可能带来兼容性问题，并在高流量环境下降低密钥协商的健壮性。"
+
+msgid "When using a PSK, the PMK can be automatically generated. When enabled, the R0/R1 key options below are not applied. Disable this to use the R0 and R1 key options."
+msgstr "使用 PSK 时可自动生成 PMK；启用后下方 R0/R1 密钥选项不生效。需要手动填写 R0/R1 密钥时请关闭此项。"
+
+msgid "List of R0KHs in the same Mobility Domain. <br />Format: MAC-address,NAS-Identifier,128-bit key as hex string. <br />This list is used to map R0KH-ID (NAS Identifier) to a destination MAC address when requesting PMK-R1 key from the R0KH that the STA used during the Initial Mobility Domain Association."
+msgstr "同一移动域内的 R0KH 列表。<br />格式：MAC 地址,NAS 标识,128 位密钥（十六进制字符串）。<br />该列表用于在向 STA 首次关联时所用的 R0KH 申请 PMK-R1 密钥时，把 R0KH-ID（NAS 标识）映射到目标 MAC 地址。"
+
+msgid "Used for two different purposes: RADIUS NAS ID and 802.11r R0KH-ID. Not needed with normal WPA(2)-PSK."
+msgstr "有两个用途：RADIUS NAS ID 与 802.11r 的 R0KH-ID。普通 WPA/WPA2-PSK 场景无需填写。"
+
+msgid "Radius-Authentication-Server"
+msgstr "RADIUS 认证服务器"
+
+msgid "Radius-Authentication-Port"
+msgstr "RADIUS 认证端口"
+
+msgid "Radius-Authentication-Secret"
+msgstr "RADIUS 认证密钥"
+
+msgid "Radius-Accounting-Server"
+msgstr "RADIUS 记账服务器"
+
+msgid "Radius-Accounting-Port"
+msgstr "RADIUS 记账端口"
+
+msgid "Radius-Accounting-Secret"
+msgstr "RADIUS 记账密钥"
+
+msgid "WPA-Encryption requires wpa_supplicant (for client mode) or hostapd (for AP and ad-hoc mode) to be installed."
+msgstr "WPA 加密需要安装 wpa_supplicant（客户端模式）或 hostapd（AP 与 ad-hoc 模式）。"
+
+msgid "Hide <abbr title=\"Extended Service Set Identifier\">ESSID</abbr>"
+msgstr "隐藏 <abbr title=\"扩展服务集标识\">ESSID</abbr>"
+
+msgid "The correct SSID must be manually specified when joining a hidden wireless network"
+msgstr "连接隐藏无线网络时必须手动填写正确的 SSID"
+
+msgid "Instead of joining any network with a matching SSID, only connect to the BSSID <code>%h</code>."
+msgstr "不连接任意同名 SSID 的网络，仅连接到 BSSID <code>%h</code>。"
+
+msgid "The allowed characters are: <code>A-Z</code>, <code>a-z</code>, <code>0-9</code> and <code>_</code>"
+msgstr "允许的字符：<code>A-Z</code>、<code>a-z</code>、<code>0-9</code> 与 <code>_</code>"
+
+msgid "Certificate constraint substring - e.g. /CN=wifi.mycompany.com<br />See `logread -f` during handshake for actual values"
+msgstr "证书约束子串，例如 /CN=wifi.mycompany.com<br />握手期间可用 `logread -f` 查看实际取值"
+
+msgid "Certificate constraint(s) against DNS SAN values (if available)<br />or Subject CN (exact match)"
+msgstr "按 DNS SAN（若存在）<br />或主题 CN 精确匹配证书约束"
+
+msgid "Certificate constraint(s) against DNS SAN values (if available)<br />or Subject CN (suffix match)"
+msgstr "按 DNS SAN（若存在）<br />或主题 CN 后缀匹配证书约束"
+
+msgid "Certificate constraint(s) via Subject Alternate Name values<br />(supported attributes: EMAIL, DNS, URI) - e.g. DNS:wifi.mycompany.com"
+msgstr "按主题备用名称（SAN）匹配证书约束<br />（支持 EMAIL、DNS、URI 属性）- 例如 DNS:wifi.mycompany.com"
+
+msgid "This option cannot be used because the ca-bundle package is not installed."
+msgstr "未安装 ca-bundle 软件包，无法使用该选项。"
+
+msgid "Choose the network(s) you want to attach to this wireless interface or fill out the <em>custom</em> field to define a new network."
+msgstr "选择要绑定到该无线接口的网络，或在 <em>自定义</em> 中新建网络。"
+
+msgid "Choose the firewall zone you want to assign to this interface. Select <em>unspecified</em> to remove the interface from the associated zone or fill out the <em>custom</em> field to define a new zone and attach the interface to it."
+msgstr "选择要把该接口加入的防火墙区域。选择 <em>未指定</em> 可将其移出当前区域，或在 <em>自定义</em> 中新建区域并把接口加入其中。"
+
+msgid "Failed to load the wireless configuration"
+msgstr "加载无线配置失败"
+
+msgid "The existing wireless configuration needs to be changed for LuCI to function properly."
+msgstr "需要修改现有无线配置，LuCI 才能正常工作。"
+
+msgid "Please delete the existing MBSSID and try again."
+msgstr "请先删除已有的 MBSSID 后重试。"
+
+msgid "The number of MBSSID has reached the maximum"
+msgstr "MBSSID 数量已达上限"
+
+msgid "Upon pressing \"Continue\", anonymous \"wifi-iface\" sections will be assigned with a name in the form <em>wifinet#</em> and the network will be restarted to apply the updated configuration."
+msgstr "点击“继续”后，匿名的 \"wifi-iface\" 配置段会被命名为 <em>wifinet#</em> 形式，并重启网络以应用更新后的配置。"

@@ -63,3 +63,7 @@
   - qiuvip123 新增全是 A31 专有（Argon/iStore、ubi 改 896 PEB 对齐其 U-Boot 的 NMBM 视图）；本树 `mt7981b-konka-komi-a31.dts` 是 `0x7a80000` 无 nmbm，跟着改会缩小可用空间。
   - flover-luffy 的 packages 同步项本树多数已同版或更新（libxml2 2.14.5、wireless-regdb 2026.05.30、dnsmasq 2.93、openssl 3.0.22、ca-certificates 20260816）；mac80211 本树走 mt_wifi 不适用。
   - MedyMa `4c24840d4`（WHNAT）已按 24.10 l1profile 重做落地；其后续 8 条（samba4 C23、hnat fence、NPU 统计、WARP/hWiFi 加固）要么已被他自己 revert、要么属 mt7988 那一代，本树 hnat 是另一代接不上。
+- 2026-11-08 package/tools 大 bump（提交 `540acc9160` / `bb535749e0`）：21 包 + mold/patch 跟 immortalwrt master。可复用经验：
+  - `git checkout <master> -- <path>` 只覆盖 master 有的文件，**不会删**本地多出的补丁；bump 后编译先死在 `Patch failed!` 的，多半就是这些本地残留（上游已吸收），逐条对新源码 grep 确认后 `git rm`，别机械 refresh。iw 的 `310-vif_radio_mask.patch` 是上游没有的 MTK 补丁，要留。
+  - 下载源补位：github release 资产走 `api.github.com`（`Accept: application/octet-stream`）比直连稳；netfilter.org 还没放的新版 tarball 去 Debian 源池（`deb.debian.org/debian/pool/...`）找 orig，hash 与上游一致；GNU 软件用 `sources.openwrt.org`；codeload.github.com 不限速但不支持断点续传。
+  - 跳过项：openssl（守 3.0 LTS）、zlib（master 已切 zlib-ng）、dropbear（2026.94 重写配置面且带回 libcrypt-compat）、r8152/r8168/strace/linux-firmware/lldpd/xdp-tools/dtc（11 份 defconfig 种子未启用未构建）。

@@ -4442,7 +4442,7 @@ define Device/wavlink_wl-wnt100x3-ubootmod
   DEVICE_PACKAGES := kmod-usb3 \
 	kmod-hwmon-pwmfan
   ARTIFACTS := preloader.bin bl31-uboot.fip
-  ARTIFACT/preloader.bin := mt7981-bl2 spim-nand-ddr3
+  ARTIFACT/preloader.bin := mt7981-bl2 spim-nand-ddr3-1866
   ARTIFACT/bl31-uboot.fip := mt7981-bl31-uboot wavlink_wl-wnt100x3
 endef
 TARGET_DEVICES += wavlink_wl-wnt100x3-ubootmod

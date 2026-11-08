@@ -143,6 +143,7 @@ platform_do_upgrade() {
 	jdcloud,re-cp-03|\
 	konka,komi-a31|\
 	livinet,zr-3020-ubootmod|\
+	mediatek,7981r128|\
 	mediatek,mt7981-rfb|\
 	mediatek,mt7988a-rfb|\
 	mercusys,mr90x-v1-ubi|\
@@ -159,7 +160,9 @@ platform_do_upgrade() {
 	qihoo,360t7-ubi|\
 	routerich,ax3000-ubootmod|\
 	routerich,be7200|\
+	ruijie,ew-6000gx-pro-ubootmod|\
 	ruijie,rg-x60-new-ubi|\
+	ruijie,rg-x60-new-ubootmod|\
 	snr,snr-cpe-ax2|\
 	teralink,tl3020-256mb|\
 	tplink,tl-7dr7230-v1|\
@@ -169,6 +172,7 @@ platform_do_upgrade() {
 	tplink,tl-xdr6086|\
 	tplink,tl-xdr6088|\
 	tplink,tl-xtr8488|\
+	tplink,wma301-ubootmod|\
 	viettel,32x6|\
 	viettel,nr3053|\
 	wavlink,wl-wnt100x3-ubootmod|\
@@ -176,6 +180,8 @@ platform_do_upgrade() {
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,redmi-router-ax6000-ubootmod|\
 	xiaomi,mi-router-wr30u-ubootmod|\
+	zbtlink,zbt-z8103ax-c-ubootmod|\
+	zbtlink,zbt-z8103ax-ubi|\
 	zyxel,ex5601-t0-ubootmod|\
 	zyxel,wx5600-t0-ubootmod)
 		fit_do_upgrade "$1"
@@ -185,9 +191,12 @@ platform_do_upgrade() {
 	acer,vero-w6m|\
 	airpi,ap3000m|\
 	arcadyan,mozart|\
+	bt,r320|\
+	bt,rb300|\
 	clx,s20l|\
 	clx,s20m|\
 	clx,s20p|\
+	cmcc,rax3000m-emmc|\
 	glinet,gl-mt2500|\
 	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt6000|\
@@ -195,7 +204,9 @@ platform_do_upgrade() {
 	glinet,gl-xe3000|\
 	hiveton,h5000m|\
 	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro|\
 	huasifei,wh3000-pro-emmc|\
+	philips,hy3000|\
 	sl,3000-emmc|\
 	smartrg,sdg-8612|\
 	smartrg,sdg-8614|\
@@ -203,7 +214,10 @@ platform_do_upgrade() {
 	smartrg,sdg-8632|\
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
-	smartrg,sdg-8734)
+	smartrg,sdg-8734|\
+	sn,r1|\
+	supergateway,s20*|\
+	umi,uax3000e)
 		CI_KERNPART="kernel"
 		CI_ROOTPART="rootfs"
 		emmc_do_upgrade "$1"
@@ -466,9 +480,12 @@ platform_copy_config() {
 	acer,vero-w6m|\
 	airpi,ap3000m|\
 	arcadyan,mozart|\
+	bt,r320|\
+	bt,rb300|\
 	clx,s20l|\
 	clx,s20m|\
 	clx,s20p|\
+	cmcc,rax3000m-emmc|\
 	glinet,gl-mt2500|\
 	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt6000|\
@@ -477,7 +494,9 @@ platform_copy_config() {
 	globitel,bt-r320|\
 	hiveton,h5000m|\
 	huasifei,wh3000-emmc|\
+	huasifei,wh3000-pro|\
 	huasifei,wh3000-pro-emmc|\
+	philips,hy3000|\
 	jdcloud,re-cp-03|\
 	sl,3000-emmc|\
 	nradio,c8-668gl|\
@@ -488,6 +507,9 @@ platform_copy_config() {
 	smartrg,sdg-8733|\
 	smartrg,sdg-8733a|\
 	smartrg,sdg-8734|\
+	sn,r1|\
+	supergateway,s20*|\
+	umi,uax3000e|\
 	ubnt,unifi-6-plus)
 		emmc_copy_config
 		;;

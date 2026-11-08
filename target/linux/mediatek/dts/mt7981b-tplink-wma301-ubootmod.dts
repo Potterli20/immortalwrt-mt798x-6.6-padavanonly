@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/dts-v1/;
+#include "mt7981b-tplink-wma301-v2.dtsi"
+#include "mt798x-nand-128m-ubootmod.dtsi"
+
+/ {
+	model = "TP-Link WMA301 V2.0 (OpenWrt U-Boot layout)";
+	compatible = "tplink,wma301-ubootmod", "mediatek,mt7981";
+};
+
+&chosen {
+	bootargs = "root=/dev/fit0 rootwait";
+	rootdisk = <&ubi_rootdisk>;
+};

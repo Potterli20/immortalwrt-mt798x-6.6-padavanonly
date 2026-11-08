@@ -26,6 +26,15 @@ zbtlink,zbt-z8106ax-t)
 	ucidef_add_gpio_switch "4g" "Power modem" "4g" "1"
 	ucidef_add_gpio_switch "sim" "SIM" "sim" "1"
 	;;
+cudy,tr3000-256mb-v1|\
+cudy,tr3000-v1|\
+cudy,tr3000-v1-ubootmod|\
+pgy,x1pro-v1-ubootmod)
+	ucidef_add_gpio_switch "modem_power" "Modem power" "modem_power" "1"
+	;;
+huasifei,wh3000-pro)
+	ucidef_add_gpio_switch "modem_power" "Modem power" "modem_power" "0"
+	;;
 esac
 
 board_config_flush

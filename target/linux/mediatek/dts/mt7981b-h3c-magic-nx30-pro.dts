@@ -104,7 +104,7 @@
 	pinctrl-0 = <&spi0_flash_pins>;
 	status = "okay";
 
-	spi_nand@0 {
+	spi_nand: spi_nand@0 {
 		compatible = "spi-nand";
 		reg = <0>;
 
@@ -112,7 +112,7 @@
 		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
 
-		partitions {
+		partitions: partitions {
 			compatible = "fixed-partitions";
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -140,7 +140,7 @@
 				read-only;
 			};
 
-			partition@580000 {
+			ubi: partition@580000 {
 				label = "ubi";
 				reg = <0x0580000 0x4000000>;
 				compatible = "linux,ubi";

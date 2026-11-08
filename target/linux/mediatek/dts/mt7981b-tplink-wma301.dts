@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+
+/dts-v1/;
+#include "mt7981b-tplink-wma301-v2.dtsi"
+#include "mt798x-nand-128m-114m-ubi.dtsi"
+
+/ {
+	model = "TP-Link WMA301 V2.0";
+	compatible = "tplink,wma301", "mediatek,mt7981";
+};
+
+&chosen {
+	bootargs = "console=ttyS0,115200n1 loglevel=8 earlycon=uart8250,mmio32,0x11002000";
+};

@@ -19,11 +19,10 @@ define Device/clx_s20m
   DEVICE_MODEL := S20M
   DEVICE_DTS := mt7986a-clx-s20m
   DEVICE_PACKAGES += -wpad-openssl -kmod-mt_wifi -kmod-conninfra -kmod-warp \
-    -wifi-dats -wifi-profile -mtwifi-cfg -mtwifi-cfg-ucode \
-    -luci-app-mtwifi-cfg -luci-i18n-mtwifi-cfg-zh-cn \
-    -kmod-mt76 -kmod-mt76-connac -kmod-mt76-core -kmod-mt7915e \
-    -kmod-mt7915-firmware -kmod-mt7916-firmware -kmod-mt7986-firmware \
-    -mt7986-wo-firmware
+	-wifi-dats -wifi-profile -mtwifi-cfg -mtwifi-cfg-ucode \
+	-luci-app-mtwifi-cfg -luci-i18n-mtwifi-cfg-zh-cn \
+	-kmod-mt76 -kmod-mt76-connac -kmod-mt76-core \
+	-kmod-mt7915-firmware -kmod-mt7916-firmware
 endef
 TARGET_DEVICES += clx_s20m
 

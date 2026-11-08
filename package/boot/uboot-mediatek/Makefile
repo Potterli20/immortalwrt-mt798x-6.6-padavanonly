@@ -541,6 +541,18 @@ define U-Boot/mt7981_imou_hx21
   DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
 endef
 
+define U-Boot/mt7981_imou_lc-hx3001
+  NAME:=Imou LC-HX3001
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=imou_lc-hx3001
+  UBOOT_CONFIG:=mt7981_imou_lc-hx3001
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7981
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
+endef
+
 define U-Boot/mt7981_jcg_q30-pro
   NAME:=JCG Q30 PRO
   BUILD_SUBTARGET:=filogic
@@ -832,6 +844,18 @@ define U-Boot/mt7981_teralink_tl3020-256mb
   DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3-1866
 endef
 
+define U-Boot/mt7981_tplink_wma301
+  NAME:=TP-Link WMA301
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=tplink_wma301-ubootmod
+  UBOOT_CONFIG:=mt7981_tplink_wma301
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7981
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
+endef
+
 define U-Boot/mt7981_viettel_32x6
   NAME:=Viettel 32X6
   BUILD_SUBTARGET:=filogic
@@ -897,6 +921,18 @@ define U-Boot/mt7981_wirelesstag_zx7981pd
   BUILD_SUBTARGET:=filogic
   BUILD_DEVICES:=wirelesstag_zx7981pd-ubootmod
   UBOOT_CONFIG:=mt7981_zx7981pd
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7981
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
+endef
+
+define U-Boot/mt7981_zbtlink_zbt-z8103ax-c
+  NAME:=Zbtlink ZBT-Z8103AX-C
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=zbtlink_zbt-z8103ax-c-ubootmod
+  UBOOT_CONFIG:=mt7981_zbtlink_zbt-z8103ax-c
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=spim-nand
   BL2_SOC:=mt7981
@@ -1059,6 +1095,30 @@ define U-Boot/mt7986_netcore_n60-pro
   BL2_SOC:=mt7986
   BL2_DDRTYPE:=ddr4
   DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr4
+endef
+
+define U-Boot/mt7986_ruijie_ew-6000gx-pro
+  NAME:=Ruijie EW-6000GX Pro
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=ruijie_ew-6000gx-pro-ubootmod
+  UBOOT_CONFIG:=mt7986_ruijie_ew-6000gx-pro
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7986
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr3
+endef
+
+define U-Boot/mt7986_ruijie_rg-x60-new
+  NAME:=Ruijie RG-X60 New
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=ruijie_rg-x60-new-ubootmod
+  UBOOT_CONFIG:=mt7986_ruijie_rg-x60-new-ubi
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7986
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr3
 endef
 
 define U-Boot/mt7986_ruijie_rg-x60-new-ubi
@@ -1494,6 +1554,7 @@ UBOOT_TARGETS := \
 	mt7981_globitel_bt-r320 \
 	mt7981_h3c_magic-nx30-pro \
 	mt7981_imou_hx21 \
+	mt7981_imou_lc-hx3001 \
 	mt7981_jcg_q30-pro \
 	mt7981_konka_komi-a31 \
 	mt7981_konka_komi-a31-emmc \
@@ -1517,12 +1578,14 @@ UBOOT_TARGETS := \
 	mt7981_qihoo_360t7-ubi \
 	mt7981_snr_snr-cpe-ax2 \
 	mt7981_teralink_tl3020-256mb \
+	mt7981_tplink_wma301 \
   mt7981_viettel_32x6 \
 	mt7981_viettel_nr3053 \
   mt7981_wavlink_wl-wnt100x3 \
 	mt7981_wirelesstag_zx7981pd \
 	mt7981_xiaomi_mi-router-ax3000t \
 	mt7981_xiaomi_mi-router-wr30u \
+	mt7981_zbtlink_zbt-z8103ax-c \
 	mt7986_acer_predator-w6x \
 	mt7986_bananapi_bpi-r3-emmc \
 	mt7986_bananapi_bpi-r3-sdmmc \
@@ -1535,6 +1598,8 @@ UBOOT_TARGETS := \
 	mt7986_mercusys_mr90x-v1 \
 	mt7986_netcore_n60 \
 	mt7986_netcore_n60-pro \
+	mt7986_ruijie_ew-6000gx-pro \
+	mt7986_ruijie_rg-x60-new \
 	mt7986_ruijie_rg-x60-new-ubi \
 	mt7986_tplink_tl-xdr4288 \
 	mt7986_tplink_tl-xdr6086 \

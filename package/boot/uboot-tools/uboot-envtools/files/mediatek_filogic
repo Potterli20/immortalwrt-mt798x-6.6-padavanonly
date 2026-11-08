@@ -38,8 +38,11 @@ cudy,wr3000s-v1-ubootmod|\
 cudy,wr3000h-v1-ubootmod|\
 cudy,wr3000p-v1-ubootmod|\
 h3c,magic-nx30-pro|\
+honor,fur-602*|\
 imou,hx21|\
+imou,lc-hx3001|\
 jcg,q30-pro|\
+mediatek,7981r128|\
 livinet,zr-3020-ubootmod|\
 mercusys,mr90x-v1-ubi|\
 netcore,n60|\
@@ -56,6 +59,8 @@ qihoo,360t7-ubi|\
 routerich,ax3000-ubootmod|\
 routerich,be7200|\
 ruijie,rg-x60-new-ubi|\
+ruijie,ew-6000gx-pro-ubootmod|\
+ruijie,rg-x60-new-ubootmod|\
 snr,snr-cpe-ax2|\
 teralink,tl3020-256mb|\
 tplink,tl-7dr7230-v1|\
@@ -72,7 +77,9 @@ xiaomi,mi-router-ax3000t-ubootmod|\
 xiaomi,mi-router-wr30u-ubootmod|\
 xiaomi,redmi-router-ax6000-ubootmod|\
 zyxel,ex5601-t0-ubootmod|\
-zyxel,wx5600-t0-ubootmod)
+zyxel,wx5600-t0-ubootmod|\
+zbtlink,zbt-z8103ax-c-ubi|\
+zbtlink,zbt-z8103ax-c-ubootmod)
 	ubootenv_add_ubi_default
 	;;
 acer,predator-w6|\
@@ -86,7 +93,9 @@ glinet,gl-xe3000|\
 globitel,bt-r320|\
 huasifei,wh3000-emmc|\
 nradio,c8-668gl|\
-sl,3000-emmc)
+sl,3000-emmc|\
+supergateway,s20*|\
+umi,uax3000e)
 	ubootenv_add_mmc "u-boot-env" "" "0x0" "0x80000"
 	;;
 asiarf,ap7986-003|\
@@ -94,11 +103,14 @@ cetron,ct3003|\
 comfast,cf-wr632ax|\
 edgecore,eap111|\
 h3c,magic-nx30-pro-mtkuboot|\
+h3c,magic-nx30-pro-nmbm|\
 livinet,zr-3020|\
 netgear,wax220|\
 ruijie,rg-x30e-pro|\
 zbtlink,zbt-z8102ax|\
 zbtlink,zbt-z8103ax|\
+zbtlink,zbt-z8103ax-c|\
+zbtlink,zbt-z8103ax-c-nmbm|\
 zhao,7981r128)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x20000" "0x20000"
 	;;
@@ -111,10 +123,13 @@ bananapi,bpi-r3-mini|\
 bananapi,bpi-r4|\
 bananapi,bpi-r4-lite|\
 bananapi,bpi-r4-poe|\
+bt,r320|\
+bt,rb300|\
 cmcc,rax3000m|\
 cmcc,rax3000me|\
 jdcloud,re-cp-03|\
-konka,komi-a31)
+konka,komi-a31|\
+sn,r1)
 	. /lib/upgrade/fit.sh
 	export_fitblk_bootdev
 	case "$CI_METHOD" in
@@ -134,6 +149,7 @@ buffalo,wsr-6000ax8|\
 mercusys,mr80x-v3|\
 mercusys,mr85x|\
 mercusys,mr90x-v1|\
+newland,nl-wr9103|\
 routerich,ax3000|\
 routerich,ax3000-v1|\
 tenbay,wr3000k|\
@@ -152,6 +168,21 @@ dlink,aquila-pro-ai-m60-a1)
 	;;
 gatonetworks,gdsp)
 	ubootenv_add_uci_config "/dev/mtd1" "0x0" "0x10000" "0x10000"
+	;;
+ruijie,ew-6000gx-pro|\
+ruijie,ew-6000gx-pro-expand|\
+ruijie,ew-6000gx-pro-stock|\
+ruijie,rg-x60-new|\
+ruijie,rg-x60-new-expand|\
+ruijie,rg-x60-new-stock|\
+ruijie,rg-x60-pro|\
+ruijie,rg-x60-pro-107m)
+	ubootenv_add_uci_config "/dev/mtd2" "0x0" "0x80000" "0x20000" "4"
+	;;
+cudy,tr3000-v1|\
+cudy,tr3000-v1-256mb)
+	local envdev=/dev/mtd$(find_mtd_index "u-boot-env")
+	ubootenv_add_uci_config "$envdev" "0x0" "0x80000" "0x80000"
 	;;
 cmcc,xr30-mtkuboot|\
 glinet,gl-mt3000|\

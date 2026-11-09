@@ -2363,6 +2363,7 @@ $(eval $(call KernelPackage,mtk-t7xx))
 define KernelPackage/mediatek_hnat
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=Mediatek HNAT module
+  AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
   DEPENDS:=@TARGET_mediatek +kmod-nf-conntrack
   KCONFIG:= \
 	CONFIG_BRIDGE_NETFILTER=y \

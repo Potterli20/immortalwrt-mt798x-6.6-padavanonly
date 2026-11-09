@@ -723,10 +723,10 @@ define Device/ruijie_rg-x60-new-ubi
   DEVICE_MODEL := RG-X60 New
   DEVICE_VARIANT := (OpenWrt UBI layout)
   DEVICE_DTS := mt7986a-ruijie-rg-x60-new-ubi
-  DEVICE_DTS_CONFIG := config@ruijie_x60_gsw_en8811h_phy
   DEVICE_DTS_DIR := ../dts
   DEVICE_PACKAGES := \
-	kmod-phy-airoha-en8811h
+	kmod-phy-airoha-en8811h \
+	kmod-mtd-rw
   UBINIZE_OPTS := -E 5
   BLOCKSIZE := 128k
   PAGESIZE := 2048
@@ -739,6 +739,9 @@ define Device/ruijie_rg-x60-new-ubi
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
   IMAGE/sysupgrade.itb := append-kernel | \
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
+  ARTIFACTS := preloader.bin bl31-uboot.fip
+  ARTIFACT/bl31-uboot.fip := mt7986-bl31-uboot ruijie_rg-x60-new-ubi
+  ARTIFACT/preloader.bin := mt7986-bl2 spim-nand-ubi-ddr3
 endef
 TARGET_DEVICES += ruijie_rg-x60-new-ubi
 

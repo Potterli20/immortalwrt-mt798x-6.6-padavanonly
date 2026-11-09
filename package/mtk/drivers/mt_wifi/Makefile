@@ -7,6 +7,9 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_wifi
+# modpost 只在 M=$(PKG_BUILD_DIR)/mt_wifi_ap 下生成 Module.symvers，
+# 默认的 "." 会让 collect_module_symvers 找不到文件并丢掉 mt_wifi 导出的符号
+PKG_EXTMOD_SUBDIRS:=mt_wifi_ap
 REPO_URL:=https://raw.githubusercontent.com/Potterli20/immortalwrt-mt798x-6.6-padavanonly/refs/heads/openwrt-24.10-6.6/dl
 
 ifeq ($(CONFIG_MTK_CHIP_MT7981),y)

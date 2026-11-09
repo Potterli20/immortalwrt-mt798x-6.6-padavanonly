@@ -53,6 +53,15 @@ if [ -f "$lw" ] && grep -q -- '-DISABLE_WERROR=ON' "$lw"; then
 	echo "修正 $lw 的 DISABLE_WERROR"
 fi
 
+# crypto-eip 的 adapter_addrpair.h 头文件保护宏拼错（ADDDRPAIR 多一个 D），
+# gcc 15 起 -Wall 含 -Wheader-guard，配合包内写死的 -Wall -Werror，
+# adapter_pcl_generic.c 会直接编译失败（gcc 14 及以前不报）。
+eip_hdr=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/src/ddk/inc/crypto-eip/ddk/slad/adapter_addrpair.h
+if [ -f "$eip_hdr" ] && grep -qF -- '#ifndef ADAPTER_ADDDRPAIR_H_' "$eip_hdr"; then
+	sed -i 's/#ifndef ADAPTER_ADDDRPAIR_H_/#ifndef ADAPTER_ADDRPAIR_H_/' "$eip_hdr"
+	echo "修正 $eip_hdr 的头文件保护宏"
+fi
+
 # 下面是 make menuconfig 的 "recursive dependency detected"，成因两类：同一个包名被两个
 # feed 定义，或者 PROVIDES/CONFLICTS 与 select/depends 两条边互相指。
 

@@ -4388,7 +4388,15 @@ define Device/wavlink_wl-wn586x3b
   KERNEL_INITRAMFS_SUFFIX := .itb
   KERNEL_IN_UBI := 1
   DEVICE_PACKAGES := 
-  IMAGES := factory.bin initramfs-kernel.bin sysupgrade.bin
+  # The initramfs artifact is the .itb named by KERNEL_INITRAMFS_SUFFIX above
+  # (built by Device/Build/initramfs and copied to bin/targets as
+  # <prefix>-initramfs.itb). Listing initramfs-kernel.bin here additionally asks
+  # for a per-rootfs <prefix>-squashfs-initramfs-kernel.bin that this recipe
+  # chain never produces, so the install step fails with
+  #   cp: cannot stat '...-squashfs-initramfs-kernel.bin': No such file or directory
+  #   make[5]: [Makefile:48: ...] Error 1 (ignored)
+  # The sibling .itb devices (wl-wn536ax6-a, wl-wn551x3) leave IMAGES at default.
+  IMAGES := factory.bin sysupgrade.bin
   IMAGE/factory.bin := append-ubi | check-size $$(IMAGE_SIZE)
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef

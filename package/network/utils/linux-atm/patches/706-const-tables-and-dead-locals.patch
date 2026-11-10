@@ -42,11 +42,14 @@ Two independent cleanups bundled because they touch overlapping files.
   files ship in the tarball - so the edits are permanent. Also removed: ttcp.c's
   `static char RCSid[]`, referenced nowhere in the file.
 
-* src/test/ttcp.c also has its nine remaining K&R definitions (pattern, outfmt,
-  getrusage, read_timer, prusage, psecs, Nread, Nwrite, mread) converted to ANSI
-  prototypes, taking -Wold-style-definition with it. Parameter types are copied
-  verbatim from each old-style declaration run; prusage's single multi-declarator
-  line `register struct rusage *r0, *r1;` becomes two parameters.
+* src/test/ttcp.c also has its eleven K&R definitions converted to ANSI prototypes -
+  pattern, outfmt, getrusage, read_timer, prusage, psecs, Nread, Nwrite, mread,
+  tvadd and tvsub - taking that file's -Wold-style-definition warnings with it.
+  Parameter types are copied verbatim from each old-style declaration run; the
+  three files whose parameters sat on one multi-declarator line
+  (`register struct rusage *r0, *r1;` in prusage, and
+  `struct timeval *tsum, *t0, *t1;` / `struct timeval *tdiff, *t1, *t0;` in
+  tvadd / tvsub) each become separate parameters.
 
 * src/mpoad/p_factory.c send_cache_imposition_reply(): `common` is assigned but
   never read, so the declaration goes - but not the assignment's right-hand

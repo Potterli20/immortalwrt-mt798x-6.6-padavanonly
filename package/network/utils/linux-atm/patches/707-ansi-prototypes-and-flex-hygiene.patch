@@ -1,13 +1,12 @@
-Subject: [PATCH] ANSI prototypes, flex %option, and two layout fixes
+Subject: [PATCH] ANSI prototypes in wait.c/ilmid.c, flex %option, cleanups
 
 Split out of the same warning sweep because these are different concerns from
 the const-correctness work in 706.
 
-* 11 K&R definitions converted to ANSI prototypes: ttcp.c's pattern, outfmt,
-  getrusage, read_timer, prusage, psecs, Nread, Nwrite and mread (those are in
-  706, which owns ttcp.c), plus ilmid/wait.c's AsnOctsCopy and ilmid/ilmid.c's
-  compare_attachment_point here. Parameter types are copied verbatim from the
-  old-style declaration run, so the compiled code is unchanged; both
+* Two K&R definitions converted to ANSI prototypes: ilmid/wait.c's AsnOctsCopy
+  and ilmid/ilmid.c's compare_attachment_point. ttcp.c's eleven are in 706,
+  which owns that file. Parameter types are copied verbatim from the old-style
+  declaration run, so the compiled code is unchanged; both
   -Wold-style-definition and -Wstrict-prototypes go away.
 
 * ilmid/wait.c reset_remsys(): two statements had lost their newline, so

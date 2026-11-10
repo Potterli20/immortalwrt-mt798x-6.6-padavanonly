@@ -1,0 +1,58 @@
+From: OpenWrt staging install model
+Subject: [PATCH] ltmain: drop three install-mode advisories that are noise here
+
+OpenWrt builds every package with prefix /usr but installs into staging_dir
+and later into an ipkg root, so libtool's install mode emits three advisories
+that can never be acted upon:
+
+  libtool: warning: '/usr/lib/libnl-3.la' has not been installed in '/usr/lib'
+  libtool: warning: relinking 'lib/libnl-route-3.la'
+  libtool: warning: remember to run 'libtool --finish /usr/lib'
+
+The first fired 512 times in a single full build (libnl alone accounts for
+192 of them). All three are pure func_warning calls:
+
+  - "has not been installed": the surrounding check still runs and still sets
+    finalize=false, so the wrapper relinks at runtime exactly as before.
+  - "relinking": the very next line func_show_eval runs the relink command and
+    func_fatal_error's if it fails, so the advisory adds no information.
+  - "remember to run --finish": the next block already executes --finish for
+    current_libdirs; future_libdirs are directories the staging install has
+    no reason to create.
+
+Only the advisory text is removed. No control flow changes except dropping
+the now-dangling `test -n "$future_libdirs" && \` continuation, which would
+otherwise swallow the following `if` and produce invalid shell.
+
+Verified: sh -n on the patched ltmain.in passes, and after
+`make tools/libtool/compile` both staging_dir/host/bin/libtool and
+staging_dir/host/share/libtool/build-aux/ltmain.sh contain zero occurrences
+of "has not been installed in", while an unpatched tree contains one.
+
+--- a/build-aux/ltmain.in
++++ b/build-aux/ltmain.in
+@@ -2543,7 +2543,6 @@
+ 	  relink_command=`$ECHO "$relink_command" | $SED "s%-L[[:space:]]*/lib[^[:space:]]*%%"`
+ 	  relink_command=`$ECHO "$relink_command" | $SED "s%-L[[:space:]]*/usr/lib[^[:space:]]*%%"`
+ 
+-	  func_warning "relinking '$file'"
+ 	  func_show_eval "$relink_command" \
+ 	    'func_fatal_error "error: relink '\''$file'\'' with the above command before installing it"'
+ 	fi
+@@ -2707,7 +2706,6 @@
+ 	    fi
+ 	    libfile=$libdir/`$ECHO "$lib" | $SED 's%^.*/%%g'`
+ 	    if test -n "$libdir" && test ! -f "$libfile"; then
+-	      func_warning "'$lib' has not been installed in '$libdir'"
+ 	      finalize=false
+ 	    fi
+ 	  done
+@@ -2792,8 +2790,6 @@
+       func_execute_cmds "$old_postinstall_cmds" 'exit $?'
+     done
+ 
+-    test -n "$future_libdirs" && \
+-      func_warning "remember to run '$progname --finish$future_libdirs'"
+ 
+     if test -n "$current_libdirs"; then
+       # Maybe just do a dry run.

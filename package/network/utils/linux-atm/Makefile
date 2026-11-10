@@ -109,6 +109,15 @@ $(foreach t,$(ATM_DEBUG_TOOLS),$(eval $(call GenAtmPlugin,atm-$(t),$(t))))
 # stream byte-identical.
 TARGET_CFLAGS += -isystem $(LINUX_DIR)/user_headers/include
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	# Patch 708 renames configure.in to configure.ac, but patch(1) cannot delete
+	# a file and autoreconf refuses to run while both inputs exist. PKG_FIXUP:=
+	# autoreconf is a *Configure* pre-hook, so dropping the obsolete input here in
+	# Prepare is early enough.
+	rm -f $(PKG_BUILD_DIR)/configure.in
+endef
+
 define Build/Configure
 	$(call Build/Configure/Default)
 	# prevent autoheader invocation

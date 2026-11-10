@@ -1,0 +1,401 @@
+Subject: [PATCH] modernise the autotools input (configure.in -> configure.ac)
+
+linux-atm ships a 2001-era configure.in plus five Makefile.am files using
+automake's retired names, which cost 20 advisories on every build: six
+"autoconf input should be named 'configure.ac', not 'configure.in'", seven about
+obsolete/deprecated macros, five about INCLUDES, and two about the q2931 target
+overrides.
+
+Verified against the build's own autoreconf (same AM_TOOL_PATHS, same
+-B $(STAGING_DIR_HOST)/share/aclocal, same -v -f -i): before 20 warning lines,
+after 0, exit status 0 both times.
+
+configure.in -> configure.ac is a rename, and patch(1) cannot delete a file, so
+the added configure.ac lives here and package/network/utils/linux-atm/Makefile
+removes the stale configure.in from Build/Prepare. That ordering matters:
+PKG_FIXUP:=autoreconf runs as a *Configure* pre-hook, and autoreconf errors out
+if both inputs exist.
+
+Macro replacements, each chosen to preserve what the build actually relies on:
+
+  AC_INIT(src/include/atm.h)         -> AC_INIT([linux-atm], [2.5.2])
+  AM_CONFIG_HEADER(config.h)         -> AC_CONFIG_HEADERS(config.h)
+  AC_CANONICAL_SYSTEM                -> AC_CANONICAL_BUILD + _HOST + _TARGET
+  AM_INIT_AUTOMAKE(linux-atm,2.5.2)  -> AM_INIT_AUTOMAKE   (no options before,
+                                                             none now)
+  AM_PROG_LEX                        -> AC_PROG_LEX(yywrap)
+  AM_PROG_LIBTOOL                    -> LT_INIT
+  AC_OUTPUT(<27 files>)              -> AC_CONFIG_FILES([<same 27>]) + AC_OUTPUT
+
+AC_CANONICAL_SYSTEM became a pure alias for the three separate macros, and all
+three are still required: the generated Makefile.in files substitute @build@,
+@host@ and @target@. Collapsing to AC_CANONICAL_HOST alone would leave @target@
+unsubstituted.
+
+AC_PROG_LEX(noyywrap), not (yywrap): the latter makes autoconf link a conftest
+that only *declares* yywrap (programs.m4:45) to find it in the lex library, which
+cannot succeed in a cross build - it hits programs.m4:109-110,
+'required lex library not found; giving up on flex', and sets LEX=':'.  That in
+turn silently stops ylwrap from regenerating the scanners, so the stale shipped
+ql_l.c is compiled, it has no yywrap() definition, and qgen fails to link.
+noyywrap is also the accurate description of this package: patch 200-no_libfl
+defines yywrap() in every lexer and strips -lfl from every *_LDADD, so nothing
+needs the library's copy.
+
+INCLUDES -> AM_CPPFLAGS in ilmid, maint, sigd, switch/debug and switch/tcp. None
+of those five references $(INCLUDES) in its own recipes, so the rename carries no
+behaviour change. src/q2931/Makefile.am does use $(INCLUDES) but never defines
+it, so it already expanded to nothing; left alone rather than quietly adding
+include flags to the qgen invocation.
+
+q2931's two override advisories come from a genuine name clash: the file
+declares noinst_PROGRAMS = q.out.o qd.dump.o, so automake owns the targets
+q.out.o$(EXEEXT) / qd.dump.o$(EXEEXT) while the hand-written dependency-only
+rules use the unsuffixed names. Appending $(EXEEXT) makes them the same target
+automake knows. GNU make merges prerequisites of recipe-less rules, and EXEEXT is
+empty for this Linux cross build, so the dependency sets are unchanged.
+
+The dnl banner still saying "configure.in" is corrected to match the filename.
+
+src/extra/Makefile.am firmware rules: `%.bin %.bin2: %.data` made GNU make warn
+that the recipe never updates its peer target (3 warnings per build). Splitting
+it into two pattern rules removed those but made automake warn that %-style
+pattern rules are a GNU make extension - a swap, not a fix. BUILT_SOURCES names
+exactly three firmware files, so they are now written out as explicit rules: no
+peer-target warning, no GNU-extension warning, and the produced pca200e.bin /
+pca200e_ecd.bin2 / sba200e_ecd.bin2 verified byte-identical to the pre-change
+build.
+--- a/configure.ac
++++ b/configure.ac
+@@ -0,0 +1,242 @@
++dnl configure.ac - the Autoconf input file
++dnl
++dnl Paul B Schroeder <paulsch@us.ibm.com>
++dnl
++dnl 2001-08-29:  Initial configure.ac for atm tools starting with version 2.4.0
++dnl
++
++AC_INIT([linux-atm], [2.5.2])
++AC_CONFIG_HEADERS(config.h)
++
++dnl Find operating system, vendor, architecture
++AC_CANONICAL_BUILD
++AC_CANONICAL_HOST
++AC_CANONICAL_TARGET
++
++AM_INIT_AUTOMAKE
++
++LIBVER_CURRENT="1"
++LIBVER_REVISION="0"
++LIBVER_AGE="0"
++AC_SUBST(LIBVER_CURRENT)
++AC_SUBST(LIBVER_REVISION)
++AC_SUBST(LIBVER_AGE)
++
++dnl Find programs needed for building and installation.
++AC_PROG_CC
++AC_PROG_LEX(noyywrap)
++AC_PROG_YACC
++AC_PROG_INSTALL
++
++dnl libtool defs
++LT_INIT
++AC_SUBST(LIBTOOL_DEPS)
++
++dnl We have some special PERL scripts which are used during the build process
++AC_PATH_PROG(PERL, perl)
++AC_SUBST(PERL)
++
++
++dnl Check for needed header files
++AC_CHECK_HEADER(asm/errno.h, ,
++	AC_MSG_ERROR([*** Unable to find asm/errno.h!!!])
++)
++
++AC_CHECK_HEADER(linux/atmsap.h, ,
++	AC_MSG_ERROR([*** Unable to find linux/atmsap.h!!!])
++)
++
++dnl Check for libraries
++dnl libresolv is required
++AC_CHECK_LIB(resolv, main, ,
++	AC_MSG_ERROR([*** Unable to find libresolv!!!])
++)
++
++dnl We don't want libresolv everywhere, just with libatm
++LIBS=""
++
++INCLUDES="-I\$(top_srcdir)/src/include"
++CFLAGS="$INCLUDES $CFLAGS -Wall -Wshadow -Wpointer-arith -Wwrite-strings -Wstrict-prototypes"
++if test "x$cross_compiling" = "xyes"; then
++  AC_MSG_CHECKING(cc for build)
++  AC_CHECK_PROGS(CC_FOR_BUILD, gcc)
++  AC_MSG_RESULT($CC_FOR_BUILD)
++  CFLAGS_FOR_BUILD="$INCLUDES $CFLAGS_FOR_BUILD -Wall -Wshadow -Wpointer-arith -Wwrite-strings -Wstrict-prototypes"
++else
++  CC_FOR_BUILD="${CC_FOR_BUILD-$CC}"
++  CFLAGS_FOR_BUILD="${CFLAGS_FOR_BUILD-$CFLAGS}"
++fi
++AC_SUBST(CC_FOR_BUILD)
++AC_SUBST(CFLAGS_FOR_BUILD)
++dnl Add -d flag to bison/yacc to create intermediate .h files
++YACC="$YACC -d"
++
++dnl For yacc compiles...
++AC_DEFINE(YY_USE_CONST, [], [ ])
++
++dnl Config files
++atmsigd_conf_dir=`	test "x$exec_prefix" = xNONE && exec_prefix=$ac_default_prefix
++			test "x$prefix" = xNONE && prefix=${exec_prefix}
++			eval echo "$sysconfdir"`
++AC_DEFINE_UNQUOTED(ATMSIGD_CONF, "$atmsigd_conf_dir/atmsigd.conf", [Default config file location for atmsigd])
++
++dnl Do our ./configure arguments here
++AC_ARG_WITH(uni,
++	[  --with-uni=VERSION      UNI version to use (3.0,3.1,4.0) [default=dynamic]],
++	[
++	case "$with_uni" in
++	"3.0" ) AC_DEFINE(UNI30, [], [ ])
++	;;
++	"3.1" ) AC_DEFINE(UNI31, [], [Note: some UNI 3.0 switches will show really strange behaviour if confronted
++with using 3.1 signaling, so be sure to test your network *very*
++carefully before permanently configuring machines to use UNI 3.1.])
++	;;
++	"4.0" ) AC_DEFINE(UNI40, [], [Some partial support for UNI 4.0 can be enabled by using UNI40])
++	;;
++	*)
++		AC_DEFINE(DYNAMIC_UNI, [], [The UNI version can be configured at run time. Dynamic is the default. Use the
++explicit version selections only in case of problems.])
++		AC_MSG_WARN([*** UNI version not specified correctly.  Defaulting to dynamic UNI.])
++	esac
++	],
++	AC_DEFINE(DYNAMIC_UNI)
++)
++
++AC_ARG_ENABLE(allow_uni30,
++	[  --enable-allow_uni30    Allow UNI 3.0 backwards-compatible extensions (if using UNI 3.1)],
++	[
++	if test "$with_uni" = "3.1" ; then
++		AC_DEFINE(ALLOW_UNI30, [], [Allow UNI 3.0 backwards-compatible extensions (if using UNI 3.1)])
++	else
++		AC_MSG_WARN([*** Allow UNI 3.0 was not enabled.  It is only valid when UNI 3.1 is specified as the default via --with-uni.])
++	fi
++	]
++)
++
++AC_ARG_ENABLE(q2963_1,
++	[  --enable-q2963_1        Enable peak cell rate modification as specified in Q.2963.1 (if using UNI 4.0)],
++	[
++	if test "$with_uni" = "4.0" ; then
++		AC_DEFINE(Q2963_1, [], [If using UNI40, you can also enable peak cell rate modification as
++specified in Q.2963.1])
++	else
++		AC_MSG_WARN([*** Q.2963.1 was not enabled.  It is only valid when UNI 4.0 is specified as the default via --with-uni.])
++	fi
++	]
++)
++
++AC_ARG_ENABLE(cisco,
++	[  --enable-cisco          Enable work around for point-to-multipoint signaling bug in Cisco LS100 or LS7010 switches],
++	AC_DEFINE(CISCO, [], [If you're using a Cisco LS100 or LS7010 switch, you should add the following
++line to work around a bug in their point-to-multipoint signaling (it got
++confused when receiving a CALL PROCEEDING, so we don't send it, which of
++course makes our clearing procedure slightly non-conformant):])
++)
++
++AC_ARG_ENABLE(thomflex,
++	[  --enable-thomflex       Some versions of the Thomson Thomflex 5000 won't do any signaling before they get a RESTART.  Enable sending of a RESTART whenever SAAL comes up.],
++	AC_DEFINE(THOMFLEX, [], [Some versions of the Thomson Thomflex 5000 won't do any signaling before they
++get a RESTART. Uncomment the next line to enable sending of a RESTART
++whenever SAAL comes up. Note that the RESTART ACKNOWLEDGE sent in response to
++the RESTART will yield a warning, because we don't implement the full RESTART
++state machine.])
++)
++
++dnl Use select() instead of poll() with MPOA
++dnl Do we still need this??  Make it selectable??
++AC_DEFINE(BROKEN_POLL, [], [Use select() instead of poll() with MPOA])
++
++AC_ARG_ENABLE(mpoa_1_1,
++	[  --enable-mpoa_1_1       Enable proposed MPOA 1.1 features],
++	AC_DEFINE(MPOA_1_1, [], [Use proposed MPOA 1.1 features])
++)
++
++AC_ARG_ENABLE(mpr,
++	[  --enable-mpr            Enable memory debugging (if MPR is installed)],
++	[
++	case "$enable_mpr" in
++	"" | y | ye | yes | Y | YE | YES )
++		AC_CHECK_LIB(mpr, main, ,
++			[
++			AC_MSG_WARN([*** Could not find libmpr!  Is MPR installed?])
++			]
++		)
++	;;
++	esac
++	]
++)
++
++AC_ARG_WITH(kernel-headers,
++[  --with-kernel-headers=path     use the kernel headers found at path]
++)
++if test "x$with_kernel_headers" != "x"; then
++  CFLAGS="-I$with_kernel_headers/include $CFLAGS"
++fi
++
++dnl AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[]])],[],[])
++pmp_send=""
++AC_SUBST(pmp_send)
++AC_ARG_ENABLE(multipoint,
++	[  --enable-multipoint    Enable point to multipoint signalling],
++        [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT
++#include <stdint.h>
++#include <linux/atmdev.h>
++],
++[[ int fd;
++  struct atm_iobuf buf;
++
++  ioctl(fd, ATM_ADDPARTY, &buf);
++]])],
++	[AC_DEFINE(MULTIPOINT, [], [Point to multipoint signalling support for atmsigd.])
++	 pmp_send="pmp_send"],
++	[AC_MSG_WARN([*** Multipoint signalling was not enabled.  Missing kernel support?])])]
++)
++
++atmoamd=""
++AC_SUBST(atmoamd)
++AC_COMPILE_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT
++#include <stdint.h>
++#include <linux/atmoam.h>
++],
++[[ int fd;
++
++  ioctl(fd, ATMOAMD_CTRL, 0);
++]])],
++               [atmoamd="atmoamd"],
++               [AC_MSG_WARN([*** atmoamd will not be built.  Missing kernel support?])])
++
++dnl Xsed="sed -e s/^X//"
++dnl LTLIBOBJS=`echo X"$LIBOBJS" | \$Xsed -e "s,\. [^.]* ,.lo,g;s,\.[^.]*$,.lo,"`
++dnl AC_SUBST(LTLIBOBJS)
++
++dnl Output all of our Makefiles
++AC_CONFIG_FILES([
++	Makefile
++	doc/Makefile
++	src/Makefile
++	src/include/Makefile
++	src/lib/Makefile
++	src/test/Makefile
++	src/debug/Makefile
++	src/qgen/Makefile
++	src/saal/Makefile
++	src/q2931/Makefile
++	src/sigd/Makefile
++	src/maint/Makefile
++	src/arpd/Makefile
++	src/ilmid/Makefile
++	src/ilmid/asn1/Makefile
++	src/man/Makefile
++	src/led/Makefile
++	src/lane/Makefile
++	src/mpoad/Makefile
++	src/oamd/Makefile
++	src/switch/Makefile
++	src/switch/debug/Makefile
++	src/switch/tcp/Makefile
++	src/br2684/Makefile
++	src/config/Makefile
++	src/extra/Makefile
++	src/extra/linux-atm.spec
++])
++AC_OUTPUT
+--- a/src/ilmid/Makefile.am
++++ b/src/ilmid/Makefile.am
+@@ -1,6 +1,6 @@
+ SUBDIRS = asn1
+ 
+-INCLUDES = -I$(srcdir)/../ilmid/asn1
++AM_CPPFLAGS = -I$(srcdir)/../ilmid/asn1
+ 
+ sbin_PROGRAMS = ilmid ilmidiag
+ 
+--- a/src/maint/Makefile.am
++++ b/src/maint/Makefile.am
+@@ -2,7 +2,7 @@
+ SYSPGMS=atmloop atmtcp enitune zntune hediag # nstune
+ USRPGMS=atmdiag atmdump sonetdiag saaldump
+ 
+-INCLUDES=-I$(srcdir)/../q2931 -I$(srcdir)/../saal -I.
++AM_CPPFLAGS = -I$(srcdir)/../q2931 -I$(srcdir)/../saal -I.
+ LDADD = $(top_builddir)/src/lib/libatm.la
+ 
+ sbin_PROGRAMS = $(BOOTPGMS) $(SYSPGMS)
+--- a/src/q2931/Makefile.am
++++ b/src/q2931/Makefile.am
+@@ -35,9 +35,9 @@
+ qd.out.h qd.out.c qd.dump.c: msg.fmt default.nl
+ 	$(CPP) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) - < $(srcdir)/msg.fmt | ../qgen/qgen -D
+ 
+-q.out.o: q.out.c q.out.h qlib.c qlib.h op.h uni.h
++q.out.o$(EXEEXT): q.out.c q.out.h qlib.c qlib.h op.h uni.h
+ 
+-qd.dump.o: qd.dump.c qd.out.c qlib.c qlib.h op.h uni.h
++qd.dump.o$(EXEEXT): qd.dump.c qd.out.c qlib.c qlib.h op.h uni.h
+ 
+ #qd.dump.standalone.o: qd.dump.c qd.out.c qlib.c qlib.h
+ #	$(CC) $(DEFS) $(DEFAULT_INCLUDES) -DSTANDALONE $(INCLUDES) $(CFLAGS) -c qd.dump.c \
+--- a/src/sigd/Makefile.am
++++ b/src/sigd/Makefile.am
+@@ -1,4 +1,4 @@
+-INCLUDES = -I$(top_builddir)/src/q2931 -I$(srcdir)/../q2931 -I$(srcdir)/../saal -I.
++AM_CPPFLAGS = -I$(top_builddir)/src/q2931 -I$(srcdir)/../q2931 -I$(srcdir)/../saal -I.
+ 
+ sbin_PROGRAMS = atmsigd
+ atmsigd_SOURCES = atmsigd.c io.c io.h kernel.c proto.c proto.h uni.c \
+--- a/src/switch/debug/Makefile.am
++++ b/src/switch/debug/Makefile.am
+@@ -1,6 +1,6 @@
+ noinst_PROGRAMS = sw_debug
+ 
+-INCLUDES = -I$(srcdir)/../../q2931
++AM_CPPFLAGS = -I$(srcdir)/../../q2931
+ 
+ sw_debug_SOURCES = debug.c
+ sw_debug_XTRAS = $(top_builddir)/src/switch/libsw.a \
+--- a/src/switch/tcp/Makefile.am
++++ b/src/switch/tcp/Makefile.am
+@@ -1,6 +1,6 @@
+ noinst_PROGRAMS = sw_tcp
+ 
+-INCLUDES = -I$(srcdir)/../../q2931
++AM_CPPFLAGS = -I$(srcdir)/../../q2931
+ 
+ sw_tcp_SOURCES = tcpsw.c
+ sw_tcp_XTRAS = $(top_builddir)/src/switch/libsw.a \
+--- a/src/extra/Makefile.am
++++ b/src/extra/Makefile.am
+@@ -15,7 +15,22 @@
+ 	$(INSTALL_DATA) $(srcdir)/pca200e_ecd.bin2 $(DESTDIR)/lib/firmware
+ 	$(INSTALL_DATA) $(srcdir)/sba200e_ecd.bin2 $(DESTDIR)/lib/firmware
+ 
+-%.bin %.bin2: %.data
++# objcopy writes the gzip container and gzip -n -df immediately unpacks it,
++# so each firmware file lands next to its .data source.  These were a single
++# `%.bin %.bin2: %.data` pattern rule, which made GNU make warn that the
++# recipe never updates its peer target, and split in two they made automake
++# warn that %-style pattern rules are a GNU make extension.  BUILT_SOURCES
++# lists exactly three files, so naming them outright is shorter than either
++# pattern rule and needs no GNU extensions.
++pca200e.bin: $(srcdir)/pca200e.data
++	$(OBJCOPY) -Iihex $< -Obinary $@.gz
++	gzip -n -df $@.gz
++
++pca200e_ecd.bin2: $(srcdir)/pca200e_ecd.data
++	$(OBJCOPY) -Iihex $< -Obinary $@.gz
++	gzip -n -df $@.gz
++
++sba200e_ecd.bin2: $(srcdir)/sba200e_ecd.data
+ 	$(OBJCOPY) -Iihex $< -Obinary $@.gz
+ 	gzip -n -df $@.gz
+ 

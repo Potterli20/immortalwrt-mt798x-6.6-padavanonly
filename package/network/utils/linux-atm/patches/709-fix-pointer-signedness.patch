@@ -1,0 +1,398 @@
+Subject: [PATCH] linux-atm: fix the remaining 34 pointer-signedness warnings by correcting declarations
+
+No -Wno-* switch and no blanket cast: in each cluster the wrong side was
+identified from the surrounding convention, then the declaration was fixed, and
+the cascade that followed was followed rather than papered over.
+
+mpoad - packets are assembled through uint8_t *. packets.h declares the frame
+fields uint8_t, p_factory.c works on `uint8_t buffer[MAX_PACKET_LENGTH]` /
+`uint8_t *reply` and writes fields with `*((uint32_t *)(buff + pos))`, and
+mpc_control's LEC_ADDRESS / MPS_MAC_ADDRESS / OWN_ATM_ADDRESS / elan_name are all
+`unsigned char` arrays (packets.h:14/15/19/20). io.h's `char *buff` packet
+parameters are therefore the odd ones out. send_to_mps, send_to_dataplane,
+create_ingress_svc and the static create_shortcut become uint8_t *, their
+definitions and internal assembly cursors (`char tmp[]`, `char *pos = tmp`)
+follow, and the two receive buffers feeding recognize_packet(uint8_t *) become
+uint8_t *. lecs.c's request/reply path lines up the same way; elan_name is text
+stored in a uint8_t[32] field, so strcpy/strlen there get an explicit (char *)
+on both operands rather than a silent sign change.
+
+led - the address APIs already say unsigned char * (address.h:29 addr_getesi,
+display.h:8 mac2text, join.h:6 init_lec_params, kernel.h:31 kernel_init) and
+bus_mac / well_known_lecs are already unsigned char. MAC and ESI values are
+octet strings, so main.c's `char mac_addr[ETH_ALEN]` and `char esibuff[20]` and
+join.c's four `char buff[MAX_CTRL_FRAME]` LANE control-frame buffers were the
+wrong side. The `(struct ctrl_frame *)buff` casts and the tlvp cursor stay
+consistent.
+
+ilmid - atmdev.h:166 declares `signed char vpi_bits; signed char vci_bits;`, so
+put_ci's `char *bits` was simply the wrong type for `&ci.vpi_bits`. Changed to
+match the header instead of casting the callers.
+
+include/atmd.h - UN_CTX.size is passed straight to recvfrom() as its
+socklen_t *addrlen out-parameter and to sendto() as socklen_t. It was `int`.
+Patch 700 already fixed the same int-vs-socklen_t confusion in arpd/io.c's
+get_local(); this is the last instance.
+
+maint/saaldump.c - the captured PDU buffer is raw AAL5 bytes handed to
+analyze(unsigned char *pdu, ...); `char buf[ATM_MAX_AAL5_PDU]` was the anomaly.
+(The other `char buf[MAX_ITEM]` at line 48 is a text line buffer that inspects
+buf[len-1] == '\n' and is left as plain char.)
+
+ilmid/mib.c - IpAddress.octs is AsnOcts' `char* octs`, which cannot be widened
+to unsigned or const without breaking every write-through and free() in the asn1
+library (see 706). The cast stays at that one assignment, and the local `p`
+deliberately keeps its unsigned type: the very next statement prints p[0..3] with
+%d as an IPv4 address, and a plain char would render octets above 127 negative.
+--- a/src/include/atmd.h
++++ b/src/include/atmd.h
+@@ -146,7 +146,7 @@
+ typedef struct {
+     int	s;			/* socket */
+     struct sockaddr_un addr;	/* reply address */
+-    int size;			/* address size */
++    socklen_t size;		/* address size, as recvfrom/sendto want it */
+ } UN_CTX;
+ 
+ 
+--- a/src/ilmid/mib.c
++++ b/src/ilmid/mib.c
+@@ -368,7 +368,7 @@
+   if (!((IpAddress*) var->value)->octs) {
+       unsigned char *p;
+ 
+-      ((IpAddress *) var->value)->octs = p = alloc(4);
++      ((IpAddress *) var->value)->octs = (char *)(p = alloc(4));
+       memcpy(((IpAddress *) var->value)->octs,&local_ip,4);
+       diag(COMPONENT,DIAG_DEBUG,"Local IP address is %d.%d.%d.%d",p[0],p[1],
+ 	p[2],p[3]);
+@@ -389,7 +389,7 @@
+ 
+ 
+ static AsnInt put_ci(VarBind *varbind,Variable *var,
+-  struct atm_cirange *ci,char *bits)
++  struct atm_cirange *ci,signed char *bits)
+ {
+   if (get_ci_range(ci) < 0) return GENERR;
+   diag(COMPONENT,DIAG_DEBUG,"VPI: %d bits, VCI: %d bits",ci->vpi_bits,
+--- a/src/led/join.c
++++ b/src/led/join.c
+@@ -35,11 +35,11 @@
+                                                      0x3E,0x00,0x00,0x01,0x00};
+ static int do_lec_configure(Conn_t *conn);
+ static int send_config_req(Conn_t *conn);
+-static int read_config_rsp(Conn_t *conn, char *buff, int buffsize);
++static int read_config_rsp(Conn_t *conn, unsigned char *buff, int buffsize);
+ static int parse_config_rsp(unsigned char *buff, int size);
+ 
+ static int send_join_req(Conn_t *conn);
+-static int read_join_rsp(char *buff, int buffsize);
++static int read_join_rsp(unsigned char *buff, int buffsize);
+ static int parse_join_rsp(unsigned char *buff, int size);
+ 
+ static int get_bus_addr(struct sockaddr_atmsvc *addr);
+@@ -167,7 +167,7 @@
+ static int do_lec_configure(Conn_t *conn)
+ {
+         int frame_size = 0;
+-        char buff[MAX_CTRL_FRAME];
++        unsigned char buff[MAX_CTRL_FRAME];
+ 
+         lec_params.c7c_current_timeout = lec_params.c7i_initial_ctrl_timeout; /* reset it */
+         while (lec_params.c7c_current_timeout <= lec_params.c7_ctrl_timeout) {
+@@ -201,7 +201,7 @@
+ {
+         int frame_size;
+         struct ctrl_frame *config_req;
+-        char buff[MAX_CTRL_FRAME];
++        unsigned char buff[MAX_CTRL_FRAME];
+ 
+         diag(COMPONENT, DIAG_DEBUG, "Sending LE_CONFIGURE_REQUEST");
+ 
+@@ -221,7 +221,7 @@
+         config_req->max_frame_size = lec_params.c3_max_frame_size;
+         config_req->elan_name_size = strlen(lec_params.c5_elan_name);
+         if (strlen(lec_params.c5_elan_name) > 0)
+-                strcpy(config_req->elan_name, lec_params.c5_elan_name);
++                strcpy((char *) config_req->elan_name, lec_params.c5_elan_name);
+         if (lec_params.c3_max_frame_size == MTU_1580) {
+                 lec_params.c3_max_frame_size = MTU_1516;
+                 *(uint32_t *)(config_req + 1) = htonl(X5_ADJUSTMENT);
+@@ -238,7 +238,7 @@
+  * Reads in Config frame or timeouts
+  * Returns Config frame length, < 0 for error, 0 for timeout
+  */
+-static int read_config_rsp(Conn_t *conn, char *buff, int buffsize)
++static int read_config_rsp(Conn_t *conn, unsigned char *buff, int buffsize)
+ {
+         int frame_size, retval;
+         struct timeval tv;
+@@ -303,7 +303,7 @@
+         lec_params.c2_lan_type = frame->lan_type;
+         lec_params.c3_max_frame_size = frame->max_frame_size;
+         if (frame->elan_name_size != 0)
+-                strncpy(lec_params.c5_elan_name, frame->elan_name, frame->elan_name_size);
++                strncpy(lec_params.c5_elan_name, (char *) frame->elan_name, frame->elan_name_size);
+         lec_params.c5_elan_name[frame->elan_name_size] = '\0';
+         memcpy(lec_params.c9_les_atm_addr, frame->target_atm_addr, ATM_ESA_LEN);
+ 
+@@ -329,7 +329,7 @@
+         struct sockaddr_atmsvc les_addr;
+         struct atm_sap sap;
+         struct atm_qos qos;
+-        char buff[MAX_CTRL_FRAME];
++        unsigned char buff[MAX_CTRL_FRAME];
+         int frame_size = 0; /* shut up, GCC */
+ 
+         diag(COMPONENT, DIAG_DEBUG, "Entering Join phase");
+@@ -391,7 +391,7 @@
+  */
+ static int send_join_req(Conn_t *conn)
+ {
+-        char buff[MAX_CTRL_FRAME], *tlvp;
++        unsigned char buff[MAX_CTRL_FRAME], *tlvp;
+         struct ctrl_frame *frame;
+         int frame_size;
+ 
+@@ -401,12 +401,12 @@
+         if (strlen(lec_params.foreId) > 0) frame_size += (5 + strlen(lec_params.foreId));
+ 
+         frame = (struct ctrl_frame *)buff;
+-        tlvp = (char *)(frame + 1);
++        tlvp = (unsigned char *)(frame + 1);
+         prefill_frame(frame, LE_JOIN_REQ);
+         frame->lan_type = lec_params.c2_lan_type;
+         if (lec_params.c4_proxy_flag) frame->header.flags |= htons(PROXY_FLAG);
+         frame->src_lan_dst.tag = htons(LAN_DST_MAC_ADDR);
+-        strcpy(frame->elan_name, lec_params.c5_elan_name);
++        strcpy((char *) frame->elan_name, lec_params.c5_elan_name);
+         frame->elan_name_size = strlen(lec_params.c5_elan_name);
+         if (lec_params.c29_v2_capable) frame->header.flags |= htons(V2_CAPABLE);
+         memcpy(frame->src_atm_addr, lec_params.c1n_my_atm_addr, ATM_ESA_LEN);
+@@ -446,7 +446,7 @@
+  * 
+  * Returns < 0 for error, 0 for timeout, > 0 for frame size
+  */
+-static int read_join_rsp(char *buff, int buffsize)
++static int read_join_rsp(unsigned char *buff, int buffsize)
+ {
+         Conn_t *dist;
+         int n, retval, frame_size = 0;
+@@ -555,7 +555,7 @@
+         lec_params.c2_lan_type = frame->lan_type;
+         lec_params.c3_max_frame_size = frame->max_frame_size;
+         if (frame->elan_name_size != 0)
+-                strncpy(lec_params.c5_elan_name, frame->elan_name, frame->elan_name_size);
++                strncpy(lec_params.c5_elan_name, (char *) frame->elan_name, frame->elan_name_size);
+         lec_params.c5_elan_name[frame->elan_name_size] = '\0';
+         lec_params.c14_lec_id = ntohs(frame->header.lec_id);
+ 
+--- a/src/led/main.c
++++ b/src/led/main.c
+@@ -185,7 +185,7 @@
+ 
+ int main(int argc, char **argv)
+ {
+-        char mac_addr[ETH_ALEN];
++        unsigned char mac_addr[ETH_ALEN];
+         char elan_name[32 + 1];
+         char preferred_les[ATM_ESA_LEN]; /* LANE2 */
+         char foreId[255]; /* Max size for a TLV */
+--- a/src/maint/saaldump.c
++++ b/src/maint/saaldump.c
+@@ -124,7 +124,7 @@
+ 
+ int main(int argc,char **argv)
+ {
+-    char buf[ATM_MAX_AAL5_PDU];
++    unsigned char buf[ATM_MAX_AAL5_PDU];
+     struct sockaddr_atmpvc addr;
+     struct atm_qos qos;
+     char *name;
+--- a/src/mpoad/io.c
++++ b/src/mpoad/io.c
+@@ -76,7 +76,7 @@
+ static int add_shortcut(int slot, int type);
+ static int check_connection(int slot);
+ static int complete_connection(int slot);
+-static int create_shortcut(char *atm_addr,struct atm_qos qos);
++static int create_shortcut(uint8_t *atm_addr,struct atm_qos qos);
+ static void wait_for_mps_ctrl_addr(void);
+ static int connect_to_MPS(void); 
+ 
+@@ -248,11 +248,11 @@
+  * Sends a packet to MPS. Adds LLC/SNAP encapsulation
+  * in the beginning of the buffer.
+  */
+-int send_to_mps(char *buff, int length)
++int send_to_mps(uint8_t *buff, int length)
+ {
+-        char tmp[MAX_PACKET_LENGTH + sizeof(struct llc_snap_hdr)];
++        uint8_t tmp[MAX_PACKET_LENGTH + sizeof(struct llc_snap_hdr)];
+ 	int bytes_written;
+-        char *pos = tmp;
++        uint8_t *pos = tmp;
+ 	if(mpc_control.MPS_socket<0){
+ 	        connect_to_MPS();     
+ 		fds[1].fd = mpc_control.MPS_socket;
+@@ -278,11 +278,11 @@
+ /*
+  * Sends a control packet over a shortcut. Used in a dataplane purge.
+  */
+-int send_to_dataplane(char *buff, int length, int shortcut_fd)
++int send_to_dataplane(uint8_t *buff, int length, int shortcut_fd)
+ {
+-        char tmp[MAX_PACKET_LENGTH + sizeof(struct llc_snap_hdr)];
++        uint8_t tmp[MAX_PACKET_LENGTH + sizeof(struct llc_snap_hdr)];
+ 	int bytes_written;
+-        char *pos = tmp;
++        uint8_t *pos = tmp;
+ 	memcpy(pos, &llc_snap_mpoa_ctrl, sizeof(struct llc_snap_hdr));
+ 	pos += sizeof(struct llc_snap_hdr);
+ 	memcpy(pos, buff, length);
+@@ -476,7 +476,7 @@
+ static int msg_from_mps(int slot)
+ {
+         int bytes_read, fd;
+-        char buff[MAX_PACKET_LENGTH];
++        uint8_t buff[MAX_PACKET_LENGTH];
+ 
+         fd = fds[slot].fd;
+         bytes_read = read(fd, buff, sizeof(buff));
+@@ -577,7 +577,7 @@
+  */
+ static int check_connection(int slot)
+ {
+-        char buff[MAX_PACKET_LENGTH];
++        uint8_t buff[MAX_PACKET_LENGTH];
+         struct k_message *msg;
+         struct pollfd *pfd;
+         int bytes_read;
+@@ -672,7 +672,7 @@
+ /*
+  * Called if kernel wants us to create a shortcut
+  */
+-void create_ingress_svc(uint32_t ipaddr, char *atm_addr, struct atm_qos qos)
++void create_ingress_svc(uint32_t ipaddr, uint8_t *atm_addr, struct atm_qos qos)
+ {
+ 	int i, new_socket;
+ 	
+@@ -719,7 +719,7 @@
+  * returns < 0 for error, socket for ok
+  *
+  */
+-static int create_shortcut(char *atm_addr, struct atm_qos qos)
++static int create_shortcut(uint8_t *atm_addr, struct atm_qos qos)
+ {
+         int s, flags, retval;
+         struct sockaddr_atmsvc addr;
+--- a/src/mpoad/io.h
++++ b/src/mpoad/io.h
+@@ -5,12 +5,12 @@
+ #define MAX_PACKET_LENGTH 4096   /* max size of MPOA ctrl or data packet */
+ 
+ void main_loop(int listen_socket);
+-int send_to_mps(char *buff, int length);
+-int send_to_dataplane(char *buff, int length, int fd);
++int send_to_mps(uint8_t *buff, int length);
++int send_to_dataplane(uint8_t *buff, int length, int fd);
+ void keep_alive_sm(unsigned keep_alive_lifetime, int sequence_number);
+ int get_socket(struct sockaddr_atmsvc *address);
+ int get_listen_socket(struct sockaddr_atmsvc *address);
+-void create_ingress_svc(uint32_t ipaddr, char *atm_addr, struct atm_qos qos);
++void create_ingress_svc(uint32_t ipaddr, uint8_t *atm_addr, struct atm_qos qos);
+ 
+ /* Socket types and states */
+ #define NOT_USED          0x0000
+--- a/src/mpoad/lecs.c
++++ b/src/mpoad/lecs.c
+@@ -19,13 +19,13 @@
+ #define MAXFRAME 1024
+ 
+ static int get_lecs_socket(struct sockaddr_atmsvc *sa);
+-static int send_request(int fd, char *buff, char *lec_addr, char *elan_name);
+-static int get_reply(int fd, char *buff, struct mpc_parameters *params);
++static int send_request(int fd, uint8_t *buff, uint8_t *lec_addr, uint8_t *elan_name);
++static int get_reply(int fd, uint8_t *buff, struct mpc_parameters *params);
+ 
+-void get_mpc_config(struct sockaddr_atmsvc *sa, char *lec_addr, char *elan_name)
++void get_mpc_config(struct sockaddr_atmsvc *sa, uint8_t *lec_addr, uint8_t *elan_name)
+ {
+         int s;
+-        char buff[MAXFRAME];
++        uint8_t buff[MAXFRAME];
+         struct k_message msg;
+ 
+         s = get_lecs_socket(sa);
+@@ -55,9 +55,9 @@
+         return;
+ }
+ 
+-static int send_request(int fd, char *buff, char *lec_addr, char *elan_name)
++static int send_request(int fd, uint8_t *buff, uint8_t *lec_addr, uint8_t *elan_name)
+ {
+-        char *tmp;
++        uint8_t *tmp;
+         int retval;
+         struct le_config_frame *frame;
+ 
+@@ -71,8 +71,8 @@
+         memcpy(frame->src_atm_addr, lec_addr, ATM_ESA_LEN);
+         frame->num_tlvs = 1;
+         if (elan_name != NULL) {
+-                strcpy(frame->elan_name, elan_name);
+-                frame->elan_name_size = strlen(elan_name);
++                strcpy((char *) frame->elan_name, (char *) elan_name);
++                frame->elan_name_size = strlen((char *) elan_name);
+         }
+ 
+         /* add the MPOA device type TLV */
+@@ -91,7 +91,7 @@
+         return 0;
+ }
+ 
+-static int get_reply(int fd, char *buff, struct mpc_parameters *params)
++static int get_reply(int fd, uint8_t *buff, struct mpc_parameters *params)
+ {
+         int retval;
+         uint32_t type;
+--- a/src/mpoad/lecs.h
++++ b/src/mpoad/lecs.h
+@@ -1,7 +1,7 @@
+ #ifndef LECS_H
+ #define LECS_H
+ 
+-void get_mpc_config(struct sockaddr_atmsvc *sa, char *lec_addr, char *elan_name);
++void get_mpc_config(struct sockaddr_atmsvc *sa, uint8_t *lec_addr, uint8_t *elan_name);
+ 
+ struct le_config_frame {
+         uint16_t marker;
+--- a/src/mpoad/main.c
++++ b/src/mpoad/main.c
+@@ -148,7 +148,7 @@
+       mpc_control.use_lecs = 1;
+       break;
+     case 'n':
+-      strncpy(mpc_control.elan_name,optarg,33);
++      strncpy((char *) mpc_control.elan_name,optarg,33);
+       break;
+     case 'C':
+       if(text2atm(optarg,(struct sockaddr *)&mpc_control.lecs_address,
+@@ -159,7 +159,7 @@
+       }
+       break;
+     case 'm':
+-      strncpy(mpc_control.MPS_MAC_ADDRESS,optarg,13);
++      strncpy((char *) mpc_control.MPS_MAC_ADDRESS,optarg,13);
+       mpc_control.mps_mac_addr_set = 1;
+       break;
+     case 'i':
+@@ -227,7 +227,7 @@
+ }
+ 
+ static int set_mps_mac_addr(){
+-     char *string = mpc_control.MPS_MAC_ADDRESS;
++     char *string = (char *) mpc_control.MPS_MAC_ADDRESS;
+      struct k_message msg;
+      unsigned char mac_addr[ETH_ALEN];
+      int tmp;

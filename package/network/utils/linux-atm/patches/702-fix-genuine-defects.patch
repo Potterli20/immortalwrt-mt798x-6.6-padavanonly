@@ -1,0 +1,109 @@
+Subject: [PATCH] linux-atm: fix six genuine defects exposed by gcc warnings
+
+These are behaviour bugs, not style noise. Each was confirmed by reading the
+source, not inferred from the diagnostic alone.
+
+sapequal.c - CHECK(FIELD, CONSTRAINT) pasted CONSTRAINT unparenthesized into
+  `!CONSTRAINT`, so CHECK(l3.itu.window, a.x > b.x) expanded to
+  `(!a.x) > b.x`. The SSCOP/BLLI negotiation constraint was therefore never
+  evaluated as written. Add the missing parentheses in the macro.
+
+ans.c - `if (addr->sas_addr.prv)` tests the address of an array member
+  (unsigned char prv[ATM_ESA_LEN], kernel linux/atm.h:209), which is never
+  NULL, so the E.164 else branch was dead code. The rest of the library tests
+  the first byte: atm2text.c:89, atmequal.c:37, text2atm.c:132. Do the same.
+
+asn_bits.c - AsnBitsEquiv compared b1->bits[octetsLessOne] against itself, so
+  two BIT STRINGs differing only in the significant bits of the final octet
+  compared equal. The right hand side must be b2.
+
+mib.c - `result` is only assigned inside `while (var->name != NULL)`. For an
+  empty MIB table the loop body never runs and result is read uninitialized.
+  Initialize it to AsnOidLess (first enumerator, util.h:38), which routes an
+  empty table to the existing "object not found" branch.
+
+mpoad/io.c - complete_connection() passes an uninitialized sockaddr_atmsvc to
+  connect(); the syscall copies sizeof(dummy) bytes from userspace before the
+  protocol handler runs. The call only exists to read back errno, so zero the
+  address first.
+
+proto.c - free_call() printed the pointer after free(). Passing the value to
+  %p does not dereference it, but it is still a use of an indeterminate
+  pointer; print before freeing.
+
+--- a/src/ilmid/asn1/asn_bits.c
++++ b/src/ilmid/asn1/asn_bits.c
+@@ -346,7 +346,7 @@
+     return ( (b1->bitLen == b2->bitLen) &&
+              (memcmp(b1->bits, b2->bits, octetsLessOne) == 0) &&
+              (( b1->bits[octetsLessOne] & (0xFF << octetBits)) ==
+-              ( b1->bits[octetsLessOne] & (0xFF << octetBits))));
++              ( b2->bits[octetsLessOne] & (0xFF << octetBits))));
+ 
+ } /* AsnBitsEquiv */
+ 
+--- a/src/ilmid/mib.c
++++ b/src/ilmid/mib.c
+@@ -75,7 +75,7 @@
+ {
+   VarBind *varbind;
+   Variable *var;
+-  AsnOidResult result;
++  AsnOidResult result = AsnOidLess;
+   
+   *offset = 1;
+   FOR_EACH_LIST_ELMT(varbind, list)
+@@ -162,7 +162,7 @@
+ {
+   VarBind *varbind;
+   Variable *var;
+-  AsnOidResult result;
++  AsnOidResult result = AsnOidLess;
+ 
+   *offset = 1;
+   FOR_EACH_LIST_ELMT(varbind, list)
+--- a/src/lib/ans.c
++++ b/src/lib/ans.c
+@@ -248,7 +248,7 @@
+     char tmp[MAX_NAME]; /* could be smaller ... */
+     int res;
+ 
+-    if (addr->sas_addr.prv) {
++    if (*addr->sas_addr.prv) {
+         res = encode_nsap(tmp,addr->sas_addr.prv);
+         if (!res && !ans(tmp,T_PTR,buffer,length)) return 0;
+ 	res = encode_nsap_new(tmp,addr->sas_addr.prv);
+--- a/src/lib/sapequal.c
++++ b/src/lib/sapequal.c
+@@ -43,7 +43,7 @@
+   if (res && !res->FIELD) res->FIELD = a.FIELD; \
+   if (a.FIELD && b.FIELD && a.FIELD != b.FIELD) { \
+     if (!(flags & SXE_NEGOTIATION)) return 0; \
+-    if (!CONSTRAINT) return 0; \
++    if (!(CONSTRAINT)) return 0; \
+     if (res) res->FIELD = a.FIELD < b.FIELD ? a.FIELD : b.FIELD; \
+   }
+ 
+--- a/src/mpoad/io.c
++++ b/src/mpoad/io.c
+@@ -642,6 +642,8 @@
+         int retval;
+         struct sockaddr_atmsvc dummy;
+ 
++        memset(&dummy, 0, sizeof(dummy));
++
+         dprintf("mpcd: io.c: complete_connection() completing fd %d slot %d\n", fds[slot].fd, slot);
+         /* this seems to be common method in Linux-ATM
+          * making sure that nonblocking connect was
+--- a/src/switch/proto.c
++++ b/src/switch/proto.c
+@@ -56,8 +56,8 @@
+ {
+     fab_destroy(call);
+     call->state = cs_invalid;
+-    free(call);
+     printf("Call 0x%p killed\n",call);
++    free(call);
+ }
+ 
+ 

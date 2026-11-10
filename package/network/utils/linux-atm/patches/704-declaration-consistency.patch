@@ -1,0 +1,49 @@
+Subject: [PATCH] linux-atm: make declarations consistent and cover vt_id
+
+p_factory.c defined send_cache_imposition_reply's last parameter as
+uint8_t cli_atm_addr[ATM_ESA_LEN] while packets.h:42 declares it uint8_t *.
+The two are compatible in C (an array parameter decays), but gcc's
+-Warray-parameter flags the mismatched bound. Match the header.
+
+qgen's copy_block() switches on VALUE_TYPE, which has four members
+(qgen.h:9: vt_id, vt_case, vt_multi, vt_length), but only handled three.
+vt_id owns no pointers - VALUE.id is an interned const char* - so the shallow
+struct copy performed just above the switch is already complete. Add an
+explicit `case vt_id: break;` to say so rather than leaving -Wswitch to guess.
+
+ql_y.c is shipped in the tarball alongside ql_y.y and automake's .y.c rule is
+guarded by am__skipyacc, so patch both to stay correct either way.
+
+--- a/src/mpoad/p_factory.c
++++ b/src/mpoad/p_factory.c
+@@ -254,7 +254,7 @@
+ 				uint8_t  code,
+ 				uint8_t  prefix_length,
+ 				uint16_t mtu,
+-				uint8_t  cli_atm_addr[ATM_ESA_LEN]
++				uint8_t *cli_atm_addr
+ 				){
+   int pos = 0;
+   struct nhrp_fixed_h *fixed;
+--- a/src/qgen/ql_y.c
++++ b/src/qgen/ql_y.c
+@@ -166,6 +166,8 @@
+ 	    (*new_field)->value = alloc_t(VALUE);
+ 	    *(*new_field)->value = *orig_field->value;
+ 	    switch (orig_field->value->type) {
++		case vt_id:
++		    break;
+ 		case vt_length:
+ 		    (*new_field)->value->block =
+ 		      copy_block(orig_field->value->block);
+--- a/src/qgen/ql_y.y
++++ b/src/qgen/ql_y.y
+@@ -96,6 +96,8 @@
+ 	    (*new_field)->value = alloc_t(VALUE);
+ 	    *(*new_field)->value = *orig_field->value;
+ 	    switch (orig_field->value->type) {
++		case vt_id:
++		    break;
+ 		case vt_length:
+ 		    (*new_field)->value->block =
+ 		      copy_block(orig_field->value->block);

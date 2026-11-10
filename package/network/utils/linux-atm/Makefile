@@ -99,7 +99,15 @@ endef
 
 $(foreach t,$(ATM_DEBUG_TOOLS),$(eval $(call GenAtmPlugin,atm-$(t),$(t))))
 
-TARGET_CFLAGS += -I$(LINUX_DIR)/user_headers/include
+# The kernel uapi headers are system headers: musl's <sys/ioctl.h> defines
+# _IOC/_IO/_IOR/_IOW/_IOWR in bits/ioctl.h, and <linux/atm.h> pulls in
+# asm-generic/ioctl.h which defines them again with equivalent values but
+# different text. Neither side has a guard, so with -I gcc treats the kernel
+# copy as a user header and emits 151 "redefined" warnings (145 via atm.h,
+# 6 via linux/sockios.h). -isystem marks them as system headers, which is what
+# they are; verified to leave header resolution and the preprocessed token
+# stream byte-identical.
+TARGET_CFLAGS += -isystem $(LINUX_DIR)/user_headers/include
 
 define Build/Configure
 	$(call Build/Configure/Default)

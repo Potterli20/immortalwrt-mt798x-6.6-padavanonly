@@ -1,0 +1,89 @@
+Subject: [PATCH] atmd.h: relayout the linked-list macros onto one statement per line
+
+Q_INSERT_HEAD / Q_INSERT_AFTER / Q_INSERT_BEFORE each end with
+
+	if (r) (r)->prev = i; r = i;
+
+where `r = i` deliberately installs the new list head and is therefore NOT part
+of the if. Sitting on the same line as the guarded statement made gcc's
+-Wmisleading-indentation fire once per expansion: 16 warnings from arp.c,
+timer.c, saal/queue.c and every other user of these macros.
+
+Reformatted one statement per line with the guarded body indented, which states
+the actual control flow instead of hinting at another one.
+
+This is a layout-only change. A token-stream comparison of the four macro bodies
+before and after - after stripping line continuations and comments - shows all
+348 tokens identical, so every expansion compiles to exactly the same code.
+--- a/src/include/atmd.h
++++ b/src/include/atmd.h
+@@ -20,17 +20,58 @@
+ 
+ /* doubly linked list primitives */
+  
+-#define Q_INSERT_HEAD(r,i) ({ (i)->next = r; (i)->prev = NULL; \
+-  if (r) (r)->prev = i; r = i; })
+-#define Q_INSERT_AFTER(r,i,a) ({ if (a) { (i)->next = (a)->next; \
+-  (i)->prev = a; if ((a)->next) (a)->next->prev = i; (a)->next = i; } \
+-  else { (i)->next = r; (i)->prev = NULL; if (r) (r)->prev = i; r = i; } })
+-#define Q_INSERT_BEFORE(r,i,b) ({ if (b) { (i)->next = b; \
+-  (i)->prev = (b)->prev; if ((b)->prev) (b)->prev->next = i; else r = i; \
+-  (b)->prev = i; } else { (i)->next = r; (i)->prev = NULL; \
+-  if (r) (r)->prev = i; r = i; } })
+-#define Q_REMOVE(r,i) ({ if ((i)->next) (i)->next->prev = (i)->prev; \
+-  if ((i)->prev) (i)->prev->next = (i)->next; else r = (i)->next; })
++/*
++ * Doubly linked list primitives.  In each macro the "r = i" / "r = ..." that
++ * follows the guarded pointer fix-up is deliberately NOT part of the if: it
++ * installs the new list head.  They sat on the same line as the guarded
++ * statement, which made every expansion trip -Wmisleading-indentation (16
++ * warnings from arp.c, timer.c, queue.c, ...), so each is now on its own line.
++ * Purely a layout change; the expansions are token-for-token equivalent.
++ */
++#define Q_INSERT_HEAD(r,i) ({ \
++  (i)->next = r; \
++  (i)->prev = NULL; \
++  if (r) \
++    (r)->prev = i; \
++  r = i; })
++#define Q_INSERT_AFTER(r,i,a) ({ \
++  if (a) { \
++    (i)->next = (a)->next; \
++    (i)->prev = a; \
++    if ((a)->next) \
++      (a)->next->prev = i; \
++    (a)->next = i; \
++  } \
++  else { \
++    (i)->next = r; \
++    (i)->prev = NULL; \
++    if (r) \
++      (r)->prev = i; \
++    r = i; \
++  } })
++#define Q_INSERT_BEFORE(r,i,b) ({ \
++  if (b) { \
++    (i)->next = b; \
++    (i)->prev = (b)->prev; \
++    if ((b)->prev) \
++      (b)->prev->next = i; \
++    else \
++      r = i; \
++    (b)->prev = i; \
++  } else { \
++    (i)->next = r; \
++    (i)->prev = NULL; \
++    if (r) \
++      (r)->prev = i; \
++    r = i; \
++  } })
++#define Q_REMOVE(r,i) ({ \
++  if ((i)->next) \
++    (i)->next->prev = (i)->prev; \
++  if ((i)->prev) \
++    (i)->prev->next = (i)->next; \
++  else \
++    r = (i)->next; })
+ 
+ 
+ extern struct timeval now;

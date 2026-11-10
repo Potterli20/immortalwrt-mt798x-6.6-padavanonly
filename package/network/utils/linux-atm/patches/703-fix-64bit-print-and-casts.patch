@@ -1,0 +1,163 @@
+Subject: [PATCH] linux-atm: correct 64-bit printf conversions and pointer casts
+
+Twelve format strings used %d for a size_t (sizeof operands, Mem_t.size), an
+ssize_t (read() results in window.c) or a ptrdiff_t (end_of_tlvs - tlvs in
+mpoad/lecs.c). On aarch64 these are 64-bit, so %d read only the low half and
+printed wrong lengths in error and debug output. Use %zu / %zd / %td.
+Argument positions were taken from gcc's own -Wformat diagnosis, which counts
+the FILE* / format string, so only the offending conversion is changed.
+
+ttcp.c computed buffer alignment with `(int)buf % bufalign`, truncating a
+64-bit pointer to 32 bits first. Use uintptr_t; <stdint.h> already comes in
+via src/include/atm.h, which ttcp.c includes.
+
+atmloop.c passes the loopback mode inside the pointer value itself for
+ATM_SETLOOP (the ATM_GETLOOP path at line 127 passes &mode instead). Converting
+int straight to void* is implementation-defined when the sizes differ; go
+through unsigned long, which is what the kernel's ATM ioctl expects.
+
+--- a/src/arpd/atmarp.c
++++ b/src/arpd/atmarp.c
+@@ -67,7 +67,7 @@
+     }
+     if (req->type == art_query) return query_result(&reply);
+     if (len != sizeof(int)) {
+-	fprintf(stderr,"bad read: %d != %d\n",len,sizeof(int));
++	fprintf(stderr,"bad read: %d != %zu\n",len,sizeof(int));
+ 	exit(1);
+     }
+     if (*(int *) &reply < 0) {
+--- a/src/lane/mem_lecs.c
++++ b/src/lane/mem_lecs.c
+@@ -77,7 +77,7 @@
+     free(tmp->start);
+     free(tmp);
+   } else {
+-    printf("Trying to free memory by %s, allocated by %s, size %d\n",
++    printf("Trying to free memory by %s, allocated by %s, size %zu\n",
+ 	   unit, tmp->unit, tmp->size);
+   }
+ }
+@@ -89,6 +89,6 @@
+ 
+   printf("Dumping memory allocation\n");
+   for (tmp=memlist;tmp;tmp=tmp->next)
+-    printf("%s : %d bytes from %p\n", tmp->unit, tmp->size, tmp->start);
++    printf("%s : %zu bytes from %p\n", tmp->unit, tmp->size, tmp->start);
+   printf("-------------------------\n");
+ }
+--- a/src/maint/atmaddr.c
++++ b/src/maint/atmaddr.c
+@@ -97,7 +97,7 @@
+     }
+     if (cmd != ATM_GETADDR) return 0;
+     if (req.length % sizeof(*addr)) {
+-	fprintf(stderr,"internal error: len %d %% %d\n",req.length,
++	fprintf(stderr,"internal error: len %d %% %zu\n",req.length,
+ 	  sizeof(*addr));
+ 	return 1;
+     }
+--- a/src/maint/atmloop.c
++++ b/src/maint/atmloop.c
+@@ -116,7 +116,7 @@
+ 	return 1;
+     }
+     if (set) {
+-	req.arg = (void *) mode;
++	req.arg = (void *)(unsigned long) mode;
+ 	req.length = 0;
+ 	if (ioctl(s,ATM_SETLOOP,&req) < 0) {
+ 	    perror("ioctl ATM_SETLOOP");
+--- a/src/maint/atmtcp.c
++++ b/src/maint/atmtcp.c
+@@ -579,7 +579,7 @@
+ 	exit(1);
+     }
+     if (wrote != sizeof(stream)) {
+-	fprintf(stderr,"short write (%d < %d)\n",wrote,sizeof(stream));
++	fprintf(stderr,"short write (%d < %zu)\n",wrote,sizeof(stream));
+ 	exit(1);
+     }
+     wrote = write(fd,data,size);
+--- a/src/mpoad/lecs.c
++++ b/src/mpoad/lecs.c
+@@ -157,7 +157,7 @@
+                 /* Sampo-Add: end */
+         }
+         if (end_of_tlvs - tlvs != 0)
+-                printf("mpcd: lecs.c: get_reply: ignoring %d bytes of trailing TLV carbage\n",
++                printf("mpcd: lecs.c: get_reply: ignoring %td bytes of trailing TLV carbage\n",
+                        end_of_tlvs - tlvs);
+         return 1;
+ }
+--- a/src/switch/swc.c
++++ b/src/switch/swc.c
+@@ -28,7 +28,7 @@
+ 	exit(1);
+     }
+     if (size != sizeof(*msg)) {
+-	fprintf(stderr,"bad write: %d != %d\n",size,sizeof(*msg));
++	fprintf(stderr,"bad write: %d != %zu\n",size,sizeof(*msg));
+ 	exit(1);
+     }
+     size = read(s,msg,sizeof(*msg));
+@@ -37,7 +37,7 @@
+ 	exit(1);
+     }
+     if (size != sizeof(*msg)) {
+-	fprintf(stderr,"bad read: %d != %d\n",size,sizeof(*msg));
++	fprintf(stderr,"bad read: %d != %zu\n",size,sizeof(*msg));
+ 	exit(1);
+     }
+ }
+--- a/src/test/isp.c
++++ b/src/test/isp.c
+@@ -37,7 +37,7 @@
+     wrote = write(sock,msg,sizeof(*msg));
+     if (wrote == sizeof(*msg)) return;
+     if (wrote < 0) perror("write");
+-    else fprintf(stderr,"bad write: %d != %d\n",wrote,sizeof(*msg));
++    else fprintf(stderr,"bad write: %d != %zu\n",wrote,sizeof(*msg));
+     exit(1);
+ }
+ 
+@@ -49,7 +49,7 @@
+     got = read(sock,msg,sizeof(*msg));
+     if (got == sizeof(*msg)) return;
+     if (got < 0) perror("read");
+-    else fprintf(stderr,"bad read: %d != %d\n",got,sizeof(*msg));
++    else fprintf(stderr,"bad read: %d != %zu\n",got,sizeof(*msg));
+     exit(1);
+ }
+ 
+--- a/src/test/ttcp.c
++++ b/src/test/ttcp.c
+@@ -369,7 +369,7 @@
+ 	err("malloc");
+     
+     if (bufalign != 0)
+-	buf +=(bufalign - ((int)buf % bufalign) + bufoffset) % bufalign;
++	buf +=(bufalign - ((uintptr_t)buf % bufalign) + bufoffset) % bufalign;
+ 
+     if (trans) {
+ 	fprintf(stdout,
+--- a/src/test/window.c
++++ b/src/test/window.c
+@@ -180,7 +180,7 @@
+        /* Get a reply */
+        size = read(s2, buffer2, REPLY_SIZE);
+        if (size != REPLY_SIZE) {
+-	 fprintf(stderr,"Received reply of length %d, should be %d.\n",
++	 fprintf(stderr,"Received reply of length %zd, should be %d.\n",
+ 		 size,REPLY_SIZE);
+        }
+ #endif
+@@ -264,7 +264,7 @@
+ 	 }
+ 
+        } else {
+-	 fprintf(stderr,"Received message of length %d, should be %d.\n",
++	 fprintf(stderr,"Received message of length %zd, should be %d.\n",
+ 		 size,PINGPONG_SIZE);
+        }
+      }

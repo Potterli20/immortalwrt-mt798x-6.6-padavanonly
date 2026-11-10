@@ -1,0 +1,160 @@
+Subject: [PATCH] ANSI prototypes, flex %option, and two layout fixes
+
+Split out of the same warning sweep because these are different concerns from
+the const-correctness work in 706.
+
+* 11 K&R definitions converted to ANSI prototypes: ttcp.c's pattern, outfmt,
+  getrusage, read_timer, prusage, psecs, Nread, Nwrite and mread (those are in
+  706, which owns ttcp.c), plus ilmid/wait.c's AsnOctsCopy and ilmid/ilmid.c's
+  compare_attachment_point here. Parameter types are copied verbatim from the
+  old-style declaration run, so the compiled code is unchanged; both
+  -Wold-style-definition and -Wstrict-prototypes go away.
+
+* ilmid/wait.c reset_remsys(): two statements had lost their newline, so
+  `if (x) free(x);        if (y) free(y);` and
+  `if (x) free(x);        memset(...)` read as if the trailing statement were
+  guarded by the preceding if. It is not, and it must not be - the memset has to
+  run on every call. One statement per line now; behaviour unchanged and
+  -Wmisleading-indentation is gone.
+
+* src/mpoad/io.c: include <poll.h> rather than <sys/poll.h>. musl answers the old
+  form with `#warning redirecting incorrect #include <sys/poll.h> to <poll.h>`,
+  and the redirect target is exactly what we were already getting.
+
+* The four flex scanners (qgen/ql_l.l, test/ispl_l.l, sigd/cfg_l.l,
+  switch/cfg_l.l) get `%option nounput noinput`. Nothing in this package calls
+  yyunput() or input(), so suppressing their emission removes 8
+  -Wunused-function warnings.
+
+  Only the .l sources are patched, deliberately. The generated .c files ship in
+  the tarball but are rebuilt during the package build - automake's .l.c suffix
+  rule runs whenever the .l is newer, and applying this very patch is what makes
+  it newer. They are also already machine-dependent in practice: the shipped
+  src/qgen/ql_l.c is 1894 lines in the tarball but comes out 1907 lines on this
+  build host, so a diff against any one build's copy would be wrong on another's.
+
+* src/sigd/cfg_y.y: hex2num() is a static helper in the yacc prologue with no
+  caller anywhere in the tree. Same reasoning as above about not touching the
+  generated cfg_y.c.
+--- a/src/ilmid/wait.c
++++ b/src/ilmid/wait.c
+@@ -49,9 +49,11 @@
+ 
+ static void reset_remsys( void ){
+ 	if( remsys->sysDescr.octs != NULL ) free( remsys->sysDescr.octs );
+-	if( remsys->sysObjectID.octs != NULL ) free( remsys->sysObjectID.octs );        if( remsys->sysContact.octs != NULL ) free( remsys->sysContact.octs );
++	if( remsys->sysObjectID.octs != NULL ) free( remsys->sysObjectID.octs );
++	if( remsys->sysContact.octs != NULL ) free( remsys->sysContact.octs );
+ 	if( remsys->sysName.octs != NULL ) free( remsys->sysName.octs );
+-	if( remsys->sysLocation.octs != NULL ) free( remsys->sysLocation.octs );        memset( remsys, 0, sizeof( SysGroup ));
++	if( remsys->sysLocation.octs != NULL ) free( remsys->sysLocation.octs );
++	memset( remsys, 0, sizeof( SysGroup ));
+ }
+ 
+ void wait_for_prefix( int fd, int itf, Msgs *msgs ){
+@@ -60,9 +62,7 @@
+ 		( ilmi_errno != ESETPREFIX ));
+ }
+ 
+-static void AsnOctsCopy( dest, src )
+-AsnOcts *dest;
+-AsnOcts *src;
++static void AsnOctsCopy( AsnOcts *dest, AsnOcts *src )
+ {
+ 	if( src->octetLen > 0 ){
+ 		dest->octs = (char *)malloc( src->octetLen + 1 );
+--- a/src/ilmid/ilmid.c
++++ b/src/ilmid/ilmid.c
+@@ -317,9 +317,9 @@
+ }
+ 
+ /* section 8.3.2 */
+-int compare_attachment_point( a, b )
+-AttPoint *a;	/* current a'point */
+-AttPoint *b;	/* newly aquired a'point info */
++int compare_attachment_point(
++	AttPoint *a,	/* current a'point */
++	AttPoint *b)	/* newly aquired a'point info */
+ {
+ 	if(( a == NULL ) || ( b == NULL )) return -1;
+ 	if( a->atmfPortMyIfIdentifier != b->atmfPortMyIfIdentifier )
+--- a/src/mpoad/io.c
++++ b/src/mpoad/io.c
+@@ -10,7 +10,7 @@
+ #include <errno.h>
+ #include <sys/ioctl.h>
+ #include <sys/param.h> /* for OPEN_MAX   */
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <atm.h>
+ #include <linux/types.h>
+ #include <linux/atmioc.h>
+--- a/src/sigd/cfg_y.y
++++ b/src/sigd/cfg_y.y
+@@ -29,14 +29,6 @@
+ void yywarn(const char *s);
+ int yylex(void);
+ 
+-static int hex2num(char digit)
+-{
+-    if (isdigit(digit)) return digit-'0';
+-    if (islower(digit)) return toupper(digit)-'A'+10;
+-    return digit-'A'+10;
+-}
+-
+-
+ static void put_address(char *address)
+ {
+     char *mask;
+--- a/src/qgen/ql_l.l
++++ b/src/qgen/ql_l.l
+@@ -44,6 +44,10 @@
+ }
+ 
+ %}
++/* yyunput() and input() are never called here; asking flex not to emit them
++   removes two -Wunused-function warnings per generated scanner. */
++%option nounput noinput
++
+ 
+ %%
+ 
+--- a/src/test/ispl_l.l
++++ b/src/test/ispl_l.l
+@@ -26,6 +26,10 @@
+ static int lineno = 1;
+ 
+ %}
++/* yyunput() and input() are never called here; asking flex not to emit them
++   removes two -Wunused-function warnings per generated scanner. */
++%option nounput noinput
++
+ 
+ tail	([^a-zA-Z0-9]|$|[ \t\n]*=.*)
+ 
+--- a/src/sigd/cfg_l.l
++++ b/src/sigd/cfg_l.l
+@@ -29,6 +29,10 @@
+ void yywarn(const char *s);
+ 
+ %}
++/* yyunput() and input() are never called here; asking flex not to emit them
++   removes two -Wunused-function warnings per generated scanner. */
++%option nounput noinput
++
+ 
+ %s N
+ %s P
+--- a/src/switch/cfg_l.l
++++ b/src/switch/cfg_l.l
+@@ -23,6 +23,10 @@
+ void yyerror(const char *s);
+ 
+ %}
++/* yyunput() and input() are never called here; asking flex not to emit them
++   removes two -Wunused-function warnings per generated scanner. */
++%option nounput noinput
++
+ 
+ %s N
+ %s P

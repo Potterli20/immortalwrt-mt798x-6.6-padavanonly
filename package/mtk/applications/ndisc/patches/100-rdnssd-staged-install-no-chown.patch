@@ -1,0 +1,48 @@
+Subject: [PATCH] rdnssd: do not chown the run dir during a staged install
+
+install-data-hook unconditionally runs
+
+	-chown -- nobody $(DESTDIR)$(myrundir)
+
+OpenWrt builds as an unprivileged user and installs into a DESTDIR staging /
+ipkg root, so this fails with EPERM on every build:
+
+  chown: changing ownership of '.../ipkg-install/var/run/rdnssd': Operation not permitted
+  make[7]: [Makefile:609: install-data-hook] Error 1 (ignored)
+
+The leading `-` already tells make to ignore the failure, but the diagnostic
+is still printed. Ownership inside a staging root is meaningless anyway: the
+image builder sets it from the package metadata, and OpenWrt's rdnssd package
+only ships /usr/sbin/rdnssd, not the run directory.
+
+Guard the chown so it only runs for a real (non-DESTDIR) install performed by
+root, which preserves upstream's native `make install` behaviour. The package
+has no PKG_FIXUP, so the tarball's generated Makefile.in is what configure
+uses; patch it alongside Makefile.am to keep the two consistent.
+
+--- a/rdnssd/Makefile.am
++++ b/rdnssd/Makefile.am
+@@ -44,7 +44,9 @@
+ 
+ install-data-hook:
+ 	$(install_sh) -d -- $(DESTDIR)$(myrundir)
+-	-chown -- nobody $(DESTDIR)$(myrundir)
++	@if [ -z "$(DESTDIR)" ] && [ "$$(id -u)" = "0" ]; then \
++		chown -- nobody "$(DESTDIR)$(myrundir)" || true; \
++	fi
+ 
+ uninstall-hook:
+ 	-rmdir $(DESTDIR)$(myrundir)
+--- a/rdnssd/Makefile.in
++++ b/rdnssd/Makefile.in
+@@ -606,7 +606,9 @@
+ 
+ install-data-hook:
+ 	$(install_sh) -d -- $(DESTDIR)$(myrundir)
+-	-chown -- nobody $(DESTDIR)$(myrundir)
++	@if [ -z "$(DESTDIR)" ] && [ "$$(id -u)" = "0" ]; then \
++		chown -- nobody "$(DESTDIR)$(myrundir)" || true; \
++	fi
+ 
+ uninstall-hook:
+ 	-rmdir $(DESTDIR)$(myrundir)

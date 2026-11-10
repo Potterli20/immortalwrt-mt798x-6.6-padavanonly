@@ -5,7 +5,8 @@
 - 当前分支 `openwrt-25.12-6.12`，基于 <https://github.com/chasey-dev/immortalwrt-mt798x-rebase> 的 `25.12` 分支（ImmortalWrt 25.12 + MTK OpenWrt feeds）。
 - 旧树保留在分支 `openwrt-24.10-6.6`，工作树 `/home/potter-lgy/wt-2410`，仅作对照与回退，不要删除或直接在上面开发。
 - 内核 6.12.112（`include/kernel-6.12` / `target/linux/mediatek/patches-6.12`），U-Boot 2025.10（`package/boot/uboot-mediatek`）。
-- 本仓库所有自有资产（自定义包、profile/dts、补丁、种子、feed 补丁、板级适配）均已迁到 25.12；目录名里的 `6.6` 是历史名称，不代表内核版本。
+- 本仓库自有资产（自定义包、profile/dts、补丁、种子、feed 补丁、板级适配）基本都已迁到 25.12；目录名里的 `6.6` 是历史名称，不代表内核版本。
+  - 迁移核对不能只比"包目录在不在"，要比**包目录里的 `Package/*` 定义**。25.12 的 `package/mtk/applications/mtwifi-cfg/Makefile` 是上游 MTK 版（`PKG_RELEASE:=1`，只有 `Package/mtwifi-cfg`），本仓库在 24.10 上给它加的两个提交——`cf57087f7d mtwifi-cfg: fix wapp installation`（把 wapp 塞进 mtwifi-cfg）和 `270c4c824d mtwifi-cfg: separate mtwifi-wapp from mtwifi-cfg`（拆成 `Package/mtwifi-wapp` 子包）——随基座替换一起丢了，`files/wapp/` 也不在 25.12 树里。现在以独立包 `package/mtk/applications/mtwifi-wapp` 迁回（见"无线栈"节）。
 
 ## 无线栈（mt_wifi 变体）
 
@@ -14,13 +15,23 @@
   - `mtwifi-cfg-ucode` 有 `CONFLICTS:=mtwifi-cfg`；
   - `iwinfo-ucode` 有 `DEPENDS:=+ucode-mod-iwinfo @!PACKAGE_iwinfo`。
 - 因此种子 defconfig 必须选 `CONFIG_PACKAGE_mtwifi-cfg-ucode=y` + `CONFIG_PACKAGE_iwinfo-ucode=y` + `CONFIG_PACKAGE_luci-app-mtwifi-cfg=y`，**不能**再选 24.10 的 `CONFIG_PACKAGE_mtwifi-cfg=y`，否则 luci app 的依赖 `depends on !PACKAGE_iwinfo` 不成立，`luci-app-mtwifi-cfg` 会被静默丢弃。
+- `package/mtk/applications/mtwifi-wapp`：MAP/1905 agent 栈（`wapp` / `wappctrl` / `bs20` / `setbssid` / `steeringsta` / `/sbin/startwapp.sh` + `/etc/hotplug.d/iface/100-startwapp` + `/etc/map/*`），是从 24.10 的 `mtwifi-cfg` 里拆出来的独立包，**默认不选**（24.10 的 13 份种子也从没选过它，纯 opt-in）。两个子包：
+  - `mtwifi-wapp` 的 `DEPENDS:=+libkvcutil +mtwifi-wapp-openssl11`。依据是 `readelf -d`：`wapp` 和 `wappctrl` 带 `NEEDED libkvcutil.so.1 / libssl.so.1.1 / libcrypto.so.1.1`，`bs20` 只要 `libgcc_s.so.1 / libc.so`，`setbssid` / `steeringsta` / `mapd_cfg` 是静态的。`libkvcutil` 由 `package/mtk/applications/datconf` 提供（种子里已 `=y`）。
+  - `mtwifi-wapp-openssl11` 单独装 `libssl.so.1.1` / `libcrypto.so.1.1`。这些是预编译二进制、无源码可重编，而本树 OpenSSL 3.5.9 的 SONAME 是 `.so.3`，满足不了；把 EOL 密码学库隔离成独立包，装了才进镜像，而不是像 24.10 那样作为 `mtwifi-cfg` 的副作用被夹带进来。
+  - 24.10 的 `files/wapp/` 顶层还有一份同样命名的 `.so` 对（`libs/` 里另有一对，安装代码只用 `libs/`），迁移时丢掉重复的那份，只保留 `files/libs/`。
+- ucode 的 DAT 映射是表驱动的：`dat-defs.json` 的 `CHIP_CFGS` 被 `config.uc`（同步到兄弟 chip）和 `converter.uc`（`dat[dat_key] = conf[uci_key] || def_val`，仅 `dbdc_main`）通用遍历，`IWPRIV_AP_CFGS` 被 `driver.uc:apply_runtime_hooks` 通用遍历——所以补键只改 JSON，不用改 `.uc`。本轮补的键：
+  - `CHIP_CFGS` 加 `bandsteering`→`BandSteering`(0)、`mbo`→`MboSupport`(1)、`map`→`MapEnable`(0)，与 24.10 lua `mtwifi_defs.chip_cfgs` 逐字一致；`wireless.device.json` 同步加 `bandsteering`/`mbo`/`map`（均 boolean，驱动里 `BOOLEAN BandSteering`）。
+  - `wireless.device.json` 另有 `wapp`，**故意不进 `CHIP_CFGS`**——它只被 `/sbin/startwapp.sh` 读，24.10 的 lua defs 里也没有它。
+  - 判据（三条都要满足才算无行为变化）：驱动源码 `dl/mt79xx_20250408-705eb4.tar.xz` 里 `BandSteering`/`MboSupport`/`MapEnable` 分别命中 17/2/13 个文件；`wifi-profile` 的 24 份 `.dat` 中，这五个键（含既有的 `WHNAT`/`BeaconPeriod`）出现在**完全相同的 10 份** `*.dbdc.b*.dat` 里，即 CHIP_CFGS 本来就只作用于这些 chip 档案；且 shipped 值 `BandSteering=0`/`MapEnable=0`/`MboSupport=1` 与新写的默认值逐个相等，uci 未设时转换对这三键字节中性。
+  - 已知**未补**：`steeringthresold`（24.10 放在 lua 的 `iwpriv_ap_cfgs`，不是 DAT 键）。驱动源码里 `Steeringthresold` 命中 **0** 个文件，写进 `IWPRIV_AP_CFGS` 只会在每次 AP up 时发一条被拒的 `iwpriv`，所以保留缺失。`startwapp.sh` 里 `[ "$steeringthresold" -lt 0 ]` 那两个分支因此也是死逻辑（阈值为负本身无意义）。
+  - `startwapp.sh` 的 ra0/rax0 判定还读 `wireless.MT7981_1_1.ieee80211r` 与 `wireless.default_*.steeringbssid`，这两个 ucode schema 里都没有；不影响 uci 手工设置（schema 只管 DAT 写入与转换），但 luci 侧设置不了。
 
 ## 目录/资产布局
 
 - `defconfig/`：13 份种子（mt7975/7981/7986 各档 + nowifi + dae 变体）。种子是 `./scripts/config/conf --savedefconfig` 的精简结果，设备选择写成 `CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_<dev>=y`，`make defconfig` 会补全默认值。
 - `target/linux/mediatek/dts/`：69 个 24.10 独有 dts/dtsi 已迁入，include 改为 25.12 的 `mt7981b.dtsi`，`&{/chosen}` 写法，基座 dts 补 `spi_nand:` / `partitions:` / `ubi:` 标签；叶子 dts 必须逐个过 `cpp` + `dtc`。
 - `target/linux/mediatek/image/filogic.mk` / `filogic-ext.mk`：254 个 `define Device/`，含全部自有设备。
-- `package/`：`brutal`、`fancontrol`、`luci-app-fancontrol`、`luci-lib-chartjs-4`，以及 `package/mtk/applications/` 下 8 个自有应用（5g-modem、Airpi-gpio-fan、luci-app-Airpifanctrl、luci-app-mwan3helper-chinaroute、luci-app-openfi、luci-app-wrtbwmon、ndisc、wrtbwmon）。
+- `package/`：`brutal`、`fancontrol`、`luci-app-fancontrol`、`luci-lib-chartjs-4`，以及 `package/mtk/applications/` 下 9 个自有应用（5g-modem、Airpi-gpio-fan、luci-app-Airpifanctrl、luci-app-mwan3helper-chinaroute、luci-app-openfi、luci-app-wrtbwmon、mtwifi-wapp、ndisc、wrtbwmon）。
 - `package/boot/uboot-mediatek/patches/`：507~510 为 imou_lc-hx3001、tplink_wma301、zbtlink_zbt-z8103ax-c、ruijie_ew-6000gx-pro 四个自建 U-Boot 目标；503 是 ruijie rg-x60-new-ubi。
 - `feeds.conf.default` + `scripts/apply-feed-patches.sh` + `feeds-patches/`：feed 补丁脚本是幂等的，`./scripts/feeds update -a` / `install -a` 之后要重跑。
 
@@ -82,7 +93,9 @@ make -j6 world V=s > .buildlogs/full.log 2>&1; echo "BUILD_EXIT=$?" >> .buildlog
 - ~~`wavlink_wl-wn586x3b` 每次构建报 4 条 `cp: cannot stat '...-initramfs-kernel.bin'` + `Makefile:48 Error 1 (ignored)`~~：已修复。它是全树唯一 `KERNEL_INITRAMFS_SUFFIX := .itb` 却在 `IMAGES` 里列 `initramfs-kernel.bin` 的设备——它的 initramfs 产物是 `-initramfs.itb`（本来就已正确产出并进 `bin/targets/`），`-squashfs-initramfs-kernel.bin` 这条链根本不会被生成。已从 `target/linux/mediatek/image/filogic.mk` 的 `IMAGES` 去掉该条目；兄弟设备 `wl-wn536ax6-a` / `wl-wn551x3` 都用默认 `IMAGES`。
 - **cudy RE3000 v1 / cudy WR3000 v1 / yuncore AX835 / wavlink WL-WN573HX3 已从 `defconfig/mt7981-ax3000.config` 去掉**（种子 96 → 92 设备）。这四个是 16 MB NOR 机型，`IMAGE_SIZE` 与 dts 分区一致（`0xf10000`=15424k、`0xe00000`=14336k，均已核对，不是配置写错），而 mt_wifi 变体的 `mt_wifi.ko` 未 strip 就有 12,109,112 字节、加约 4.7 MB 内核后镜像达 23,592,964 字节，`check-size` 必然失败、镜像不产出并连带 `sha256sum: No such file`。这是本变体的物理上限，不是可修的缺陷；要覆盖这些机型得用不含 mt_wifi 的精简配置。
 - `linux-atm` 的告警已按逐条改源码方式**基本清零**：包内串行 `make -j1 .../compile V=s` 从 343 条 `warning:` 降到 **1** 条。手段全部是改代码，没有任何 `-Wno-*`：`Makefile` 把内核 uapi 头的 `-I` 改 `-isystem`（151 条 `_IOC` 系列 `redefined` → 0，已用真交叉编译器验证头文件解析序列与预处理 token 流逐字节相同、目标文件同尺寸）；`patches/702~709` 修 6 处真缺陷、12 处 `%d` 配 64 位、11 处 K&R 转 ANSI、`hediag.c` 加 `const`（一处声明消 83 条）、45 处 `AsnOcts` 字面量加 `(char *)`、删 71 个 snacc 样板死局部、4 个 flex 词法器加 `%option nounput noinput`、`atmd.h` 四个链表宏重排（证明 348 token 一致）、34 条 `pointer-sign` 全部改声明/原型、autotools 现代化（`configure.in`→`configure.ac` 等，20 条 → 0）、`src/extra/Makefile.am` 的双目标模式规则拆成 3 条显式规则（3 条 peer-target 警告 → 0，固件产物逐字节相同）。**只剩 1 条**：`atmf_uni.c:245` 的 `tmp` set-but-not-used——它是 `Q_REMOVE(r,i)` 用来承接表头赋值的左值，删不掉；而该赋值结果被丢弃是否算真缺陷需要另行判断，不在无测试的 ILMI 路径上盲改。
+- `util-linux` 的 `warning:` 已清零：**3 → 0**（`make package/utils/util-linux/{clean,compile} V=s`，gcc 15.2.0）。三条全是 `-Wmaybe-uninitialized` 误报——`lib/mbsedit.c:228 ncells`、`libblkid/src/superblocks/btrfs.c:208 wp`、`libfdisk/src/dos.c:779 id`，逐条追到"读取点只在被赋值的那条返回路径之后可达"（推导写在补丁头里），按用户认可的"改声明"方式在声明处初始化，`patches/100-init-out-params.patch`，`PKG_RELEASE` 1→2。没用任何 `-Wno-*`。
 - 仍保留的构建噪声（均已定位到根因，非压制）：openssh 的 `Makefile:430: check-config Error 126 (ignored)`（上游 `check-config` 会在宿主机执行刚交叉编译出的 `sshd -t`，必然 Exec format error）；`autoreconf`/`aclocal` 偶发的 `#include_next is a GCC extension`（来自 `staging_dir/host/include/byteswap.h`，属 binutils 自身构建）；openssh 的 `chacha_private.h:53/54` 2 条 initializer-string 截断 NUL 提示；`Makefile:769: ignoring prerequisites on suffix rule definition` 1 条。
+- 判"某个包还剩多少告警"必须**先对该包 `{clean,compile}` 单独重编再看数**，不能拿 `make world` 的日志汇总，也不能按日志里"最近的一个包目录/Entering directory"给告警归账：`-j6` 下多包输出交错，同一批行用两种启发式能归到完全不同的包上。本轮实测：`full-warnings-sweep-20261110-232659.log` 共 121 条 `warning:`，其中 **120 条的位置在 `staging_dir/toolchain-aarch64_cortex-a53_gcc-14.3.0_musl/include/...` 这些 musl 头文件里**（102 条 `-Wredundant-decls` + 18 条 `-Wparentheses`，如 `unistd.h:125 ctermid`、`grp.h:45 setgroups`、`endian.h:26/31`、`assert.h:19`），只有 util-linux 干净重编后的 3 条是自己的源码告警（已修，见上一条）。根因是 gcc 14.3.0→15.2.0 换工具链后旧目录仍在、而 **322 个 build_dir 里有 111 个**的内容仍引用 `gcc-14.3.0`（判据：`cd build_dir/target-aarch64_cortex-a53_musl && for d in */; do grep -rq gcc-14.3.0 "$d" && echo "$d"; done | wc -l`），`make world` 拿它们重编就报旧头文件的告警——属"构建状态不新鲜"，不是代码缺陷；要拿到可信的全树告警数得清掉这些 build_dir（或 `make dirclean`）再全量重编。另：`stamp/.configured_*` 是**以 PKG_CONFIG_DEPENDS 哈希命名的 0 字节文件**，里面没有内容可 grep——用它判断"配到哪个工具链"是空测试，要看 build_dir 里实际生成的文件（如 `u-boot-mt7981_cmcc_a10` 有 354 个文件引用 `gcc-14.3.0`，而同包 `u-boot-2025.10` 已是 89 个文件引用 `gcc-15.2.0`）。
 - 判"构建是否真的干净"不能只看 `BUILD_EXIT=0`：本轮曾因列号换算漏了制表符按 8 列展开、且把行尾引号误判成字面量起点，把 `(char *) ` 插进了 `"ILMI"` 内部变成 `"ILMI(char *) "`，而编译照样成功。凡涉及字节级改动，改完要逐条比对字符串字面量集合是否变化。
 - `make defconfig` 可能仍报 6 条 feed 递归依赖（`dnsdist`、`dnsdist-full`、`knot-resolver`、`snort3`、`openappid`、`luci-app-weechat`，由 `luajit2` 提供虚拟 `luajit`）：上游 feed 问题，不影响配置生成与构建。
 - `.gitignore` 会忽略 `/.config`、`/.config.old`；构建日志请放 `.buildlogs/`（本仓库约定，不入库）。历史上 `/*.patch` 的忽略规则只作用于根目录，`target/linux/**/patches-*` 下新增补丁正常入库。

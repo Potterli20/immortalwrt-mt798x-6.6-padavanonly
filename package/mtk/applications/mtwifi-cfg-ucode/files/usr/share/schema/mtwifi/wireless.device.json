@@ -47,6 +47,22 @@
             "type": "boolean",
             "description": "Enable WHNAT (Hardware NAT for WiFi)"
         },
+        "bandsteering": {
+            "type": "boolean",
+            "description": "Enable band steering (BandSteering); also a wapp start trigger"
+        },
+        "mbo": {
+            "type": "boolean",
+            "description": "Enable MBO (MBSS Optimized Band Steering)"
+        },
+        "map": {
+            "type": "boolean",
+            "description": "Enable MAP (Multi-AP)"
+        },
+        "wapp": {
+            "type": "boolean",
+            "description": "Start the MAP/1905 agent stack (read by /sbin/startwapp.sh, not written to the DAT)"
+        },
         "country": {
             "type": "string",
             "description": "Country code (e.g., CN, US)"

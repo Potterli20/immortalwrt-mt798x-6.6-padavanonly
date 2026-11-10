@@ -63,7 +63,10 @@
 	},
 	"CHIP_CFGS": {
 		"beacon_int": [ "BeaconPeriod", "100" ],
-        "whnat": [ "WHNAT", "1" ]
+        "whnat": [ "WHNAT", "1" ],
+        "bandsteering": [ "BandSteering", "0" ],
+        "mbo": [ "MboSupport", "1" ],
+        "map": [ "MapEnable", "0" ]
 	},
 	"REINSTALL_CFGS": [
 		"BssidNum",

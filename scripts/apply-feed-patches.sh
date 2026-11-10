@@ -53,6 +53,16 @@ if [ -f "$lw" ] && grep -q -- '-DISABLE_WERROR=ON' "$lw"; then
 	echo "修正 $lw 的 DISABLE_WERROR"
 fi
 
+# openssh 10.6 在 OpenSSL 3.0 下还在用一批被标记 deprecated 的旧 API
+# （umac.c 的 HMAC_*、ssh-pkcs11/ecdsa/rsa 的 EC_KEY/RSA_* 等），编译期刷
+# "Since OpenSSL 3.0 [-Wdeprecated-declarations]"。代码是上游的，等上游改用
+# EVP 接口；这里通过 configure 的 cflags-after 把告警压掉。
+ssh=feeds/packages/net/openssh/Makefile
+if [ -f "$ssh" ] && grep -qF -- '--with-cflags-after=-fzero-call-used-regs=skip' "$ssh"; then
+	sed -i 's|--with-cflags-after=-fzero-call-used-regs=skip|--with-cflags-after="-fzero-call-used-regs=skip -Wno-deprecated-declarations"|' "$ssh"
+	echo "给 $ssh 追加 -Wno-deprecated-declarations"
+fi
+
 # crypto-eip 的 adapter_addrpair.h 头文件保护宏拼错（ADDDRPAIR 多一个 D），
 # gcc 15 起 -Wall 含 -Wheader-guard，配合包内写死的 -Wall -Werror，
 # adapter_pcl_generic.c 会直接编译失败（gcc 14 及以前不报）。

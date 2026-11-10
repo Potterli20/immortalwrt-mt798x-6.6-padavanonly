@@ -43,10 +43,21 @@ define KernelPackage/warp/config
 	source "$(SOURCE)/config.in"
 endef
 
+# 闭源驱动代码风格告警：missing-prototypes / unused-label / unused-function /
+# old-style-declaration / discarded-qualifiers，不影响功能，统一压掉
+WARP_KCFLAGS := \
+	$(call iremap,$(BUILD_DIR),$(notdir $(BUILD_DIR))) \
+	$(filter-out -fno-plt,$(call qstrip,$(CONFIG_EXTRA_OPTIMIZATION))) \
+	$(call qstrip,$(CONFIG_KERNEL_CFLAGS)) \
+	-Wno-missing-prototypes -Wno-missing-declarations \
+	-Wno-unused-variable -Wno-unused-function -Wno-unused-label \
+	-Wno-discarded-qualifiers -Wno-old-style-declaration
+
 define Build/Compile
 	$(MAKE) -C "$(LINUX_DIR)" V=1 \
 		$(KERNEL_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)" \
+		KCFLAGS="$(WARP_KCFLAGS)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)=$(CONFIG_$(c)))) \
 		modules
 endef

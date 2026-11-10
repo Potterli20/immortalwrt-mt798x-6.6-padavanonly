@@ -74,6 +74,7 @@ make -j6 world V=s > .buildlogs/full.log 2>&1; echo "BUILD_EXIT=$?" >> .buildlog
 - ~~构建日志里 `install-bin-trusted-firmware-a-*` 的 `Error 1 (ignored)`~~：已修复（`include/package-bin.mk` 的 `-rmdir` 改 `rmdir ... || true`）。另两处噪声也一并修了：`mt_wifi` 的 `Module.symvers: No such file`（`include/kernel.mk` 的 `collect_module_symvers` 加缺文件守卫 + `mt_wifi` 包设 `PKG_EXTMOD_SUBDIRS:=mt_wifi_ap`）、`./tools/printinitialenv: Exec format error`（`uboot-tools` 新增 `015-envtools-skip-initial-env.patch`，envtools 不再依赖交叉编译的 `u-boot-initial-env`）。
 - 日志里多数 `error` 匹配其实是 `-Winline` 编译告警或 DTC 的 `Failed prerequisite` 警告，判失败要匹配 `make.*\*\*\*` / `Error [12]` / `undefined reference`。
 - `mt_wifi` 的 984 条闭源代码风格告警已在 `package/mtk/drivers/mt_wifi/Makefile` 用 `MT_WIFI_KCFLAGS` 统一压掉（含 fortify 的 20 处柔性尾数组 `-Wattribute-warning`）；`patches-7673/042-use-kernel-MIN-macro.patch` 顺带删掉 3 处重复的 `MIN` 定义（`rrm*.c` 那份写成了取最大值，已改回内核 `MIN`）。完整重编后 `warning:` 计数为 0。
+- `warp` 同属闭源驱动，45 条风格告警（`missing-prototypes` / `unused-label` / `unused-function` / `old-style-declaration` / `discarded-qualifiers`）在 `package/mtk/drivers/warp/Makefile` 用 `WARP_KCFLAGS` 同样压掉，`mtk_warp.ko` 重编后 `warning:` 计数 0。
 - `make defconfig` 可能仍报 6 条 feed 递归依赖（`dnsdist`、`dnsdist-full`、`knot-resolver`、`snort3`、`openappid`、`luci-app-weechat`，由 `luajit2` 提供虚拟 `luajit`）：上游 feed 问题，不影响配置生成与构建。
 - `.gitignore` 会忽略 `/.config`、`/.config.old`；构建日志请放 `.buildlogs/`（本仓库约定，不入库）。历史上 `/*.patch` 的忽略规则只作用于根目录，`target/linux/**/patches-*` 下新增补丁正常入库。
 - `bin/targets/mediatek/filogic/packages/` 可能残留 24.10 时代的 `*_6.6.*.ipk`（旧构建未清 `bin/`），不影响 apk 产物；要干净目录需清空 `bin/` 重打包。

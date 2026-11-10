@@ -1,0 +1,28 @@
+Subject: [PATCH] mtk: mt_wifi: dump the MacTable once when read without argument
+
+Backport of MedyMa/immortalwrt-mt798x-6.6 0f3af09 ("mt_hwifi: log the
+MacTable dump once instead of on every poll").
+
+The proc/driver/mac_table read with an empty argument dumps every entry
+of every BSS on each poll, so a userspace poller floods the log. Return
+the cached result after the first dump; explicit arguments (e.g. "sta")
+still walk the table.
+
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -11609,7 +11609,15 @@
+ 	CHAR *pch = NULL;
+ 	UINT32 check_aid = 0;
+ 	UINT32 check_bssidx = 0;
++	static BOOLEAN mac_table_dumped = FALSE;
++	BOOLEAN one_shot;
++
++	one_shot = (arg == NULL || strlen(arg) == 0);
++	if (one_shot && mac_table_dumped)
++		return TRUE;
++	if (one_shot)
++		mac_table_dumped = TRUE;
+ 
+ 	MTWF_PRINT("%s(): arg=%s\n", __func__, (arg == NULL ? "" : arg));
+ 
+ 	if (arg && strlen(arg)) {

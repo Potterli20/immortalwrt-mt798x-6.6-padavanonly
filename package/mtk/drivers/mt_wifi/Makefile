@@ -316,9 +316,27 @@ define KernelPackage/mt_wifi/config
 	source "$(SOURCE)/config.in"
 endef
 
+# 闭源驱动代码风格告警（missing-prototypes / empty-body / vla 等），不影响功能，统一压掉
+# -Wno-attribute-warning 对应 20 处 fortify 报的 "write beyond size of field"：
+# 全部是 UCHAR ip_addr[0] / UCHAR IEs[1] / UCHAR Octet[2] 这类柔性尾数组写法，
+# 实际缓冲区按 pPtr / MpduHeaderLen 额外分配，属于厂商惯用写法
+MT_WIFI_KCFLAGS := \
+	$(call iremap,$(BUILD_DIR),$(notdir $(BUILD_DIR))) \
+	$(filter-out -fno-plt,$(call qstrip,$(CONFIG_EXTRA_OPTIMIZATION))) \
+	$(call qstrip,$(CONFIG_KERNEL_CFLAGS)) \
+	-Wno-missing-prototypes -Wno-missing-declarations -Wno-empty-body \
+	-Wno-unused-variable \
+	-Wno-misleading-indentation -Wno-address -Wno-vla \
+	-Wno-discarded-qualifiers -Wno-unused-function -Wno-restrict \
+	-Wno-pointer-to-int-cast -Wno-cast-function-type -Wno-missing-braces \
+	-Wno-enum-int-mismatch -Wno-unused-result -Wno-unused-but-set-parameter \
+	-Wno-enum-conversion -Wno-implicit-fallthrough -Wno-format \
+	-Wno-attribute-warning
+
 define Build/Compile
 	+$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \
 		$(KERNEL_MAKE_FLAGS) \
+		KCFLAGS="$(MT_WIFI_KCFLAGS)" \
 		M="$(PKG_BUILD_DIR)/mt_wifi_ap" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_$c),CONFIG_$(c)=$(CONFIG_MTK_$(c)))) \

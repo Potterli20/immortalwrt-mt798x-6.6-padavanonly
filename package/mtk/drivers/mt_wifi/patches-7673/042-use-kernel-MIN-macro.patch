@@ -1,0 +1,42 @@
+Subject: [PATCH] mtk: mt_wifi: use kernel MIN instead of local redefinitions
+
+The driver redefines MIN() in three files while linux/minmax.h already
+provides it, which triggers "MIN redefined" warnings on every rebuild.
+Drop the local copies.
+
+In rrm.c and rrm_tlv.c the local copy also used ">" instead of "<", i.e.
+it computed the maximum. Both call sites compare an SSID prefix during
+802.11k beacon report matching, where the shorter of the two lengths is
+the correct one; the old macro compared past the requested SSID length
+and dropped matching BSS entries.
+
+--- a/mt_wifi/embedded/common/cmm_info.c
++++ b/mt_wifi/embedded/common/cmm_info.c
+@@ -36,7 +36,6 @@
+ #endif
+ 
+ #define MCAST_WCID_TO_REMOVE 0 /* Pat: TODO */
+-#define MIN(a, b)					((a) < (b) ? (a) : (b))
+ #ifndef IAP_VENDOR1_FEATURE_SUPPORT
+ INT UNII4BandSupportRegions[] = {25, 26};
+ #endif
+--- a/mt_wifi/embedded/common/rrm_tlv.c
++++ b/mt_wifi/embedded/common/rrm_tlv.c
+@@ -847,7 +847,6 @@
+ 	IN PCHAR pSsid,
+ 	IN UINT8 SsidLen)
+ {
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 	UINT loop;
+ 	HEADER_802_11 ActHdr;
+ 	PUCHAR pOutBuffer = NULL;
+--- a/mt_wifi/embedded/common/rrm.c
++++ b/mt_wifi/embedded/common/rrm.c
+@@ -2700,7 +2700,6 @@
+ 	struct wifi_dev *wdev,
+ 	PRTMP_ADAPTER pAd)
+ {
+-#define MIN(_x, _y) ((_x) > (_y) ? (_x) : (_y))
+ 
+ 	BSS_TABLE *ScanTab = NULL;
+ 	PBCN_REQ_DATA pBcnReqData = NULL;

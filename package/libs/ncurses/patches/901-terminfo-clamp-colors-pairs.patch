@@ -1,0 +1,84 @@
+Subject: [PATCH] terminfo: clamp colors/pairs to the 16-bit terminfo limits
+
+ncurses 6.4's terminfo.src declares colors#0x1000000 / pairs#0x10000 for
+the direct-color building blocks (xterm+direct, xterm+direct2,
+xterm+indirect) and the 256-color entries (fbterm, xterm+256color,
+xterm+256setaf, dvtm-256color). The terminfo numeric fields are 16-bit,
+so tic always clamps those to 0x7fff while compiling the database and
+prints one line per capability:
+
+  "terminfo.tmp", line 5406, col 25, terminal 'xterm+direct2':
+  limiting value of `colors' from 0x1000000 to 0x7fff
+
+Ten such lines appear on every ncurses build. Write the already-clamped
+values into the source so the compilation is quiet.
+
+Hunk offsets are relative to terminfo.src *after* OpenWrt's own
+100-urxvt (+166 lines), 101-kbs (+2 lines) and 900-terminfo patches, so
+they land exactly on the lines tic names: 1232, 5327, 5359, 5406, 5421,
+5443 and 8766. Generating this diff against the pristine tarball instead
+would leave the last hunk offset by 169 lines.--- a/misc/terminfo.src
++++ b/misc/terminfo.src
+@@ -1229,7 +1229,7 @@
+ # Not used here, the program recognizes escapes for italic, underline and
+ # dim, rendering those as green, cyan and gray respectively.
+ fbterm|FbTerm for Linux with framebuffer,
+-	colors#0x100, pairs#0x10000,
++	colors#0x100, pairs#0x7fff,
+ 	acsc=+\020\,\021-\030.^Y0\333`\004a\261f\370g\361h\260i
+ 	     \316j\331k\277l\332m\300n\305o~p\304q\304r\304s_t\303u
+ 	     \264v\301w\302x\263y\363z\362{\343|\330}\234~\376,
+@@ -5324,7 +5324,7 @@
+ # xterm patch #111 (1999/7/10) -TD
+ xterm+256color|original xterm 256-color feature,
+ 	ccc,
+-	colors#0x100, pairs#0x10000,
++	colors#0x100, pairs#0x7fff,
+ 	initc=\E]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*
+ 	      %{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\E\\,
+ 	oc=\E]104\007,
+@@ -5356,7 +5356,7 @@
+ # palette is hardcoded...
+ xterm+256setaf|xterm 256-color (set-only),
+ 	ccc@,
+-	colors#0x100, pairs#0x10000,
++	colors#0x100, pairs#0x7fff,
+ 	initc@, op=\E[39;49m,
+ 	setab=\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;
+ 	      5;%p1%d%;m,
+@@ -5403,7 +5403,7 @@
+ # for numeric capabilities provided in ncurses 6.1:
+ xterm+direct2|xterm with direct-color indexing (old building-block),
+ 	RGB,
+-	colors#0x1000000, pairs#0x10000, CO#8,
++	colors#0x7fff, pairs#0x7fff, CO#8,
+ 	initc@, op=\E[39;49m,
+ 	setab=\E[%?%p1%{8}%<%t4%p1%d%e48:2:%p1%{65536}%/%d:%p1%{256}
+ 	      %/%{255}%&%d:%p1%{255}%&%d%;m,
+@@ -5418,7 +5418,7 @@
+ # identifier" parameter.  This version provides for that parameter:
+ xterm+direct|xterm with direct-color indexing (building-block),
+ 	RGB,
+-	colors#0x1000000, pairs#0x10000, CO#8,
++	colors#0x7fff, pairs#0x7fff, CO#8,
+ 	initc@, op=\E[39;49m,
+ 	setab=\E[%?%p1%{8}%<%t4%p1%d%e48:2::%p1%{65536}%/%d:%p1
+ 	      %{256}%/%{255}%&%d:%p1%{255}%&%d%;m,
+@@ -5440,7 +5440,7 @@
+ # late 2017, konsole still accepts only the nonstandard semicolon delimiters.
+ xterm+indirect|xterm with direct-color indexing (old legacy building-block),
+ 	RGB,
+-	colors#0x1000000, pairs#0x10000,
++	colors#0x7fff, pairs#0x7fff,
+ 	initc@, op=\E[39;49m,
+ 	setab=\E[%?%p1%{8}%<%t4%p1%d%e48;2;%p1%{65536}%/%d;%p1%{256}
+ 	      %/%{255}%&%d;%p1%{255}%&%d%;m,
+@@ -8763,7 +8763,7 @@
+ 	use=vt220+vtedit, use=vt220+cvis, use=ecma+italics,
+ 
+ dvtm-256color|dynamic virtual terminal manager with 256 colors,
+-	colors#0x100, pairs#0x10000,
++	colors#0x100, pairs#0x7fff,
+ 	setab=\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;
+ 	      5;%p1%d%;m,
+ 	setaf=\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5

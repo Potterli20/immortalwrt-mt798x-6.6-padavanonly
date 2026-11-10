@@ -1,0 +1,64 @@
+From: OpenWrt fork local <noreply@example.invalid>
+Subject: util-linux: initialize three locals that GCC cannot prove are set
+
+Three -Wmaybe-uninitialized warnings appear when util-linux 2.41.5 is built
+with gcc. All three are flow-limitation false positives, not live bugs, and
+each is fixed by its declaration rather than by a warning flag:
+
+lib/mbsedit.c:228 'ncells'
+  mbs_edit_insert() only reads ncells after mbs_insert() returned something
+  other than (size_t)-1, and mbs_insert() (same file, line 152) assigns
+  *ncells on every path that does not return -1: "#else" sets it to 1, and
+  the HAVE_WIDECHAR path sets it from wcwidth() before falling through. The
+  single "goto out" that skips the assignment is the -1 return the caller
+  rejects.
+
+libblkid/src/superblocks/btrfs.c:208 'wp'
+  sb_log_offset() reaches "*bytenr_ret = wp" only when sb_write_pointer()
+  returned 0 or -ENOENT. sb_write_pointer() (line 97) sets *wp_ret at line
+  131 immediately before its -ENOENT return and at line 164 before its 0
+  return; its -EIO and -EUCLEAN returns are caught by the caller's
+  "if (ret != -ENOENT && ret) goto out".
+
+libfdisk/src/dos.c:779 'id'
+  dos_set_disklabel_id() reads id only after "if (rc) return -EINVAL", and
+  rc can only be non-zero before that point if fdisk_ask_string() failed -
+  in which case the "if (!rc)" block that assigns id via strtoul() is
+  skipped and the function has already returned.
+
+Initialising the three is a no-op for every reachable path and removes the
+diagnostics without hiding any class of warning.
+
+--- a/lib/mbsedit.c
++++ b/lib/mbsedit.c
+@@ -215,7 +215,7 @@
+ 
+ int mbs_edit_insert(struct mbs_editor *edit, wint_t c)
+ {
+-	size_t n, ncells;
++	size_t n, ncells = 0;
+ 
+ 	if (edit->cur_bytes + MB_CUR_MAX > edit->max_bytes)
+ 		return 1;
+--- a/libblkid/src/superblocks/btrfs.c
++++ b/libblkid/src/superblocks/btrfs.c
+@@ -175,7 +175,7 @@
+ 	struct blk_zone *zones;
+ 	int ret;
+ 	int i;
+-	uint64_t wp;
++	uint64_t wp = 0;
+ 
+ 
+ 	zone_size_sector = pr->zone_size >> SECTOR_SHIFT;
+--- a/libfdisk/src/dos.c
++++ b/libfdisk/src/dos.c
+@@ -739,7 +739,7 @@
+ static int dos_set_disklabel_id(struct fdisk_context *cxt, const char *str)
+ {
+ 	char *buf = NULL;
+-	unsigned int id, old;
++	unsigned int id = 0, old;
+ 	struct fdisk_dos_label *l;
+ 	int rc = 0;
+ 

@@ -23,6 +23,83 @@ const module_active = (mod) => {
 	return (ref && ref !== "0");
 };
 
+// Previous CPU sample, kept across rpcd calls (this plugin is persistent).
+let cpu_prev = null;
+
+// Read one /proc/stat sample: aggregate "cpu" line plus per-core "cpuN" lines.
+function read_cpu_sample() {
+	let fd = open('/proc/stat', 'r');
+	if (!fd) return null;
+
+	let sample = { total: null, cores: {} };
+	for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+		let m = match(line, /^cpu(\d*)\s+(.+)$/);
+		if (!m) continue;
+
+		let nums = [];
+		for (let p in split(m[2], /\s+/)) push(nums, int(p));
+
+		let total = 0;
+		for (let n in nums) total += n;
+		// idle = idle + iowait (fields 4 and 5)
+		let idle = (length(nums) > 4) ? nums[3] + nums[4] :
+		           (length(nums) > 3) ? nums[3] : 0;
+
+		let rec = { total: total, idle: idle };
+		if (m[1] == '') sample.total = rec;
+		else sample.cores[m[1]] = rec;
+	}
+	fd.close();
+
+	return sample.total ? sample : null;
+}
+
+// Compute usage percentages between two samples.
+function cpu_delta(prev, curr) {
+	let res = { total_usage: '0%', core_usage: {} };
+	if (!prev || !curr) return res;
+
+	if (prev.total && curr.total) {
+		let td = curr.total.total - prev.total.total;
+		if (td > 0)
+			res.total_usage = sprintf('%.1f%%', 100 * (td - (curr.total.idle - prev.total.idle)) / td);
+	}
+
+	let ids = keys(curr.cores);
+	sort(ids, (a, b) => int(a) - int(b));
+	for (let id in ids) {
+		let label = 'CPU' + id;
+		let cc = curr.cores[id];
+		let pc = prev.cores ? prev.cores[id] : null;
+		if (cc && pc) {
+			let td = cc.total - pc.total;
+			res.core_usage[label] = (td > 0) ?
+				sprintf('%.1f%%', 100 * (td - (cc.idle - pc.idle)) / td) : '0%';
+		} else {
+			res.core_usage[label] = '0%';
+		}
+	}
+	return res;
+}
+
+function get_cpu_usage() {
+	let v1 = read_cpu_sample();
+	if (!v1) return { total_usage: '0%', core_usage: {} };
+
+	// fast path: delta against the previous poll's sample
+	if (cpu_prev) {
+		let d = cpu_delta(cpu_prev, v1);
+		cpu_prev = v1;
+		return d;
+	}
+
+	// slow path (first call): two samples 200ms apart for an instant result
+	system('sleep 0.2');
+	let v2 = read_cpu_sample();
+	cpu_prev = v2 || v1;
+	return cpu_delta(v1, v2 || v1);
+}
+
 const methods = {
 	getSystemFeatures: {
 		call: function(req) {
@@ -98,27 +175,37 @@ const methods = {
 		call: function(req) {
 			let ppe_stat = {};
 			let fd = open('/sys/kernel/debug/hnat/hnat_stats', 'r');
-			if (!fd) return {};
 
-			for (let line = fd.read('line'); length(line); line = fd.read('line')) {
-				line = trim(line);
-				// Match "PPE0: k=v, k=v"
-				let m_sub = match(line, /^(.+):\s*(.+)$/);
-				if (m_sub) {
-					let prefix = m_sub[1];
-					ppe_stat[prefix] = {};
-					let pairs = split(m_sub[2], ',');
-					for (let p in pairs) {
-						let kv = split(trim(p), '=');
-						if (length(kv) == 2) ppe_stat[prefix][kv[0]] = kv[1];
+			if (fd) {
+				for (let line = fd.read('line'); length(line); line = fd.read('line')) {
+					line = trim(line);
+					// Match "PPE0: k=v, k=v"
+					let m_sub = match(line, /^(.+):\s*(.+)$/);
+					if (m_sub) {
+						let prefix = m_sub[1];
+						ppe_stat[prefix] = {};
+						let pairs = split(m_sub[2], ',');
+						for (let p in pairs) {
+							let kv = split(trim(p), '=');
+							if (length(kv) == 2) ppe_stat[prefix][kv[0]] = kv[1];
+						}
+					} else {
+						// Match "Key=Value"
+						let kv = split(line, '=');
+						if (length(kv) == 2) ppe_stat[trim(kv[0])] = trim(kv[1]);
 					}
-				} else {
-					// Match "Key=Value"
-					let kv = split(line, '=');
-					if (length(kv) == 2) ppe_stat[trim(kv[0])] = trim(kv[1]);
 				}
+				fd.close();
 			}
-			fd.close();
+
+			// Conntrack + CPU are reported even when HNAT is not active.
+			ppe_stat['Conntrack_Count'] = read_trimmed('/proc/sys/net/netfilter/nf_conntrack_count') || '0';
+			ppe_stat['Conntrack_Max'] = read_trimmed('/proc/sys/net/netfilter/nf_conntrack_max') || '65536';
+
+			let cpu = get_cpu_usage();
+			ppe_stat['CPU_USED'] = cpu.total_usage;
+			ppe_stat['CPU_CORES_USED'] = cpu.core_usage;
+
 			return ppe_stat;
 		}
 	}

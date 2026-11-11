@@ -7,6 +7,24 @@ STOP=10
 
 USE_PROCD=1
 
+hnat_set_ppenum() {
+	# $1: ppe_cnt value; empty restores the bare "mtkhnat" line.
+	# kmodloader only parses /etc/modules.d, so the module parameter goes on
+	# the mtkhnat line and takes effect on the next boot's module load.
+	local f
+
+	[ -d "/etc/modules.d" ] || return 0
+
+	for f in /etc/modules.d/*; do
+		grep -qs "^mtkhnat" "$f" || continue
+		if [ -n "$1" ]; then
+			sed -i "s/^mtkhnat.*/mtkhnat ppe_cnt=$1/" "$f"
+		else
+			sed -i "s/^mtkhnat.*/mtkhnat/" "$f"
+		fi
+	done
+}
+
 service_triggers() {
 	procd_add_reload_trigger "turboacc"
 }
@@ -27,8 +45,11 @@ start_service() {
 		rmmod "shortcut_fe_cm" 2>"/dev/null"
 	fi
 
-	if [ "$fastpath" != "mediatek_hnat" ] && lsmod | grep -q "mtkhnat"; then
-		echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
+	if [ "$fastpath" != "mediatek_hnat" ]; then
+		hnat_set_ppenum ""
+		if lsmod | grep -q "mtkhnat"; then
+			echo "0" > "/sys/kernel/debug/hnat/hook_toggle" 2>"/dev/null"
+		fi
 	fi
 
 	case "$fastpath" in
@@ -50,17 +71,53 @@ start_service() {
 		;;
 	"mediatek_hnat")
 		local hnat_path="/sys/kernel/debug/hnat"
+		local fastpath_mh_eth_hnat
+		config_get_bool "fastpath_mh_eth_hnat" "config" "fastpath_mh_eth_hnat" "1"
+
 		# only set hnat settings when directory exists
 		if [ -d "$hnat_path" ]; then
-			echo "1" > "$hnat_path/hook_toggle"
+			# hook_toggle is edge-triggered/idempotent: write the desired state.
+			echo "$fastpath_mh_eth_hnat" > "$hnat_path/hook_toggle"
 
-			local fastpath_mh_bind_rate fastpath_mh_update_nfct
-			# hnat bind rate
-			config_get "fastpath_mh_bind_rate" "config" "fastpath_mh_bind_rate" "30"
-			echo "1 $fastpath_mh_bind_rate" > "$hnat_path/hnat_setting"
-			# update hnat counter to nf_conntrack or not
-			config_get "fastpath_mh_update_nfct" "config" "fastpath_mh_update_nfct" "0"
-			echo "7 $fastpath_mh_update_nfct" > "$hnat_path/hnat_setting"
+			if [ "$fastpath_mh_eth_hnat" -eq "1" ]; then
+				# This tree's hnat_setting type map (cr_set_func[]):
+				#   1     binding threshold (PPE_BNDR/BIND_RATE, 0~65535)
+				#   2/3/4 TCP/FIN/UDP bind lifetime (0~65535)
+				#   5/6   TCP/UDP keep alive interval (0~255)
+				#   7     conntrack counter writeback (0~1)
+				# No type 11/12 exists here, and type 8 is PPE hash mode
+				# (NOT IPv6). IPv6 hooks are always on, so there is no
+				# v6/macvlan toggle to write -- do not port 24.10's 8/11/12.
+				local fastpath_mh_bind_rate fastpath_mh_update_nfct
+				# binding threshold / bind rate (pps)
+				config_get "fastpath_mh_bind_rate" "config" "fastpath_mh_bind_rate" "30"
+				echo "1 $fastpath_mh_bind_rate" > "$hnat_path/hnat_setting"
+				# update hnat counter to nf_conntrack or not
+				config_get "fastpath_mh_update_nfct" "config" "fastpath_mh_update_nfct" "0"
+				echo "7 $fastpath_mh_update_nfct" > "$hnat_path/hnat_setting"
+
+				# lifetimes / keepalives: empty means leave the driver default
+				local hnat_opt hnat_idx hnat_name hnat_val
+				for hnat_opt in \
+					"2 fastpath_mh_eth_hnat_tcp_life" \
+					"3 fastpath_mh_eth_hnat_fin_life" \
+					"4 fastpath_mh_eth_hnat_udp_life" \
+					"5 fastpath_mh_eth_hnat_tcp_ka" \
+					"6 fastpath_mh_eth_hnat_udp_ka"
+				do
+					hnat_idx="${hnat_opt%% *}"
+					hnat_name="${hnat_opt#* }"
+					config_get hnat_val "config" "$hnat_name" ""
+					if [ -n "$hnat_val" ]; then
+						echo "$hnat_idx $hnat_val" > "$hnat_path/hnat_setting"
+					fi
+				done
+
+				# PPE count: module parameter, applied at next boot
+				local hnat_ppenum
+				config_get "hnat_ppenum" "config" "fastpath_mh_eth_hnat_ppenum" ""
+				hnat_set_ppenum "$hnat_ppenum"
+			fi
 		fi
 		;;
 	esac

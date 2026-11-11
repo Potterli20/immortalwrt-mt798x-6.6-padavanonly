@@ -59,6 +59,29 @@ function renderStatusItem(stat) {
 	return E('em', { 'style': 'color:green; font-weight:bold' }, stat.type);
 }
 
+function formatCPUUsage(stats) {
+	let text = stats.CPU_USED || '0%';
+
+	if (stats.CPU_CORES_USED) {
+		let cores = [];
+		for (let core in stats.CPU_CORES_USED)
+			cores.push(core);
+
+		cores.sort(function (a, b) {
+			return parseInt(a.replace(/^CPU/i, '')) - parseInt(b.replace(/^CPU/i, ''));
+		});
+
+		let items = [];
+		for (let i = 0; i < cores.length; i++)
+			items.push(cores[i] + ': ' + stats.CPU_CORES_USED[cores[i]]);
+
+		if (items.length > 0)
+			text += ' (' + items.join(', ') + ')';
+	}
+
+	return text;
+}
+
 return view.extend({
 	load: function() {
 		return Promise.all([
@@ -97,6 +120,14 @@ return view.extend({
 				E('tr', {}, [
 					E('td', { 'class': 'tdLeft' }, _('TCP CCA')),
 					E('td', { 'id': 'tcpcca_state' }, E('em', {}, _('Collecting data...')))
+				]),
+				E('tr', {}, [
+					E('td', { 'class': 'tdLeft' }, _('Conntrack')),
+					E('td', { 'id': 'conntrack_state' }, E('em', {}, _('Collecting data...')))
+				]),
+				E('tr', {}, [
+					E('td', { 'class': 'tdLeft' }, _('CPU Usage')),
+					E('td', { 'id': 'cpu_usage_state' }, E('em', {}, _('Collecting data...')))
 				])
 			];
 
@@ -117,17 +148,12 @@ return view.extend({
 			let acc_status = E('table', { 'class': 'table' }, table_rows);
 
 			poll.add(async function () {
-				let tasks = [
+				let res = await Promise.all([
 					L.resolveDefault(callFastPathStat(), {}),
 					L.resolveDefault(callFullConeStat(), {}),
-					L.resolveDefault(callTCPCCAStat(), {})
-				];
-
-				if (has_ppe) {
-					tasks.push(L.resolveDefault(callMTKPPEStat(), {}));
-				}
-
-				let res = await Promise.all(tasks);
+					L.resolveDefault(callTCPCCAStat(), {}),
+					L.resolveDefault(callMTKPPEStat(), {})
+				]);
 
 				const dom_ids = ['fastpath_state', 'fullcone_state', 'tcpcca_state'];
 				for (let i = 0; i < 3; i++) {
@@ -137,16 +163,27 @@ return view.extend({
 					}
 				}
 
+				let stat = res[3] || {};
+
+				let ct = document.getElementById('conntrack_state');
+				if (ct) {
+					L.dom.content(ct, renderProgressBar(parseInt(stat.Conntrack_Count), parseInt(stat.Conntrack_Max)));
+				}
+
+				let cpu = document.getElementById('cpu_usage_state');
+				if (cpu) {
+					L.dom.content(cpu, E('em', {}, formatCPUUsage(stat)));
+				}
+
 				if (has_ppe) {
-					let mtk_res = res[3];
-					let ppe_num = parseInt(mtk_res['PPE num'] || 0);
+					let ppe_num = parseInt(stat['PPE num'] || 0);
 					for (let j = 0; j < ppe_num; j++) {
 						let ppe_key = 'PPE' + j;
 						let ppe_bar = document.getElementById(`ppe${j}_entry`);
 
-						if (ppe_bar && mtk_res[ppe_key]) {
-							let bind_num = mtk_res[ppe_key]['BIND state num'];
-							let total_num = mtk_res[ppe_key]['entry num'];
+						if (ppe_bar && stat[ppe_key]) {
+							let bind_num = stat[ppe_key]['BIND state num'];
+							let total_num = stat[ppe_key]['entry num'];
 							L.dom.content(ppe_bar, renderProgressBar(bind_num, total_num));
 						}
 					}
@@ -209,19 +246,63 @@ return view.extend({
 			o.depends('fastpath', 'fast_classifier');
 		}
 
-		o = s.option(form.Value, 'fastpath_mh_bind_rate', _('HNAT bind rate threshold (pps)'),
-			_('The smaller the threshold, the easier it is for the connection to be accelerated.'));
-		o.optional = true;
-		o.datatype = 'range(1,30)';
-		o.placeholder = 30;
-		o.default = 30;
-		o.depends('fastpath', 'mediatek_hnat');
-
-		o = s.option(form.Flag, 'fastpath_mh_update_nfct', _('Enable HNAT counter update'),
-		_('Update HNAT counter to nf_conntrack. May impact performance.'));
-		o.default = o.disabled;
+		o = s.option(form.Flag, 'fastpath_mh_eth_hnat', _('Enable ethernet HNAT'),
+			_('Enable hardware offloading for wired connections.'));
+		o.default = o.enabled;
 		o.rmempty = false;
 		o.depends('fastpath', 'mediatek_hnat');
+
+		o = s.option(form.Value, 'fastpath_mh_bind_rate', _('HNAT bind rate threshold (pps)'),
+			_('hnat_setting type 1 (PPE_BNDR/BIND_RATE), 0~65535. The smaller the threshold, the easier it is for the connection to be accelerated. This tree exposes a single binding-threshold knob; the separate 24.10 pps limiter (type 11) does not exist here.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.placeholder = 30;
+		o.default = 30;
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Flag, 'fastpath_mh_update_nfct', _('Enable HNAT counter update'),
+			_('Update HNAT counter to nf_conntrack. May impact performance. (hnat_setting type 7)'));
+		o.default = o.disabled;
+		o.rmempty = false;
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_tcp_life', _('TCP bind lifetime'),
+			_('hnat_setting type 2, 0~65535. Age out bound TCP flows. Empty leaves the driver default.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_fin_life', _('FIN bind lifetime'),
+			_('hnat_setting type 3, 0~65535. Empty leaves the driver default.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_udp_life', _('UDP bind lifetime'),
+			_('hnat_setting type 4, 0~65535. Shorten it when QUIC/UDP floods the flow table. Empty leaves the driver default.'));
+		o.optional = true;
+		o.datatype = 'range(0,65535)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_tcp_ka', _('TCP keep alive interval'),
+			_('hnat_setting type 5, 0~255. Empty leaves the driver default.'));
+		o.optional = true;
+		o.datatype = 'range(0,255)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.Value, 'fastpath_mh_eth_hnat_udp_ka', _('UDP keep alive interval'),
+			_('hnat_setting type 6, 0~255. Empty leaves the driver default.'));
+		o.optional = true;
+		o.datatype = 'range(0,255)';
+		o.depends('fastpath_mh_eth_hnat', '1');
+
+		o = s.option(form.ListValue, 'fastpath_mh_eth_hnat_ppenum', _('Number of HNAT PPE'),
+			_('Appended to the mtkhnat line in /etc/modules.d as ppe_cnt, which kmodloader reads when loading the module at the next boot. Keep 2 unless the SoC really exposes a single PPE.'));
+		o.rmempty = false;
+		o.value('1', '1');
+		o.value('2', '2');
+		o.default = '2';
+		o.depends('fastpath_mh_eth_hnat', '1');
 
 		o = s.option(form.ListValue, 'tcpcca', _('TCP CCA'),
 			_('TCP congestion control algorithm.'));

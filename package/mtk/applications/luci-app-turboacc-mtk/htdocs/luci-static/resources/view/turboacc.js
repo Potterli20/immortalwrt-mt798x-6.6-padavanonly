@@ -232,7 +232,7 @@ return view.extend({
 				o.value(algos[i]);
 			}
 		}
-		o.default = 'cubic';
+		o.default = 'bbr';
 		o.rmempty = false;
 
 		return m.render();

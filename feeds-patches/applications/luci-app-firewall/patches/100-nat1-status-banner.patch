@@ -1,0 +1,70 @@
+Subject: [PATCH] luci-app-firewall: zones 页加 NAT1 状态横幅
+
+仿照参考固件，在「防火墙 - 区域设置」常规设置上方显示一条状态横幅：
+当前NAT1状态: <实现>，TCP 拥塞控制算法为 <算法>。
+
+- NAT1 实现名取自 luci.turboacc 的 getFullConeStat（nft_fullcone /
+  xt_FULLCONENAT / Boardcom Fullcone），uci defaults.fullcone 为 0 时
+  显示「未启用（Symmetric NAT）」；未安装 turboacc 包时退化为按 uci
+  显示「FullCone NAT1」；
+- TCP 拥塞控制算法取自 getTCPCCAStat（读
+  /proc/sys/net/ipv4/tcp_congestion_control）。
+
+--- a/htdocs/luci-static/resources/view/firewall/zones.js
++++ b/htdocs/luci-static/resources/view/firewall/zones.js
+@@ -15,10 +15,24 @@
+ 		expect: { result: [] }
+ 	}),
+ 
++	callFullConeStat: rpc.declare({
++		object: 'luci.turboacc',
++		method: 'getFullConeStat',
++		expect: { '': {} }
++	}),
++
++	callTCPCCAStat: rpc.declare({
++		object: 'luci.turboacc',
++		method: 'getTCPCCAStat',
++		expect: { '': {} }
++	}),
++
+ 	load() {
+ 		return Promise.all([
+ 			this.callConntrackHelpers(),
+-			firewall.getDefaults()
++			firewall.getDefaults(),
++			L.resolveDefault(this.callFullConeStat(), {}),
++			L.resolveDefault(this.callTCPCCAStat(), {})
+ 		]);
+ 	},
+ 
+@@ -29,12 +43,27 @@
+ 			return this.renderZones(data);
+ 	},
+ 
+-	renderZones([ctHelpers, fwDefaults]) {
++	renderZones([ctHelpers, fwDefaults, fcStat, ccaStat]) {
+ 		let m, s, o, out;
+ 		const fw4 = L.hasSystemFeature('firewall4');
+ 
++		/* NAT1 状态横幅：实现信息取自 luci.turboacc（MTK turboacc），
++		 * 未安装该包时退化为仅依据 uci defaults.fullcone 显示 */
++		const fcTypes = {
++			'nft_fullcone':      'FullCone NAT1（nft_fullcone）',
++			'xt_FULLCONENAT':    'FullCone NAT1（xt_FULLCONENAT）',
++			'Boardcom Fullcone': 'Broadcom Fullcone NAT1'
++		};
++		const nat1Text = (fwDefaults.get('fullcone') == '1')
++			? ((fcStat && fcStat.type && fcTypes[fcStat.type]) || 'FullCone NAT1')
++			: '未启用（Symmetric NAT）';
++		const ccaText = (ccaStat && ccaStat.type) ? ccaStat.type : '未知';
++		const natBanner = '<div style="color:#28a745;font-weight:bold;padding:.4em 0">' +
++			'当前NAT1状态: <strong>' + nat1Text + '</strong>，' +
++			'TCP 拥塞控制算法为 <strong>' + ccaText + '</strong></div>';
++
+ 		m = new form.Map('firewall', _('Firewall - Zone Settings'),
+-			_('The firewall creates zones over your network interfaces to control network traffic flow.'));
++			_('The firewall creates zones over your network interfaces to control network traffic flow.') + natBanner);
+ 
+ 		s = m.section(form.TypedSection, 'defaults', _('General Settings'));
+ 		s.anonymous = true;

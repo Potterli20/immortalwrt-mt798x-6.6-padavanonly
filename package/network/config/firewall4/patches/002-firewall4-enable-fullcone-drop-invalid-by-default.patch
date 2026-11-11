@@ -1,0 +1,29 @@
+Subject: [PATCH] firewall4: enable fullcone6 and drop-invalid by default
+
+001 补丁已把 defaults.fullcone 默认置 1（IPv4 FullCone/NAT1）；本补丁
+补齐参考固件的两项默认行为：
+
+- fullcone6 0 → 1，IPv6 也走 FullCone；
+- 新增 option drop_invalid 1，丢弃 conntrack 无效包；
+- syn_flood 1 保持不变——fw4 在 synflood_protect 未设置时以
+  syn_flood 作为别名（fw4.uc: defs.synflood_protect = defs.syn_flood），
+  限速默认 25/second、burst 50。
+
+--- a/root/etc/config/firewall
++++ b/root/etc/config/firewall
+@@ -1,5 +1,6 @@
+ config defaults
+ 	option syn_flood	1
++	option drop_invalid	1
+ 	option input		REJECT
+ 	option output		ACCEPT
+ 	option forward		REJECT
+@@ -8,7 +9,7 @@ config defaults
+ 	option flow_offloading	0
+ 	option flow_offloading_hw	0
+ 	option fullcone		1
+-	option fullcone6	0
++	option fullcone6	1
+ 
+ config zone
+ 	option name		lan

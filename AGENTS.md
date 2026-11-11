@@ -26,6 +26,13 @@
   - 已知**未补**：`steeringthresold`（24.10 放在 lua 的 `iwpriv_ap_cfgs`，不是 DAT 键）。驱动源码里 `Steeringthresold` 命中 **0** 个文件，写进 `IWPRIV_AP_CFGS` 只会在每次 AP up 时发一条被拒的 `iwpriv`，所以保留缺失。`startwapp.sh` 里 `[ "$steeringthresold" -lt 0 ]` 那两个分支因此也是死逻辑（阈值为负本身无意义）。
   - `startwapp.sh` 的 ra0/rax0 判定还读 `wireless.MT7981_1_1.ieee80211r` 与 `wireless.default_*.steeringbssid`，这两个 ucode schema 里都没有；不影响 uci 手工设置（schema 只管 DAT 写入与转换），但 luci 侧设置不了。
 
+## 防火墙与加速（fw4 / turboacc）
+
+- 参照参考固件（NAT1 + BBR）的默认行为：`firewall4/patches/002` 给 shipped defaults 加 `drop_invalid 1` 并把 `fullcone6` 置 1（`fullcone 1` 本来就随 001 fullcone 补丁默认开）；wan（masq=1）即得 IPv4/IPv6 FullCone，依赖 `kmod-nft-fullcone`（AutoProbe 自加载）。luci 的 fullcone 开关靠 `/sys/module/nft_fullcone` 出现自动显示，无需额外 feature 文件。
+- fw4 的 `syn_flood` 是 `synflood_protect` 的别名（`fw4.uc: defs.synflood_protect = defs.syn_flood`，仅在后者未设置时回退），shipped config 只写 `syn_flood 1`，限速走默认 25/second、burst 50；luci zones.js 写的是 `synflood_protect` 并顺手 unset 旧键，两键并存以 luci 写入为准。
+- `luci-app-turboacc-mtk` 的 `tcpcca` 默认从 cubic 改为 bbr（init.d + turboacc.js 两处），`kmod-tcp-bbr` 由该包 `LUCI_DEPENDS` 保证在位。
+- luci-app-firewall 的「防火墙 - 区域设置」页带一条 NAT1 状态横幅（feeds-patches/applications/luci-app-firewall/patches/100-nat1-status-banner.patch）：NAT1 实现名读 `luci.turboacc` rpc 的 `getFullConeStat`，拥塞算法读 `getTCPCCAStat`；未装 turboacc 时 `L.resolveDefault` 退化为按 uci 显示。feeds update 后要重跑 `scripts/apply-feed-patches.sh`。
+
 ## 目录/资产布局
 
 - `defconfig/`：13 份种子（mt7975/7981/7986 各档 + nowifi + dae 变体）。种子是 `./scripts/config/conf --savedefconfig` 的精简结果，设备选择写成 `CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_<dev>=y`，`make defconfig` 会补全默认值。

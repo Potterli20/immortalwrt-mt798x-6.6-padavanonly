@@ -66,6 +66,6 @@ start_service() {
 	esac
 
 	local tcpcca
-	config_get "tcpcca" "config" "tcpcca" "cubic"
+	config_get "tcpcca" "config" "tcpcca" "bbr"
 	sysctl -w net.ipv4.tcp_congestion_control="$tcpcca" >"/dev/null"
 }

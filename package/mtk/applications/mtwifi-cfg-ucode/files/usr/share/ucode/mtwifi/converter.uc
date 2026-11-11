@@ -306,6 +306,17 @@ export function convert(uci_cfg) {
 		set_suffix("SSID", c.ssid);
 		set_suffix("WPAPSK", c.key);
 
+		// MAC address override. The driver maps "MacAddress" to BSS0 and
+		// "MacAddress<N>" to BSS<N> (N>=1), so the suffix equals vif_idx
+		// (unlike SSIDx which is 1-based). An empty/absent value restores the
+		// driver default: RT_CfgSetMacAddress rejects any length != 17.
+		if (c.macaddr != null && c.macaddr != "") {
+			if (vif_idx == 0)
+				dat["MacAddress"] = c.macaddr;
+			else
+				dat[`MacAddress${vif_idx}`] = c.macaddr;
+		}
+
 		// base cfgs
         set_token("WirelessMode", wmode_int); // here WirelessMode is set twice, we keep it for safety
 		set_token("NoForwarding", strict_bool(c.isolate));
@@ -319,6 +330,9 @@ export function convert(uci_cfg) {
 
 		// 802.11k/v/w
 		set_token("RRMEnable", strict_bool(c.ieee80211k));
+		// 802.11r (FT). Driver auto-applies mobility domain MDID="RT" and
+		// generates R0KH IDs, so no extra roam-domain parameters are needed.
+		set_token("FtSupport", strict_bool(c.ieee80211r));
 		
 		// HT settings
 		set_token("HT_AMSDU", strict_bool(c.amsdu));

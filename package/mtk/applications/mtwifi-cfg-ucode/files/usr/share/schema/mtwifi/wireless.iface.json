@@ -92,6 +92,21 @@
             "type": "boolean",
             "description": "Enable 802.11k support"
         },
+        "ieee80211r": {
+            "type": "boolean",
+            "description": "Enable 802.11r fast transition (mt_wifi FtSupport; roaming domain auto-generated)"
+        },
+        "macaddr": {
+            "type": "string",
+            "description": "Override the BSS MAC address (driver MacAddress / MacAddress<N>)"
+        },
+        "steeringbssid": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "MAC list handed to the WAPP steering service (setbssid); read by startwapp.sh"
+        },
         "mumimo_dl": {
             "type": "boolean",
             "description": "Enable MU-MIMO DL"

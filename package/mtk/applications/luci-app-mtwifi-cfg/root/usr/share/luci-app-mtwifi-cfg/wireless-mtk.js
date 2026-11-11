@@ -770,8 +770,12 @@ return view.extend({
 	load: function() {
 		return Promise.all([
 			uci.changes(),
-			uci.load('wireless')
-		]);
+			uci.load('wireless'),
+			fs.stat('/sbin/startwapp.sh').then(function() { return true; }).catch(function() { return false; })
+		]).then(L.bind(function(data) {
+			this.wappPkgInstalled = (data[2] === true);
+			return [data[0], data[1]];
+		}, this));
 	},
 
 	checkAnonymousSections: function() {
@@ -831,6 +835,7 @@ return view.extend({
 
 	renderOverview: function() {
 		var m, s, o;
+		var wappPkgInstalled = (this.wappPkgInstalled === true);
 
 		m = new form.Map('wireless');
 		m.chain('network');
@@ -1043,7 +1048,21 @@ return view.extend({
 					{
 						o = ss.taboption('advanced', form.Flag, 'whnat', _('Wireless HWNAT'));
 						o.default = o.enabled;
-	
+
+						if (wappPkgInstalled) {
+							o = ss.taboption('advanced', form.Flag, 'wapp', _('WAPP'), _('WAPP related services (wapp/bs20)'));
+							o.default = o.disabled;
+						}
+
+						o = ss.taboption('advanced', form.Flag, 'bandsteering', _('Band Steering'));
+						o.default = o.disabled;
+
+						o = ss.taboption('advanced', form.Flag, 'mbo', _('MBO Support'), _('Multi Band Operation vendor recommendation'));
+						o.default = o.enabled;
+
+						o = ss.taboption('advanced', form.Flag, 'map', _('MAP Support'), _('Multi AP Protocol (EasyMesh) proxy, needs the WAPP service'));
+						o.default = o.disabled;
+
 						o = ss.taboption('advanced', form.Value, 'beacon_int', _('Beacon Interval'));
 						o.optional = true;
 						o.datatype = 'range(20,999)';
@@ -1310,8 +1329,18 @@ return view.extend({
 					o = ss.taboption('advanced', form.Flag, 'isolate', _('Isolate Clients'), _('Prevents client-to-client communication'));
 					o.depends('mode', 'ap');
 
+					var macaddr = uci.get('wireless', radioNet.getName(), 'macaddr');
+					o = ss.taboption('advanced', form.Value, 'macaddr', _('MAC address'), _('Override default MAC address - the range of usable addresses might be limited by the driver'));
+					o.value('', _('driver default (%s)').format(!macaddr ? radioNet.getActiveBSSID() : _('no override')));
+					o.datatype = 'or(macaddr)';
+					o.depends('mode', 'ap');
+
 					o = ss.taboption('advanced', form.Flag, 'ieee80211k', _('802.11k RRM'), _('Radio Resource Measurement - Sends beacons to assist roaming. Not all clients support this.'));
 					o.default = o.enabled;
+					o.depends('mode', 'ap');
+
+					o = ss.taboption('advanced', form.Flag, 'ieee80211r', _('802.11r'), _('Only supported by the mt_wifi closed-source driver. Roaming domain parameters are generated automatically (no manual setup); make sure all router LAN IPs are in the same subnet.'));
+					o.default = o.disabled;
 					o.depends('mode', 'ap');
 
 					o = ss.taboption('advanced', form.Value, 'wpa_group_rekey', _('Time interval for rekeying GTK'), _('sec'));
@@ -1325,6 +1354,13 @@ return view.extend({
 					o.placeholder = 0;
 					o.datatype = 'range(-100,0)';
 					o.depends('mode', 'ap');
+
+					if (wappPkgInstalled) {
+						o = ss.taboption('advanced', form.DynamicList, 'steeringbssid', _('802.11v roam target BSSID'), _('MAC list handed to the WAPP steering service (setbssid)'));
+						o.datatype = 'macaddr';
+						o.optional = true;
+						o.depends('mode', 'ap');
+					}
 
 					o = ss.taboption('advanced', form.Value, 'assocthres', _('Station associate threshold'), _('dBm'));
 					o.optional    = true;

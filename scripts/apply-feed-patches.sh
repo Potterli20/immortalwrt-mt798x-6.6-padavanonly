@@ -4,6 +4,11 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
+# feeds install 按目录 mtime 缓存 tmp/info/.packageinfo-* 分片；sed 改 Makefile
+# 不会更新目录 mtime，DEFAULT 之类的元数据会一直沿用旧分片。改动下面这些
+# feed 包时删掉对应分片，让下一次 install/defconfig 重新扫描（重复删无害）。
+rm -f tmp/info/.packageinfo-feeds_mtk_openwrt_feed_crypto-eip
+
 find feeds-patches -name '*.patch' -type f | while read -r f; do
 	target=feeds/${f#feeds-patches/}
 	dir=${target%/*}
@@ -70,6 +75,22 @@ eip_hdr=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/src/ddk/inc/crypto-eip/ddk
 if [ -f "$eip_hdr" ] && grep -qF -- '#ifndef ADAPTER_ADDDRPAIR_H_' "$eip_hdr"; then
 	sed -i 's/#ifndef ADAPTER_ADDDRPAIR_H_/#ifndef ADAPTER_ADDRPAIR_H_/' "$eip_hdr"
 	echo "修正 $eip_hdr 的头文件保护宏"
+fi
+
+# crypto-eip 顶层 KernelPackage 没有 FILES，只是 KCONFIG/依赖容器；真正的
+# crypto-eip-inline.ko 由 CRYPTO_OFFLOAD_INLINE select 出子包，而该 choice
+# 只允许 MT7988 / mt7988a-rfb / mt7988d-rfb 设备。本树 13 份种子全是 filogic
+# 子目标且未选这些设备，所以 feed 的 DEFAULT:=y 会在每次 make defconfig 后
+# 悄悄选中一个编不出任何 .ko 的 kmod-crypto-eip：既把 CRYPTO_HW /
+# INET_ESP_OFFLOAD / XFRM_USER 等内核选项拉进 6.12 配置，又白跑一次
+# crypto-eip/compile，产出的 apk 里只有 .list 没有模块。
+# 按私有驱动引入标准「不默认开启」，改为纯 opt-in；要真正启用 EIP197 时
+# 需先选 MT7988 设备并显式打开 CRYPTO_OFFLOAD_INLINE（见
+# driver-reuse-assessment.md 4.3）。
+eip_mk=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk
+if [ -f "$eip_mk" ] && grep -qF -- '  DEFAULT:=y' "$eip_mk"; then
+	sed -i 's/^  DEFAULT:=y$/  DEFAULT:=n/' "$eip_mk"
+	echo "把 $eip_mk 的 kmod-crypto-eip 改为 opt-in（DEFAULT:=n）"
 fi
 
 # 下面是 make menuconfig 的 "recursive dependency detected"，成因两类：同一个包名被两个

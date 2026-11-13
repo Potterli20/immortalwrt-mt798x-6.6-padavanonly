@@ -15,7 +15,7 @@
 2. 目标分支是 `6.12.112 + 上游 mt_wifi 7.6.7.3`；来源分支是 `6.6.159 + 私有 mt_hwifi/mtk_npu/mtk_hnat`。内核模块按 `LINUX_VERSION`+`LINUX_VERMAGIC` 绑定（[include/kernel.mk:220](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/include/kernel.mk#L220)），6.6 的 `.ko` 无法在 6.12 加载。
 3. 本轮在 MedyMa 树上修的 4 个文件（`mtk_npu/Config.in`、`mt_wifi_cmn/patches/00{1,2}`、`scripts/tests/mtk-npu-sync-selftest.py`）在 25.12 上**全部不存在**；`MTK_NPU_*`、`hnat_tunnel_register`、`mt_wifi_cmn` 等符号在 25.12 的 git 跟踪树里命中 **0**。
 
-但「无直接复用」≠「无候选资源」。25.12 工作树里存在 MediaTek 官方 feed 的 `pce / mtk_npu / crypto-eip` 三包副本（非 git 跟踪、13 份种子均未选），其中 `crypto-eip` 已在 6.12.112 上完成过一次编译——**但产出的是空壳包**。因此本报告按用户要求第 4 条，落在「分类 B」：**给出符合 25.12 规范的私有驱动引入标准与标准化开发指导**，同时对唯一有构建实证的 `crypto-eip` 给出条件化集成流程。
+但「无直接复用」≠「无候选资源」。25.12 工作树里存在 MediaTek 官方 feed 的 `pce / mtk_npu / crypto-eip` 三包副本（非 git 跟踪、13 份种子均未选），其中 `crypto-eip` 已在 6.12.112 上完成过一次编译——但其顶层包是无 `FILES` 的 KCONFIG 容器，且 `DEFAULT:=y` 会在所有 mediatek 目标上静默选中它（后续已修）。因此本报告按用户要求第 4 条，落在「分类 B」：**给出符合 25.12 规范的私有驱动引入标准与标准化开发指导**，同时对唯一有构建实证的 `crypto-eip` 给出条件化集成流程。
 
 **不建议执行 `git merge dev/medyma-npu`**：会把 1.4 万文件的 6.6 私有树灌进主线。`dev/medyma-npu` 已作为独立分支推到 `origin`（`e285fae271`），与主线各司其职。
 
@@ -56,7 +56,7 @@
 | # | 候选 | 来源 | 场景匹配 | 构建实证 | 稳定性记录 | 结论 |
 |---|---|---|---|---|---|---|
 | C1 | `mt_wifi / warp / conninfra / mediatek_hnat` | 本分支 git 跟踪 | 高（13 种子主力） | 6.12.112 `BUILD_EXIT=0` + 4 apk | 5 天基线、告警清零 | **已是基线，无需引入** |
-| C2 | `crypto-eip`（feed `r1`） | `feeds/mtk_openwrt_feed/feed/kernel/crypto-eip`，443 文件 | **低**（见 2.2） | 6.12 编过但**空壳包** | feed 补丁修过 gcc15 头保护宏 | **条件化候选，需先修门控** |
+| C2 | `crypto-eip`（feed `r1`） | `feeds/mtk_openwrt_feed/feed/kernel/crypto-eip`，443 文件 | **低**（见 2.2） | 6.12 编过顶层容器，inline 子包从未启用 | feed 补丁修过 gcc15 头保护宏与 `DEFAULT:=y` | **条件化候选，需先修门控** |
 | C3 | `pce` / `mtk_npu`（feed `r1`） | 同 feed，17 / 148 文件 | 低（种子 0 选中） | 无 6.12 产物（仅残留 `*_6.6.161*.ipk`） | 无 | **不引入** |
 | C4 | MedyMa 9 个私有包 | `wt-medyma` | 不兼容 | 6.6.159 `BUILD_EXIT=0`（full5/full6） | 本轮 3 提交 + 4 自检 | **禁止跨树搬运** |
 | C5 | MedyMa 21 个自有内核补丁「思路」 | `patches-6.6/` | 部分通用 | 6.6 专属锚点 | 无 6.12 复核 | **只作线索，按 6.12 重导出** |
@@ -67,8 +67,11 @@
 
 - `feeds.conf.default:13` 挂 `src-git mtk_openwrt_feed https://github.com/mediatek/mtk-openwrt-feeds`；三包在 `feeds/` 下真实存在，但 `git ls-files feeds/mtk_openwrt_feed/` = **0**（feed 安装产物，非仓库资产，重新 `feeds update/install` 会被覆盖）。
 - 当前 `.config:7539` 有 `CONFIG_PACKAGE_kmod-crypto-eip=y`（13 份种子**均未显式选**），基线日志 `.buildlogs/full_ax3000.log:18246` 有 `package/feeds/mtk_openwrt_feed/crypto-eip/compile#14.98#1.73#18.81`。
-- 但产物 `kmod-crypto-eip-6.12.112-r1.apk` 仅 **778 B**，`build_dir/.../crypto-eip/` 下**无任何 `.ko`**，`.pkgdir` 只有 `mkdir + touch .installed`（日志 18213-18214）。即：**包被打包了，模块根本没编**。
-- 根因：[crypto-eip.mk:14-30](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk#L14) 只在 `CONFIG_CRYPTO_OFFLOAD_INLINE=y` 时才注入 `CONFIG_MTK_CRYPTO_EIP_INLINE=m`；而 [Config.in:10-12](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/Config.in#L10) 的 `CRYPTO_OFFLOAD_INLINE` 只 `depends on TARGET_mediatek_mt7988 || …mt7988a-rfb || …mt7988d-rfb`，本分支 13 份种子全是 `CONFIG_TARGET_SUBTARGET="filogic"`，`.config` 里该符号未设 → `inline.ko` 不编译 → `KernelPackage` 按 [include/kernel.mk:249-269](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/include/kernel.mk#L249) 降级为空包。
+- 产物 `kmod-crypto-eip-6.12.112-r1.apk` 仅 **778 B**，`apk adbdump` 显示只有 `lib/apk/packages/kmod-crypto-eip.list`、没有 `.ko`。
+- **（2026-11-13 后续复核，修正初稿判断）这不是 `KernelPackage` 的「静默降级空包」**：[crypto-eip.mk:38-63](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk#L38) 的顶层 `KernelPackage/crypto-eip` **本来就没有 `FILES`**，它只是 `KCONFIG` + 依赖容器；真正的 `crypto-eip-inline.ko` 由 [crypto-eip.mk:76-92](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk#L76) 的 `kmod-crypto-eip-inline` 子包持有 `FILES`。顶层 778 B 包是**正常形态**。
+- 真正的问题是 **`DEFAULT:=y`**（crypto-eip.mk:42）：`package-metadata.pl:309/320` 会为它生成 `default y if DEFAULT_kmod-crypto-eip` 与无条件 `default y`，于是 13 份种子虽 0 份显式选择，`make defconfig` 仍在所有 mediatek 目标上静默选中该包，把 `CRYPTO_HW / CRYPTO_AUTHENC / INET_ESP_OFFLOAD / INET6_ESP_OFFLOAD / XFRM_USER` 拉进内核 `.config`，并白跑一次 `crypto-eip/compile#29.34#4.10#48.98`，而 inline 子包永远不会被 select。
+- inline 未启用的原因：[crypto-eip.mk:14-30](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk#L14) 只在 `CONFIG_CRYPTO_OFFLOAD_INLINE=y` 时注入 `CONFIG_MTK_CRYPTO_EIP_INLINE=m`；而 [Config.in:10-12](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/Config.in#L10) 的 `CRYPTO_OFFLOAD_INLINE` 只 `depends on TARGET_mediatek_mt7988 || …mt7988a-rfb || …mt7988d-rfb`。本分支 13 份种子全是 `CONFIG_TARGET_SUBTARGET="filogic"` 且未选这些设备（设备符号名在 `.config:514` 与 depends 完全一致，只是未选中），所以该 choice 不可达。
+- 已在 `scripts/apply-feed-patches.sh` 幂等把 `DEFAULT:=y` 改为 `n`，并清掉 `tmp/info/.packageinfo-feeds_mtk_openwrt_feed_crypto-eip` 分片缓存（`feeds install` 按目录 mtime 缓存，sed 不改目录 mtime 会导致修改不生效）。干净种子复核：`Default: n` → `.config` 为 `# CONFIG_PACKAGE_kmod-crypto-eip is not set`。
 - 兼容性补丁已存在：[scripts/apply-feed-patches.sh:66-73](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/scripts/apply-feed-patches.sh#L66) 修 `adapter_addrpair.h` 的 `ADAPTER_ADDDRPAIR_H_` 拼写（gcc 15 的 `-Wheader-guard` + 包内 `-Wall -Werror` 会编译失败，gcc 14 不报）；当前文件已是 `ADAPTER_ADDRPAIR_H_`，说明补丁已生效。
 - 残留 `kmod-crypto-eip_6.6.161-r1.ipk` / `kmod-pce_6.6.161-r1.ipk` 属 24.10 时代旧构建未清 `bin/`（AGENTS.md:116），**不是 6.12 可用产物**。
 
@@ -155,7 +158,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 5. **feed 适配**：`feeds/` 下文件非 git 跟踪，任何修改必须固化到幂等的 `scripts/apply-feed-patches.sh`，并在 `feeds update/install` 后重跑。
 6. **体积预算**：先算 `.ko` 未 strip 大小 + 内核增量，对照 16 MB NOR 机型 `IMAGE_SIZE`；超限则必须 opt-in 且从相关种子排除。
 7. **告警与构建**：单包 `{clean,compile}` 后 `warning:` 清零或归因；`EXTRA_CFLAGS` 用源码修正而非 `-Wno-*`；全量 `make -j6 world V=s` 达 `BUILD_EXIT=0` 且日志无 `make.*\*\*\*`。
-8. **测试**：新增宿主自检放 `scripts/tests/`（本分支目前**没有**该目录，需新建并保持 `python3 -m py_compile` 通过）；产出真实 `.ko` 并核对 `ipk/apk` 内非空（防止 C2 式空壳包）。
+8. **测试**：新增宿主自检放 `scripts/tests/`（本分支目前**没有**该目录，需新建并保持 `python3 -m py_compile` 通过）；产出真实 `.ko` 并核对 `apk` 内非空；无 `FILES` 的容器包要显式标注，避免与真正含 `.ko` 的子包混淆。
 9. **安全**：预编译二进制须隔离 EOL 依赖（参考 `mtwifi-wapp-openssl11` 的 `.so.1.1` 隔离）；不引入未审计的固件 blob；不默认开启。
 10. **提交**：每个功能模块独立提交、信息写明「为什么」，种子变更同步 13 份并复跑 `make defconfig`。
 
@@ -166,7 +169,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 3. **包化**：`package/mtk/drivers/<name>/{Makefile,*.mk,Config.in,src/}`；`KernelPackage` 定义完整；隐藏门控加 `default y if`；声明 `PKG_CONFIG_DEPENDS` 覆盖所有影响编译的符号。
 4. **门控验证**：用 `scripts/config/conf --defconfig=...` 对「全关 / 单开 / 共存 / 互斥」四类场景求解，断言门控值；再 `make defconfig` 复核。
 5. **单包编译**：`make package/mtk/drivers/<name>/{clean,compile} V=s`；核对 `.ko` 产物、backend `.o` 累加、`warning:` 计数。
-6. **打包校验**：解 `apk` 确认含 `.ko`（**C2 空壳包就是漏了这步**）；`readelf -d`/`nm -u` 核对未解析符号都有 provider。
+6. **打包校验**：解 `apk` 确认含 `.ko`（用 `apk adbdump` 查文件清单；`kmod-crypto-eip` 顶层是容器包，需校验的是 `kmod-crypto-eip-inline`）；`readelf -d`/`nm -u` 核对未解析符号都有 provider。
 7. **全量构建**：`make -j6 world V=s > .buildlogs/full.log`；匹配致命行；核对镜像 `check-size` 与 `sha256sums`。
 8. **实机验收**：目前**全项目缺失**这一步。须补：模块加载/卸载、长稳 uptime、吞吐与 CPU 占用、与 HNAT/flowtable 共存、热插拔/异常恢复；无此数据不得宣称「生产成熟」。
 
@@ -180,7 +183,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 | 2 | 先编 `kmod-pce`（`-I$(KERNEL_BUILD_DIR)/pce/inc/` 依赖），再编 `crypto-eip` | `pce.ko` 在位、`crypto-eip-inline.ko` 生成 |
 | 3 | 重跑 `scripts/apply-feed-patches.sh` 修 gcc15 头保护宏 | 头为 `ADAPTER_ADDRPAIR_H_`，`-Wall -Werror` 通过 |
 | 4 | 核对 `EXTRA_KCONFIG` 注入 `CONFIG_MTK_CRYPTO_EIP_INLINE=m` | 编译命令行含该符号 |
-| 5 | 打包校验：`apk` 内必须有 `.ko`，体积 ≫ 778 B | 排除空壳包 |
+| 5 | 打包校验：`apk adbdump` 清单里必须有 `.ko`；容器包单独标注 | 排除真正编不出模块的包 |
 | 6 | `CONFLICTS:=kmod-crypto-hw-safexcel` 与 ddk/strongswan 依赖链复核 | 无 kconfig 递归环（AGENTS.md:49/114） |
 | 7 | 单包 → 全量 `BUILD_EXIT=0` → 实机 IPsec 吞吐/长稳 | 有实测数据才可升为「成熟」 |
 
@@ -193,7 +196,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 | 优先级 | 对象 | 动作 | 依据 | 风险 |
 |---|---|---|---|---|
 | **P0** | 四块核心闭源驱动（C1） | **保持不动**，仅作回归基线 | 6.12.112 构建实证、13 种子主力 | 任何改动都可能破坏 `BUILD_EXIT=0`；16 MB NOR 体积上限 |
-| **P1** | `crypto-eip`（C2） | **先修门控 + 补打包校验**，否则维持现状（空壳包不产生危害但也无功能） | 唯一有 6.12 编译记录 | 空壳包被误当「已启用」；与 `kmod-mediatek_hnat` 冲突；ddk/strongswan 依赖链；无实机数据 |
+| **P1** | `crypto-eip`（C2） | **已修 `DEFAULT:=y` 与分片缓存**（本次落地）；真正启用仍需 MT7988 设备 + inline 子包 | 唯一有 6.12 编译记录 | 与 `kmod-mediatek_hnat` 冲突；ddk/strongswan 依赖链；无实机数据 |
 | **P2** | `pce` / `mtk_npu` feed 版（C3） | **不引入**；仅保留 feed 副本供对照 | 13 种子 0 选中、无 6.12 产物 | feed 非 git 跟踪、`feeds install` 会覆盖；与本轮 MedyMa 修复版本不同，勿 cherry-pick |
 | **P3** | MedyMa 21 个自有补丁「思路」（C5） | 只作线索索引，按 6.12 锚点重新导出 | AGENTS.md:48、project_memory.md:45 | 锚点偏移；netfilter/conntrack/mtk_eth 在 6.12 结构已变；需逐条复核 |
 | **P4** | MedyMa 9 个私有包（C4） | **明确排除**（独立分支 `origin/dev/medyma-npu` 保留） | merge-base rc=1、14419 文件差异、私有头/DTS/固件 | 强 merge 会摧毁主线；vermagic 不兼容；私有 ABI 无 6.12 provider |
@@ -203,7 +206,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 1. **架构风险（最高）**：两树无共同祖先；`git merge` 会引入 1.4 万文件冲突。禁止。
 2. **ABI 风险**：`kernel.mk:220` 的 vermagic 绑定；`<mtk_hnat/...>`/`<pce/...>` 私有头在 25.12 无实现；`CONFIG_MTK_PPP_TUNNEL_INFO` 等私有 Kconfig 命中 0。
 3. **依赖冲突**：`CRYPTO_OFFLOAD_INLINE_FLOWBLOCK` vs `kmod-mediatek_hnat`；`mtwifi-cfg` vs `mtwifi-cfg-ucode`；`luajit2` 引发的 6 条 feed 递归依赖（AGENTS.md:114，上游噪声）。
-4. **空壳包风险**：`KCONFIG` 不满足时 `KernelPackage` 静默生成空包并 WARNING——构建日志「成功」不等于模块可用。所有新引入包必须解包校验 `.ko`。
+4. **容器包/空包风险**：无 `FILES` 的顶层 `KernelPackage` 是合法容器（如 `kmod-crypto-eip`），但 `DEFAULT:=y` 会把它静默铺到所有目标并拉起内核选项；`KCONFIG` 不满足也会生成空包 + WARNING。构建日志「成功」不等于模块可用，所有含 `.ko` 的子包必须 `apk adbdump` 校验。
 5. **体积风险**：16 MB NOR 机型物理上限，新增 `.ko` 前必须预算。
 6. **feed 易失风险**：`feeds/` 不入库，改动必须固化到 `apply-feed-patches.sh` 且幂等。
 7. **验证缺口风险（全局）**：本机所有「稳定性」证据都来自构建日志与产物，无实机长稳/吞吐/uptime 数据。任何「生产成熟」结论都需补实机验收后才能成立。
@@ -217,7 +220,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 
 **阶段 1（近期，低风险）**：
 - 把「4.1 引入标准」的 10 条沉淀为 `AGENTS.md` 的一节或 `docs/` 检查单（本次仅产出报告，未改 AGENTS.md，待确认后再落）；
-- 修 `crypto-eip` 空壳包的**检测**而非启用：在构建后校验清单里加「解包必须含 `.ko`」，避免同类静默降级；
+- `crypto-eip` 已落地：`apply-feed-patches.sh` 幂等改 `DEFAULT:=n`、清分片缓存；新增 `scripts/tests/check-kmod-package.sh` 做 `.ko` 清单校验；干净种子复核为 `not set`。
 - 清理 `bin/targets/.../packages/` 里 24.10 时代 `*_6.6.*.ipk` 残留，避免误读为 6.12 产物。
 
 **阶段 2（按需，中风险，仅在确需 EIP197 时）**：按 4.3 的 7 步执行；先补 `mt7988` 目标种子与 `CRYPTO_OFFLOAD_INLINE` depends，再单包→全量→实机。未通过第 7 步不得宣称成熟。

@@ -1,0 +1,12 @@
+if PACKAGE_kmod-mtk-driver-template
+
+config MTK_DRIVER_TEMPLATE_PROBE
+	bool "Enable the template probe log line"
+	default y
+	help
+	  Inject CONFIG_MTK_DRIVER_TEMPLATE_PROBE=y into the external-module
+	  build. This is a VISIBLE symbol; hidden gates would additionally need
+	  "default y if <backend>" or a "select", because kconfig discards a
+	  hand-pinned value for a promptless bool at defconfig time.
+
+endif

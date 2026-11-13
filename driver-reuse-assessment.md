@@ -218,10 +218,17 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 
 **阶段 0（已达成，无需动作）**：确认 C1 基线 `BUILD_EXIT=0`、4 个 apk 在位、`dev/medyma-npu` 已推 `origin` 且与主线 `0/0` 同步。本报告即为阶段 0 的交付物。
 
-**阶段 1（近期，低风险）**：
-- 把「4.1 引入标准」的 10 条沉淀为 `AGENTS.md` 的一节或 `docs/` 检查单（本次仅产出报告，未改 AGENTS.md，待确认后再落）；
-- `crypto-eip` 已落地：`apply-feed-patches.sh` 幂等改 `DEFAULT:=n`、清分片缓存；新增 `scripts/tests/check-kmod-package.sh` 做 `.ko` 清单校验；干净种子复核为 `not set`。
-- 清理 `bin/targets/.../packages/` 里 24.10 时代 `*_6.6.*.ipk` 残留，避免误读为 6.12 产物。
+**阶段 1（已完成）**：8 步流程已按「全部都要」落地三个独立模块，均不引入 6.6 私有驱动代码：
+
+| 模块 | 交付 | 证据 |
+|---|---|---|
+| M1 最小 kmod 模板 | `package/mtk/drivers/mtk-driver-template/`（opt-in）+ `scripts/tests/mtk-driver-intro-selftest.py` + `scripts/tests/check-kmod-package.sh` | 17 项门控/元数据自检、34,928 B `.ko`、`apk adbdump` 含 `.ko` 与 `modules.d`、全量 `make -j6 world BUILD_EXIT=0` |
+| M2 `crypto-eip` 条件化集成 | `scripts/apply-feed-patches.sh` 幂等改 `DEFAULT:=n` + 清 `tmp/info/.packageinfo-*crypto-eip` 分片缓存 | 13 份种子全部 `bad=0`、脚本两次运行幂等、报告 2.2 节误判已更正 |
+| M3 MedyMa 经验固化 | `scripts/tests/check-driver-integration.py` | 全序重放 `conninfra` 10 / `warp` 12 个补丁（按文件名累积应用，非单补丁 dry-run）、hidden 门控扫描、自检语法与「抽取符号仍在源码」护栏；7 项通过，漂移反例能正确 FAIL |
+
+- **`crypto-eip` 已落地**：`apply-feed-patches.sh` 幂等改 `DEFAULT:=n`、清分片缓存；新增 `scripts/tests/check-kmod-package.sh` 做 `.ko` 清单校验；干净种子复核为 `not set`。
+- 三类可复用工程判据已固化为主线的自动回归：隐藏门控 kconfig 求解（M1/本轮 MedyMa `0fa7a92ef6`）、补丁与 vendored 源码重复（`e285fae271`）、自检脚本与生产代码契约漂移（`6af5a04bca`）。
+- 清理 `bin/targets/.../packages/` 里 24.10 时代 `*_6.6.*.ipk` 残留，避免误读为 6.12 产物（尚未做，属维护项）。
 
 **阶段 2（按需，中风险，仅在确需 EIP197 时）**：按 4.3 的 7 步执行；先补 `mt7988` 目标种子与 `CRYPTO_OFFLOAD_INLINE` depends，再单包→全量→实机。未通过第 7 步不得宣称成熟。
 

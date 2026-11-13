@@ -1,0 +1,38 @@
+diff --git a/extensions/libipt_REJECT.c b/extensions/libipt_REJECT.c
+index 743dfff..e0dcfc7 100644
+--- a/extensions/libipt_REJECT.c
++++ b/extensions/libipt_REJECT.c
+@@ -6,7 +6,6 @@
+ #include <string.h>
+ #include <xtables.h>
+ #include <linux/netfilter_ipv4/ipt_REJECT.h>
+-#include <linux/version.h>
+ 
+ /* If we are compiling against a kernel that does not support
+  * IPT_ICMP_ADMIN_PROHIBITED, we are emulating it.
+diff --git a/include/linux/netfilter/xt_cgroup.h b/include/linux/netfilter/xt_cgroup.h
+index b74e370..4142c48 100644
+--- a/include/linux/netfilter/xt_cgroup.h
++++ b/include/linux/netfilter/xt_cgroup.h
+@@ -3,7 +3,7 @@
+ #define _UAPI_XT_CGROUP_H
+ 
+ #include <linux/types.h>
+-#include <linux/limits.h>
++#include <limits.h>
+ 
+ struct xt_cgroup_info_v0 {
+ 	__u32 id;
+diff --git a/utils/nfnl_osf.c b/utils/nfnl_osf.c
+index 8008e83..58aa4e7 100644
+--- a/utils/nfnl_osf.c
++++ b/utils/nfnl_osf.c
+@@ -19,7 +19,7 @@
+ 
+ #include <sys/types.h>
+ #include <sys/socket.h>
+-#include <sys/poll.h>
++#include <poll.h>
+ #include <sys/time.h>
+ 
+ #include <arpa/inet.h>

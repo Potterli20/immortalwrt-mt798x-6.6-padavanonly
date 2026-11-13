@@ -1,0 +1,665 @@
+diff --git a/extensions/libxt_CT.c b/extensions/libxt_CT.c
+index 543de6c..1d4f8bf 100644
+--- a/extensions/libxt_CT.c
++++ b/extensions/libxt_CT.c
+@@ -8,6 +8,7 @@
+ #include <linux/netfilter/nf_conntrack_common.h>
+ #include <linux/netfilter/xt_CT.h>
+ 
++#ifndef NO_LEGACY
+ static void ct_help(void)
+ {
+ 	printf(
+@@ -21,6 +22,7 @@ static void ct_help(void)
+ " --zone-reply {ID|mark} 	Same as 'zone' option, but only applies to REPLY direction\n"
+ 	);
+ }
++#endif
+ 
+ static void ct_help_v1(void)
+ {
+@@ -49,6 +51,7 @@ enum {
+ };
+ 
+ #define s struct xt_ct_target_info
++#ifndef NO_LEGACY
+ static const struct xt_option_entry ct_opts[] = {
+ 	{.name = "notrack", .id = O_NOTRACK, .type = XTTYPE_NONE},
+ 	{.name = "helper", .id = O_HELPER, .type = XTTYPE_STRING,
+@@ -60,6 +63,7 @@ static const struct xt_option_entry ct_opts[] = {
+ 	{.name = "zone", .id = O_ZONE, .type = XTTYPE_STRING},
+ 	XTOPT_TABLEEND,
+ };
++#endif
+ #undef s
+ 
+ #define s struct xt_ct_target_info_v1
+@@ -176,6 +180,7 @@ static void ct_print_events(const char *pfx, const struct event_tbl *tbl,
+ 	}
+ }
+ 
++#ifndef NO_LEGACY
+ static void ct_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_ct_target_info *info = cb->data;
+@@ -199,6 +204,7 @@ static void ct_parse(struct xt_option_call *cb)
+ 		break;
+ 	}
+ }
++#endif
+ 
+ static void ct_parse_v1(struct xt_option_call *cb)
+ {
+@@ -228,6 +234,7 @@ static void ct_parse_v1(struct xt_option_call *cb)
+ 	}
+ }
+ 
++#ifndef NO_LEGACY
+ static void ct_print(const void *ip, const struct xt_entry_target *target, int numeric)
+ {
+ 	const struct xt_ct_target_info *info =
+@@ -247,6 +254,7 @@ static void ct_print(const void *ip, const struct xt_entry_target *target, int n
+ 	if (info->flags & XT_CT_ZONE_MARK || info->zone)
+ 		ct_print_zone_id("zone", info->zone, info->flags);
+ }
++#endif
+ 
+ static void
+ ct_print_v1(const void *ip, const struct xt_entry_target *target, int numeric)
+@@ -275,6 +283,7 @@ ct_print_v1(const void *ip, const struct xt_entry_target *target, int numeric)
+ 		ct_print_zone_id("zone", info->zone, info->flags);
+ }
+ 
++#ifndef NO_LEGACY
+ static void ct_save(const void *ip, const struct xt_entry_target *target)
+ {
+ 	const struct xt_ct_target_info *info =
+@@ -295,6 +304,7 @@ static void ct_save(const void *ip, const struct xt_entry_target *target)
+ 	if (info->flags & XT_CT_ZONE_MARK || info->zone)
+ 		ct_print_zone_id("--zone", info->zone, info->flags);
+ }
++#endif
+ 
+ static void ct_save_v1(const void *ip, const struct xt_entry_target *target)
+ {
+@@ -327,26 +337,32 @@ ct_print_name_alias(const struct xt_entry_target *target)
+ 	return info->flags & XT_CT_NOTRACK_ALIAS ? "NOTRACK" : "CT";
+ }
+ 
++#ifndef NO_LEGACY
+ static void notrack_ct0_tg_init(struct xt_entry_target *target)
+ {
+ 	struct xt_ct_target_info *info = (void *)target->data;
+ 
+ 	info->flags = XT_CT_NOTRACK;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void notrack_ct1_tg_init(struct xt_entry_target *target)
+ {
+ 	struct xt_ct_target_info_v1 *info = (void *)target->data;
+ 
+ 	info->flags = XT_CT_NOTRACK;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void notrack_ct2_tg_init(struct xt_entry_target *target)
+ {
+ 	struct xt_ct_target_info_v1 *info = (void *)target->data;
+ 
+ 	info->flags = XT_CT_NOTRACK | XT_CT_NOTRACK_ALIAS;
+ }
++#endif
+ 
+ static int xlate_ct1_tg(struct xt_xlate *xl,
+ 			const struct xt_xlate_tg_params *params)
+diff --git a/extensions/libxt_conntrack.c b/extensions/libxt_conntrack.c
+index 1daa25c..1d4283b 100644
+--- a/extensions/libxt_conntrack.c
++++ b/extensions/libxt_conntrack.c
+@@ -93,6 +93,7 @@ static void conntrack_mt_help(void)
+ }
+ 
+ #define s struct xt_conntrack_info /* for v0 */
++#ifndef NO_LEGACY
+ static const struct xt_option_entry conntrack_mt_opts_v0[] = {
+ 	{.name = "ctstate", .id = O_CTSTATE, .type = XTTYPE_STRING,
+ 	 .flags = XTOPT_INVERT},
+@@ -112,10 +113,12 @@ static const struct xt_option_entry conntrack_mt_opts_v0[] = {
+ 	 .flags = XTOPT_INVERT},
+ 	XTOPT_TABLEEND,
+ };
++#endif
+ #undef s
+ 
+ #define s struct xt_conntrack_mtinfo2
+ /* We exploit the fact that v1-v2 share the same xt_o_e layout */
++#ifndef NO_LEGACY
+ static const struct xt_option_entry conntrack2_mt_opts[] = {
+ 	{.name = "ctstate", .id = O_CTSTATE, .type = XTTYPE_STRING,
+ 	 .flags = XTOPT_INVERT},
+@@ -151,6 +154,7 @@ static const struct xt_option_entry conntrack2_mt_opts[] = {
+ 	{.name = "ctdir", .id = O_CTDIR, .type = XTTYPE_STRING},
+ 	XTOPT_TABLEEND,
+ };
++#endif
+ #undef s
+ 
+ #define s struct xt_conntrack_mtinfo3
+@@ -185,6 +189,7 @@ static const struct xt_option_entry conntrack3_mt_opts[] = {
+ };
+ #undef s
+ 
++#ifndef NO_LEGACY
+ static int
+ parse_state(const char *state, size_t len, struct xt_conntrack_info *sinfo)
+ {
+@@ -206,7 +211,9 @@ parse_state(const char *state, size_t len, struct xt_conntrack_info *sinfo)
+ 		return 0;
+ 	return 1;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ parse_states(const char *arg, struct xt_conntrack_info *sinfo)
+ {
+@@ -224,6 +231,7 @@ parse_states(const char *arg, struct xt_conntrack_info *sinfo)
+ 	if (strlen(arg) == 0 || !parse_state(arg, strlen(arg), sinfo))
+ 		xtables_error(PARAMETER_PROBLEM, "Bad ctstate \"%s\"", arg);
+ }
++#endif
+ 
+ static bool
+ conntrack_ps_state(struct xt_conntrack_mtinfo3 *info, const char *state,
+@@ -264,6 +272,7 @@ conntrack_ps_states(struct xt_conntrack_mtinfo3 *info, const char *arg)
+ 		xtables_error(PARAMETER_PROBLEM, "Bad ctstate \"%s\"", arg);
+ }
+ 
++#ifndef NO_LEGACY
+ static int
+ parse_status(const char *status, size_t len, struct xt_conntrack_info *sinfo)
+ {
+@@ -283,7 +292,9 @@ parse_status(const char *status, size_t len, struct xt_conntrack_info *sinfo)
+ 		return 0;
+ 	return 1;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ parse_statuses(const char *arg, struct xt_conntrack_info *sinfo)
+ {
+@@ -298,6 +309,7 @@ parse_statuses(const char *arg, struct xt_conntrack_info *sinfo)
+ 	if (strlen(arg) == 0 || !parse_status(arg, strlen(arg), sinfo))
+ 		xtables_error(PARAMETER_PROBLEM, "Bad ctstatus \"%s\"", arg);
+ }
++#endif
+ 
+ static bool
+ conntrack_ps_status(struct xt_conntrack_mtinfo3 *info, const char *status,
+@@ -334,6 +346,7 @@ conntrack_ps_statuses(struct xt_conntrack_mtinfo3 *info, const char *arg)
+ 		xtables_error(PARAMETER_PROBLEM, "Bad ctstatus \"%s\"", arg);
+ }
+ 
++#ifndef NO_LEGACY
+ static void conntrack_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_conntrack_info *sinfo = cb->data;
+@@ -396,6 +409,7 @@ static void conntrack_parse(struct xt_option_call *cb)
+ 		break;
+ 	}
+ }
++#endif
+ 
+ static void conntrack_mt_parse(struct xt_option_call *cb, uint8_t rev)
+ {
+@@ -511,6 +525,7 @@ static void conntrack_mt_parse(struct xt_option_call *cb, uint8_t rev)
+ 		(r)->status_mask = (l)->status_mask; \
+ 	} while (false);
+ 
++#ifndef NO_LEGACY
+ static void conntrack1_mt_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_conntrack_mtinfo1 *info = cb->data;
+@@ -533,7 +548,9 @@ static void conntrack1_mt_parse(struct xt_option_call *cb)
+ 	cinfo_transform(info, &up);
+ 	cb->data = info;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void conntrack2_mt_parse(struct xt_option_call *cb)
+ {
+ #define cinfo2_transform(r, l) \
+@@ -560,6 +577,7 @@ static void conntrack2_mt_parse(struct xt_option_call *cb)
+ 	cb->data = info;
+ #undef cinfo2_transform
+ }
++#endif
+ 
+ static void conntrack3_mt_parse(struct xt_option_call *cb)
+ {
+@@ -668,6 +686,7 @@ conntrack_dump_addr(const union nf_inet_addr *addr,
+ 	}
+ }
+ 
++#ifndef NO_LEGACY
+ static void
+ print_addr(const struct in_addr *addr, const struct in_addr *mask,
+            int inv, int numeric)
+@@ -688,7 +707,9 @@ print_addr(const struct in_addr *addr, const struct in_addr *mask,
+ 			       xtables_ipmask_to_numeric(mask));
+ 	}
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ matchinfo_print(const void *ip, const struct xt_entry_match *match, int numeric, const char *optpfx)
+ {
+@@ -774,6 +795,7 @@ matchinfo_print(const void *ip, const struct xt_entry_match *match, int numeric,
+ 			printf("%lu:%lu", sinfo->expires_min, sinfo->expires_max);
+ 	}
+ }
++#endif
+ 
+ static void
+ conntrack_dump_ports(const char *prefix, const char *opt,
+@@ -904,12 +926,15 @@ conntrack_print_name_alias(const struct xt_entry_match *match)
+ 		? "state" : "conntrack";
+ }
+ 
++#ifndef NO_LEGACY
+ static void conntrack_print(const void *ip, const struct xt_entry_match *match,
+                             int numeric)
+ {
+ 	matchinfo_print(ip, match, numeric, "");
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack1_mt4_print(const void *ip, const struct xt_entry_match *match,
+                      int numeric)
+@@ -920,7 +945,9 @@ conntrack1_mt4_print(const void *ip, const struct xt_entry_match *match,
+ 	cinfo_transform(&up, info);
+ 	conntrack_dump(&up, "", NFPROTO_IPV4, numeric, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack1_mt6_print(const void *ip, const struct xt_entry_match *match,
+                      int numeric)
+@@ -931,20 +958,25 @@ conntrack1_mt6_print(const void *ip, const struct xt_entry_match *match,
+ 	cinfo_transform(&up, info);
+ 	conntrack_dump(&up, "", NFPROTO_IPV6, numeric, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack2_mt_print(const void *ip, const struct xt_entry_match *match,
+                     int numeric)
+ {
+ 	conntrack_dump((const void *)match->data, "", NFPROTO_IPV4, numeric, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack2_mt6_print(const void *ip, const struct xt_entry_match *match,
+                      int numeric)
+ {
+ 	conntrack_dump((const void *)match->data, "", NFPROTO_IPV6, numeric, false);
+ }
++#endif
+ 
+ static void
+ conntrack3_mt_print(const void *ip, const struct xt_entry_match *match,
+@@ -960,10 +992,12 @@ conntrack3_mt6_print(const void *ip, const struct xt_entry_match *match,
+ 	conntrack_dump((const void *)match->data, "", NFPROTO_IPV6, numeric, true);
+ }
+ 
++#ifndef NO_LEGACY
+ static void conntrack_save(const void *ip, const struct xt_entry_match *match)
+ {
+ 	matchinfo_print(ip, match, 1, "--");
+ }
++#endif
+ 
+ static void conntrack3_mt_save(const void *ip,
+                                const struct xt_entry_match *match)
+@@ -977,18 +1011,23 @@ static void conntrack3_mt6_save(const void *ip,
+ 	conntrack_dump((const void *)match->data, "--", NFPROTO_IPV6, true, true);
+ }
+ 
++#ifndef NO_LEGACY
+ static void conntrack2_mt_save(const void *ip,
+                                const struct xt_entry_match *match)
+ {
+ 	conntrack_dump((const void *)match->data, "--", NFPROTO_IPV4, true, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void conntrack2_mt6_save(const void *ip,
+                                 const struct xt_entry_match *match)
+ {
+ 	conntrack_dump((const void *)match->data, "--", NFPROTO_IPV6, true, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack1_mt4_save(const void *ip, const struct xt_entry_match *match)
+ {
+@@ -998,7 +1037,9 @@ conntrack1_mt4_save(const void *ip, const struct xt_entry_match *match)
+ 	cinfo_transform(&up, info);
+ 	conntrack_dump(&up, "--", NFPROTO_IPV4, true, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ conntrack1_mt6_save(const void *ip, const struct xt_entry_match *match)
+ {
+@@ -1008,7 +1049,9 @@ conntrack1_mt6_save(const void *ip, const struct xt_entry_match *match)
+ 	cinfo_transform(&up, info);
+ 	conntrack_dump(&up, "--", NFPROTO_IPV6, true, false);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ state_help(void)
+ {
+@@ -1017,13 +1060,17 @@ state_help(void)
+ " [!] --state [INVALID|ESTABLISHED|NEW|RELATED|UNTRACKED][,...]\n"
+ "				State(s) to match\n");
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static const struct xt_option_entry state_opts[] = {
+ 	{.name = "state", .id = O_CTSTATE, .type = XTTYPE_STRING,
+ 	 .flags = XTOPT_MAND | XTOPT_INVERT},
+ 	XTOPT_TABLEEND,
+ };
++#endif
+ 
++#ifndef NO_LEGACY
+ static unsigned int
+ state_parse_state(const char *state, size_t len)
+ {
+@@ -1039,7 +1086,9 @@ state_parse_state(const char *state, size_t len)
+ 		return XT_CONNTRACK_STATE_UNTRACKED;
+ 	return 0;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static unsigned int
+ state_parse_states(const char *arg)
+ {
+@@ -1069,7 +1118,9 @@ state_parse_states(const char *arg)
+  badstate:
+ 	xtables_error(PARAMETER_PROBLEM, "Bad state \"%s\"", arg);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void state_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_state_info *sinfo = cb->data;
+@@ -1079,7 +1130,9 @@ static void state_parse(struct xt_option_call *cb)
+ 	if (cb->invert)
+ 		sinfo->statemask = ~sinfo->statemask;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void state_ct1_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_conntrack_mtinfo1 *sinfo = cb->data;
+@@ -1090,7 +1143,9 @@ static void state_ct1_parse(struct xt_option_call *cb)
+ 	if (cb->invert)
+ 		sinfo->invert_flags |= XT_CONNTRACK_STATE;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void state_ct23_parse(struct xt_option_call *cb)
+ {
+ 	struct xt_conntrack_mtinfo3 *sinfo = cb->data;
+@@ -1101,7 +1156,9 @@ static void state_ct23_parse(struct xt_option_call *cb)
+ 	if (cb->invert)
+ 		sinfo->invert_flags |= XT_CONNTRACK_STATE;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void state_print_state(unsigned int statemask)
+ {
+ 	const char *sep = "";
+@@ -1127,7 +1184,9 @@ static void state_print_state(unsigned int statemask)
+ 		sep = ",";
+ 	}
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void
+ state_print(const void *ip,
+       const struct xt_entry_match *match,
+@@ -1138,7 +1197,9 @@ state_print(const void *ip,
+ 	printf(" state ");
+ 	state_print_state(sinfo->statemask);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void state_save(const void *ip, const struct xt_entry_match *match)
+ {
+ 	const struct xt_state_info *sinfo = (const void *)match->data;
+@@ -1146,6 +1207,7 @@ static void state_save(const void *ip, const struct xt_entry_match *match)
+ 	printf(" --state ");
+ 	state_print_state(sinfo->statemask);
+ }
++#endif
+ 
+ static void state_xlate_print(struct xt_xlate *xl, unsigned int statemask, int inverted)
+ {
+@@ -1176,6 +1238,7 @@ static void state_xlate_print(struct xt_xlate *xl, unsigned int statemask, int i
+ 	}
+ }
+ 
++#ifndef NO_LEGACY
+ static int state_xlate(struct xt_xlate *xl,
+ 		       const struct xt_xlate_mt_params *params)
+ {
+@@ -1187,6 +1250,7 @@ static int state_xlate(struct xt_xlate *xl,
+ 			  sinfo->invert_flags & XT_CONNTRACK_STATE);
+ 	return 1;
+ }
++#endif
+ 
+ static void status_xlate_print(struct xt_xlate *xl, unsigned int statusmask, int inverted)
+ {
+diff --git a/extensions/libxt_multiport.c b/extensions/libxt_multiport.c
+index c461c6b..e8909f7 100644
+--- a/extensions/libxt_multiport.c
++++ b/extensions/libxt_multiport.c
+@@ -19,6 +19,7 @@ enum {
+ };
+ 
+ /* Function which prints out usage message. */
++#ifndef NO_LEGACY
+ static void multiport_help(void)
+ {
+ 	printf(
+@@ -33,6 +34,7 @@ static void multiport_help(void)
+ "				match both source and destination port(s)\n"
+ " NOTE: this kernel does not support port ranges in multiport.\n");
+ }
++#endif
+ 
+ static void multiport_help_v1(void)
+ {
+@@ -81,6 +83,7 @@ proto_to_name(uint8_t proto)
+ 	}
+ }
+ 
++#ifndef NO_LEGACY
+ static unsigned int
+ parse_multi_ports(const char *portstring, uint16_t *ports, const char *proto)
+ {
+@@ -99,6 +102,7 @@ parse_multi_ports(const char *portstring, uint16_t *ports, const char *proto)
+ 	free(buffer);
+ 	return i;
+ }
++#endif
+ 
+ static void
+ parse_multi_ports_v1(const char *portstring, 
+@@ -157,6 +161,7 @@ check_proto(uint16_t pnum, uint8_t invflags)
+ 			   "multiport only works with TCP, UDP, UDPLITE, SCTP and DCCP");
+ }
+ 
++#ifndef NO_LEGACY
+ static void __multiport_parse(struct xt_option_call *cb, uint16_t pnum,
+ 			      uint8_t invflags)
+ {
+@@ -188,20 +193,25 @@ static void __multiport_parse(struct xt_option_call *cb, uint16_t pnum,
+ 		xtables_error(PARAMETER_PROBLEM,
+ 			   "multiport.0 does not support invert");
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_parse(struct xt_option_call *cb)
+ {
+ 	const struct ipt_entry *entry = cb->xt_entry;
+ 	return __multiport_parse(cb,
+ 	       entry->ip.proto, entry->ip.invflags);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_parse6(struct xt_option_call *cb)
+ {
+ 	const struct ip6t_entry *entry = cb->xt_entry;
+ 	return __multiport_parse(cb,
+ 	       entry->ipv6.proto, entry->ipv6.invflags);
+ }
++#endif
+ 
+ static void __multiport_parse_v1(struct xt_option_call *cb, uint16_t pnum,
+ 				 uint8_t invflags)
+@@ -273,6 +283,7 @@ print_port(uint16_t port, uint8_t protocol, int numeric)
+ 		printf("%s", service);
+ }
+ 
++#ifndef NO_LEGACY
+ static void
+ __multiport_print(const struct xt_entry_match *match, int numeric,
+                   uint16_t proto)
+@@ -306,20 +317,25 @@ __multiport_print(const struct xt_entry_match *match, int numeric,
+ 		print_port(multiinfo->ports[i], proto, numeric);
+ 	}
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_print(const void *ip_void,
+                             const struct xt_entry_match *match, int numeric)
+ {
+ 	const struct ipt_ip *ip = ip_void;
+ 	__multiport_print(match, numeric, ip->proto);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_print6(const void *ip_void,
+                              const struct xt_entry_match *match, int numeric)
+ {
+ 	const struct ip6t_ip6 *ip = ip_void;
+ 	__multiport_print(match, numeric, ip->proto);
+ }
++#endif
+ 
+ static void __multiport_print_v1(const struct xt_entry_match *match,
+                                  int numeric, uint16_t proto)
+@@ -375,6 +391,7 @@ static void multiport_print6_v1(const void *ip_void,
+ 	__multiport_print_v1(match, numeric, ip->proto);
+ }
+ 
++#ifndef NO_LEGACY
+ static void __multiport_save(const struct xt_entry_match *match,
+                              uint16_t proto)
+ {
+@@ -401,20 +418,25 @@ static void __multiport_save(const struct xt_entry_match *match,
+ 		print_port(multiinfo->ports[i], proto, 1);
+ 	}
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_save(const void *ip_void,
+                            const struct xt_entry_match *match)
+ {
+ 	const struct ipt_ip *ip = ip_void;
+ 	__multiport_save(match, ip->proto);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static void multiport_save6(const void *ip_void,
+                             const struct xt_entry_match *match)
+ {
+ 	const struct ip6t_ip6 *ip = ip_void;
+ 	__multiport_save(match, ip->proto);
+ }
++#endif
+ 
+ static void __multiport_save_v1(const struct xt_entry_match *match,
+                                 uint16_t proto)
+@@ -464,6 +486,7 @@ static void multiport_save6_v1(const void *ip_void,
+ 	__multiport_save_v1(match, ip->proto);
+ }
+ 
++#ifndef NO_LEGACY
+ static int __multiport_xlate(struct xt_xlate *xl,
+ 			     const struct xt_xlate_mt_params *params,
+ 			     uint8_t proto)
+@@ -504,7 +527,9 @@ static int __multiport_xlate(struct xt_xlate *xl,
+ 
+ 	return 1;
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static int multiport_xlate(struct xt_xlate *xl,
+ 			   const struct xt_xlate_mt_params *params)
+ {
+@@ -513,7 +538,9 @@ static int multiport_xlate(struct xt_xlate *xl,
+ 	xt_xlate_add(xl, "%s", proto_to_name(proto));
+ 	return __multiport_xlate(xl, params, proto);
+ }
++#endif
+ 
++#ifndef NO_LEGACY
+ static int multiport_xlate6(struct xt_xlate *xl,
+ 			    const struct xt_xlate_mt_params *params)
+ {
+@@ -522,6 +549,7 @@ static int multiport_xlate6(struct xt_xlate *xl,
+ 	xt_xlate_add(xl, "%s", proto_to_name(proto));
+ 	return __multiport_xlate(xl, params, proto);
+ }
++#endif
+ 
+ static int __multiport_xlate_v1(struct xt_xlate *xl,
+ 				const struct xt_xlate_mt_params *params,

@@ -40,6 +40,24 @@ if [ -f "$flowtable" ] && grep -qF -- '+kmod-nf-flow-netlink' "$flowtable"; then
 	echo "去掉 $flowtable 的 kmod-nf-flow-netlink 依赖"
 fi
 
+# openmanet 1.8.x 的 CoT/ADSB 工具依赖 python3-aiohttp，bsp-raven 依赖
+# kmod-camera-bcm2835-unicam（bcm27xx 专属）。本树 feeds 没有这些 provider，
+# make defconfig 会刷 4 条 "which does not exist"；这些包在本树也未选中，
+# 去掉悬空依赖即可让配置扫描干净，不影响已选包。
+for om in feeds/openmanet/utils/adsbtocot/Makefile feeds/openmanet/utils/aiscot/Makefile feeds/openmanet/lang/python/python-pytak/Makefile; do
+	if [ -f "$om" ] && grep -qF -- '+python3-aiohttp' "$om"; then
+		sed -i 's/ +python3-aiohttp//g' "$om"
+		echo "去掉 $om 的 python3-aiohttp 悬空依赖"
+	fi
+done
+raven=feeds/openmanet/boards/bsp-raven/Makefile
+if [ -f "$raven" ] && grep -qF -- '+kmod-camera-bcm2835-unicam' "$raven"; then
+	sed -i 's/ +kmod-camera-bcm2835-unicam//' "$raven"
+	echo "去掉 $raven 的 kmod-camera-bcm2835-unicam 悬空依赖"
+fi
+# feed 的 Makefile 改了，必须删掉按目录 mtime 缓存的 packageinfo 分片。
+rm -f tmp/info/.packageinfo-feeds_openmanet_*
+
 # morselinkeval 依赖的 luci-lib-chartjs-4 由本树的 package/luci-lib-chartjs-4 提供，
 # feed 里那行依赖名不用动。
 
@@ -66,6 +84,35 @@ ssh=feeds/packages/net/openssh/Makefile
 if [ -f "$ssh" ] && grep -qF -- '--with-cflags-after=-fzero-call-used-regs=skip' "$ssh"; then
 	sed -i 's|--with-cflags-after=-fzero-call-used-regs=skip|--with-cflags-after="-fzero-call-used-regs=skip -Wno-deprecated-declarations"|' "$ssh"
 	echo "给 $ssh 追加 -Wno-deprecated-declarations"
+fi
+
+# openssh 的 configure 用 AC_PATH_TOOL(PKGCONFIG, pkg-config)：先拿
+# ${ac_tool_prefix}pkg-config 去探，找不到再退回宿主裸 pkg-config，然后打
+# "using cross tools not prefixed with host triplet"。探到的本来就是
+# staging_dir/host/bin/pkg-config，只是过程会刷一条 warning。用 autoconf 的
+# cache 变量直接给出路径，整个探测与告警一起跳过，取值等价。
+if [ -f "$ssh" ] && ! grep -qF -- 'ac_cv_path_PKGCONFIG=' "$ssh"; then
+	sed -i 's|^CONFIGURE_VARS += LD="$(TARGET_CC)" PATH_PASSWD_PROG="/bin/passwd"$|CONFIGURE_VARS += LD="$(TARGET_CC)" PATH_PASSWD_PROG="/bin/passwd" ac_cv_path_PKGCONFIG="$(STAGING_DIR_HOST)/bin/pkg-config"|' "$ssh"
+	grep -qF -- 'ac_cv_path_PKGCONFIG=' "$ssh" && echo "给 $ssh 直接给出 PKGCONFIG 路径，消 cross-tools 告警"
+fi
+
+# openssh 的 configure 也不认两个全局参数：--disable-dependency-tracking
+# （没有 automake 的依赖跟踪机制）与 --disable-nls（无 NLS），尾部汇总成
+# "unrecognized options: --disable-dependency-tracking, --disable-nls"。
+# 只有 clean 重编时 configure 才会重跑，所以增量构建里这条不常露面。
+# 用 filter-out 摘掉前者，用 DISABLE_NLS:= 摘掉后者；插在第一处
+# CONFIGURE_ARGS += 之前，避免两个 BUILD_VARIANT 分支各插一遍。
+if [ -f "$ssh" ] && ! grep -qF -- 'DISABLE_NLS:=' "$ssh"; then
+	awk '
+		!done && /^CONFIGURE_ARGS \+= \\$/ {
+			print "DISABLE_NLS:="
+			print "CONFIGURE_ARGS := $(filter-out --disable-dependency-tracking,$(CONFIGURE_ARGS))"
+			print ""
+			done = 1
+		}
+		{ print }
+	' "$ssh" > "$ssh.tmp" && mv "$ssh.tmp" "$ssh"
+	echo "给 $ssh 摘掉 --disable-nls 与 --disable-dependency-tracking"
 fi
 
 # crypto-eip 的 adapter_addrpair.h 头文件保护宏拼错（ADDDRPAIR 多一个 D），

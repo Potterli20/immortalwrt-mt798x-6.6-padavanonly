@@ -1,0 +1,27 @@
+From: OpenWrt staging install model
+Subject: [PATCH] make install idempotent for repeated staging installs
+
+The upstream Makefile creates $(CERTSDIR)/$$dir with a plain `mkdir`.
+OpenWrt's PKG_INSTALL runs `make install` into a DESTDIR that is reused
+across incremental rebuilds, so the directory already exists on the
+second pass and mkdir prints:
+
+  mkdir: cannot create directory '.../ipkg-install//usr/share/ca-certificates/mozilla': File exists
+
+The failing command sits in a `for` loop whose exit status comes from the
+following `$(MAKE) -C $$dir install`, so the build still succeeds, but the
+diagnostic is pure noise. `mkdir -p` is a no-op when the directory exists
+and keeps creating it on a fresh DESTDIR; the install file list is unchanged.
+
+--- a/Makefile
++++ b/Makefile
+@@ -17,7 +17,7 @@
+ 	done
+ 
+ install:
+ 	for dir in $(SUBDIRS); do \
+-	  mkdir $(DESTDIR)/$(CERTSDIR)/$$dir; \
++	  mkdir -p $(DESTDIR)/$(CERTSDIR)/$$dir; \
+ 	  $(MAKE) -C $$dir install CERTSDIR=$(DESTDIR)/$(CERTSDIR)/$$dir; \
+ 	done
+ 	for dir in sbin; do \

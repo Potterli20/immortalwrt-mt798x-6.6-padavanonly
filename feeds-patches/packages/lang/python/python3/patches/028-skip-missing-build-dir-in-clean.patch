@@ -1,0 +1,42 @@
+python3: do not probe a non-existent build/ in clean-retain-profile
+
+The host Python build enables PGO (--enable-optimizations), whose
+clean-retain-profile target runs four `find build ...` commands. On this
+tree the `build/` directory is absent at that point, so:
+
+  - the first three rely on `|| true` for the exit status but still print
+    "find: 'build': No such file or directory" to stderr;
+  - the fourth is only prefixed with `-`, so make additionally reports
+    `make[6]: [Makefile:...: clean-retain-profile] Error 1 (ignored)`.
+
+Guard each `find` with `test -d build`. When the directory exists the
+searches run exactly as before; when it does not, nothing is printed and
+no ignored error is emitted. Cleanup semantics are unchanged because a
+missing build/ has no files to remove.
+
+Applied after 003/009/025, which modify the same Makefile.pre.in.
+
+--- a/Makefile.pre.in
++++ b/Makefile.pre.in
+@@ -2971,9 +2971,9 @@
+ 	find . -name '*.lto' -exec rm -f {} ';'
+ 	find . -name '*.wasm' -exec rm -f {} ';'
+ 	find . -name '*.lst' -exec rm -f {} ';'
+-	find build -name 'fficonfig.h' -exec rm -f {} ';' || true
+-	find build -name '*.py' -exec rm -f {} ';' || true
+-	find build -name '*.py[co]' -exec rm -f {} ';' || true
++	-@if test -d build; then find build -name 'fficonfig.h' -exec rm -f {} ';'; fi
++	-@if test -d build; then find build -name '*.py' -exec rm -f {} ';'; fi
++	-@if test -d build; then find build -name '*.py[co]' -exec rm -f {} ';'; fi
+ 	-rm -f pybuilddir.txt
+ 	-rm -f _bootstrap_python
+ 	-rm -f python.html python*.js python.data python*.symbols python*.map
+@@ -2982,7 +2982,7 @@
+ 	-rm -rf Python/deepfreeze
+ 	-rm -f Python/frozen_modules/*.h
+ 	-rm -f Python/frozen_modules/MANIFEST
+-	-find build -type f -a ! -name '*.gc??' -exec rm -f {} ';'
++	-@if test -d build; then find build -type f -a ! -name '*.gc??' -exec rm -f {} ';'; fi
+ 	-rm -f Include/pydtrace_probes.h
+ 	-rm -f profile-gen-stamp
+ 	-rm -rf iOS/testbed/Python.xcframework/ios-*/bin

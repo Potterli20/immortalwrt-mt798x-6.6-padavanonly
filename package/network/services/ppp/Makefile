@@ -30,6 +30,11 @@ PKG_FIXUP:=autoreconf
 PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
+
+# ppp's configure has no NLS support, so the global --disable-nls is rejected
+# with "unrecognized options"; leave it out.
+DISABLE_NLS:=
+
 CONFIGURE_ARGS += \
 	--disable-cbcp \
 	--disable-eaptls \
@@ -41,7 +46,6 @@ CONFIGURE_ARGS += \
 	--enable-microsoft-extensions \
 	--enable-plugins \
 	--with-atm \
-	--with-static-pcap \
 	--without-openssl \
 	--without-pam \
 	--without-pcap \

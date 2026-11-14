@@ -1,0 +1,29 @@
+nat46: use netns_immutable on kernels that backported the rename
+
+Upstream commit 0c493da86374 ("net: rename netns_local to
+netns_immutable") was backported to stable 6.12.114. The driver's
+version check still assumed the rename only happened in 6.15, so on
+6.12.117 it took the `netns_local` branch and failed to compile:
+
+  nat46-netdev.c:124:12: error: 'struct net_device' has no member named 'netns_local'
+
+Verified against the tarballs in dl/: linux-6.12.112 declares
+`netns_local`, linux-6.12.117 declares `netns_immutable`. Same split
+is used by feeds/routing/batman-adv's compat patch. Keep the old
+member only for 6.12.0..6.12.113; 6.13/6.14 already carry the rename
+from mainline.
+
+--- a/nat46/modules/nat46-netdev.c
++++ b/nat46/modules/nat46-netdev.c
+@@ -120,7 +120,10 @@
+ 	dev->mtu = 16384; /* iptables does reassembly. Rather than using ETH_DATA_LEN, let's try to get as much mileage as we can with the Linux stack */
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6,12,0)
+ 	dev->features = NETIF_F_NETNS_LOCAL;
+-#elif LINUX_VERSION_CODE < KERNEL_VERSION(6,15,0)
++/* net: rename netns_local to netns_immutable was backported to stable
++ * 6.12.114 (upstream 6.15). Only 6.12.0..6.12.113 still have the old
++ * member; everything newer, including 6.13/6.14, uses the new name. */
++#elif LINUX_VERSION_CODE < KERNEL_VERSION(6,12,114)
+ 	dev->netns_local = true;
+ #else
+ 	dev->netns_immutable = true;

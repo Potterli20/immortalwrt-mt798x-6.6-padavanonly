@@ -26,6 +26,9 @@ PKG_LICENSE:=GPL-2.0
 PKG_CPE_ID:=cpe:/a:netfilter:iptables
 
 include $(INCLUDE_DIR)/package.mk
+
+DISABLE_NLS:=
+
 ifeq ($(DUMP),)
   -include $(LINUX_DIR)/.config
   include $(INCLUDE_DIR)/netfilter.mk
@@ -630,7 +633,7 @@ endif
 
 define Build/Configure
 $(Build/Configure/rebuild)
-$(Build/Configure/Default)
+$(call Build/Configure/Default,)
 endef
 
 define Build/InstallDev

@@ -1,0 +1,28 @@
+readline: skip the .old backup when no previous static lib exists
+
+install-static unconditionally renames an already installed libreadline.a /
+libhistory.a to *.old before installing the new one. On a fresh DESTDIR
+(first staged install) those files do not exist yet, so `mv` prints
+"cannot stat" and make reports `Error 1 (ignored)`. The leading `-` only
+swallows the exit status, not the diagnostic.
+
+Guard the backup with `test -f`: when a previous static lib is present the
+rename still happens unchanged, otherwise it is skipped. This removes the
+spurious `Error 1 (ignored)` lines from a clean build without changing the
+installed files.
+
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -258,10 +258,10 @@
+ maybe-uninstall-pc: uninstall-pc
+ 
+ install-static: installdirs $(STATIC_LIBS) install-headers install-doc ${install_examples} install-pc
+-	-$(MV) $(DESTDIR)$(libdir)/libreadline.a $(DESTDIR)$(libdir)/libreadline.old
++	-@if test -f "$(DESTDIR)$(libdir)/libreadline.a"; then $(MV) "$(DESTDIR)$(libdir)/libreadline.a" "$(DESTDIR)$(libdir)/libreadline.old"; fi
+ 	$(INSTALL_DATA) libreadline.a $(DESTDIR)$(libdir)/libreadline.a
+ 	-test -n "$(RANLIB)" && $(RANLIB) $(DESTDIR)$(libdir)/libreadline.a
+-	-$(MV) $(DESTDIR)$(libdir)/libhistory.a $(DESTDIR)$(libdir)/libhistory.old
++	-@if test -f "$(DESTDIR)$(libdir)/libhistory.a"; then $(MV) "$(DESTDIR)$(libdir)/libhistory.a" "$(DESTDIR)$(libdir)/libhistory.old"; fi
+ 	$(INSTALL_DATA) libhistory.a $(DESTDIR)$(libdir)/libhistory.a
+ 	-test -n "$(RANLIB)" && $(RANLIB) $(DESTDIR)$(libdir)/libhistory.a
+ 

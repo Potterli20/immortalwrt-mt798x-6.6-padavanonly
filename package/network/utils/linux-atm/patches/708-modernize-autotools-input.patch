@@ -273,7 +273,7 @@ build.
 +  ioctl(fd, ATMOAMD_CTRL, 0);
 +]])],
 +               [atmoamd="atmoamd"],
-+               [AC_MSG_WARN([*** atmoamd will not be built.  Missing kernel support?])])
++               [AC_MSG_NOTICE([*** atmoamd will not be built.  Missing kernel support?])])
 +
 +dnl Xsed="sed -e s/^X//"
 +dnl LTLIBOBJS=`echo X"$LIBOBJS" | \$Xsed -e "s,\. [^.]* ,.lo,g;s,\.[^.]*$,.lo,"`

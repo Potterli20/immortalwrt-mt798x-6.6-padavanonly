@@ -56,12 +56,14 @@ Two independent cleanups bundled because they touch overlapping files.
   side, which is a memcpy() that actually builds the reply's NHRP common header.
   The memcpy is kept as a bare call.
 
-* src/ilmid/atmf_uni.c:246 and one atmf_uni.c local are deliberately NOT
-  touched: `NetPrefixNode *tmp = (NetPrefixNode *) var->value;` is the lvalue
-  that Q_REMOVE assigns its head-update result to, so it cannot be deleted
-  without changing the expansion. That the result is discarded is a separate
-  latent question about whether var->value should be written back, which is not
-  something to change blind in an unexercised path.
+* src/ilmid/atmf_uni.c:246 is deliberately NOT deleted here:
+  `NetPrefixNode *tmp = (NetPrefixNode *) var->value;` is the lvalue that
+  Q_REMOVE assigns its head-update result to, so removing the declaration
+  would change the expansion. That the result is discarded is a separate
+  latent question about whether var->value should be written back, which is
+  not something to change blind in an unexercised path. Patch 710 adds a
+  bare `(void)tmp;` after the macro call to clear the resulting
+  -Wunused-but-set-variable without touching the list operation.
 --- a/src/maint/hediag.c
 +++ b/src/maint/hediag.c
 @@ -12,7 +12,7 @@

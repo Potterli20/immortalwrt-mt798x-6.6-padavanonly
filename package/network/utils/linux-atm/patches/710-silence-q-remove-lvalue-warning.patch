@@ -1,0 +1,25 @@
+linux-atm: silence the last Q_REMOVE lvalue warning
+
+setNetPrefix() declares `NetPrefixNode *tmp = (NetPrefixNode *) var->value;`
+and passes it to Q_REMOVE(), which uses it as the lvalue for the list-head
+update. gcc 15 sees the value assigned but never read and reports
+`-Wunused-but-set-variable` at atmf_uni.c:245.
+
+Patch 706 deliberately kept the declaration because deleting it would
+change the macro expansion. Add a bare `(void)tmp;` immediately after the
+macro call instead: it is a real read of the variable, leaves the list
+operation and its (unused) head-update result exactly as before, and is
+the last warning in the linux-atm package.
+
+Verified with a gcc 15.2 minimal repro that `(void)tmp;` clears
+-Wunused-but-set-variable for a set-only local.
+
+--- a/src/ilmid/atmf_uni.c
++++ b/src/ilmid/atmf_uni.c
+@@ -245,6 +245,7 @@
+ {
+       NetPrefixNode *tmp = (NetPrefixNode *) var->value;
+       Q_REMOVE(tmp, prefix);
++      (void)tmp;
+ }
+     }

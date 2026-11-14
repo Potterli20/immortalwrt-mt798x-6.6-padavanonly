@@ -1,0 +1,23 @@
+iproute2: drop the informational #warning from the no-libmnl stub
+
+When libmnl is not enabled, libnetlink.c compiles the two no-op
+nl_dump_ext_ack*() stubs. The #else branch also emits
+#warning "libmnl required for error support"; that is an informational
+notice, not a defect: the OpenWrt package deliberately keeps libmnl
+optional and neither stub needs extended error ack support.
+
+Replace the #warning with a normal comment. No code or conditional
+structure changes, so the produced objects are identical, and a clean
+build no longer reports the 2 -Wcpp warnings.
+
+--- a/lib/libnetlink.c
++++ b/lib/libnetlink.c
+@@ -149,7 +149,7 @@
+ 	return 0;
+ }
+ #else
+-#warning "libmnl required for error support"
++/* Extended error ack support requires libmnl; use the no-op stubs below. */
+ 
+ /* No extended error ack without libmnl */
+ int nl_dump_ext_ack(const struct nlmsghdr *nlh, nl_ext_ack_fn_t errfn)

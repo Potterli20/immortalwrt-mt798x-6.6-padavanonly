@@ -1,0 +1,55 @@
+iproute2: avoid redefining macros already provided by libc headers
+
+iproute2 builds with its own copy of the kernel UAPI headers under
+include/uapi, while the .c files include the libc headers first. On musl
+both sides define the same values:
+
+  sys/ioctl.h / bits/ioctl.h: SIOCGSTAMP   0x8906
+                              SIOCGSTAMPNS 0x8907
+  net/if.h:                  IFF_VOLATILE  (same nine IFF_* bits)
+
+The bundled linux/sockios.h and linux/if.h unconditionally #define them
+again, so gcc 15 emits 34 "redefined" warnings per full build. Guard each
+definition with #ifndef: when libc already supplied the macro, keep it;
+when the UAPI header is included standalone, the original definition is
+still emitted. The resulting macro values are identical in both cases, so
+the change is byte-neutral for the compiled objects.
+
+--- a/include/uapi/linux/sockios.h
++++ b/include/uapi/linux/sockios.h
+@@ -39,14 +39,22 @@
+ 
+ #if __BITS_PER_LONG == 64 || (defined(__x86_64__) && defined(__ILP32__))
+ /* on 64-bit and x32, avoid the ?: operator */
++#ifndef SIOCGSTAMP
+ #define SIOCGSTAMP	SIOCGSTAMP_OLD
++#endif
++#ifndef SIOCGSTAMPNS
+ #define SIOCGSTAMPNS	SIOCGSTAMPNS_OLD
++#endif
+ #else
++#ifndef SIOCGSTAMP
+ #define SIOCGSTAMP	((sizeof(struct timeval))  == 8 ? \
+ 			 SIOCGSTAMP_OLD   : SIOCGSTAMP_NEW)
++#endif
++#ifndef SIOCGSTAMPNS
+ #define SIOCGSTAMPNS	((sizeof(struct timespec)) == 8 ? \
+ 			 SIOCGSTAMPNS_OLD : SIOCGSTAMPNS_NEW)
+ #endif
++#endif
+ 
+ /* Routing table calls. */
+ #define SIOCADDRT	0x890B		/* add routing table entry	*/
+--- a/include/uapi/linux/if.h
++++ b/include/uapi/linux/if.h
+@@ -131,8 +131,10 @@
+ #define IFF_ECHO			IFF_ECHO
+ #endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
+ 
++#ifndef IFF_VOLATILE
+ #define IFF_VOLATILE	(IFF_LOOPBACK|IFF_POINTOPOINT|IFF_BROADCAST|IFF_ECHO|\
+ 		IFF_MASTER|IFF_SLAVE|IFF_RUNNING|IFF_LOWER_UP|IFF_DORMANT)
++#endif
+ 
+ #define IF_GET_IFACE	0x0001		/* for querying only */
+ #define IF_GET_PROTO	0x0002

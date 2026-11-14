@@ -26,7 +26,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
 
 --- a/drivers/net/ethernet/freescale/fman/fman_dtsec.c
 +++ b/drivers/net/ethernet/freescale/fman/fman_dtsec.c
-@@ -760,7 +760,7 @@ static void dtsec_pcs_get_state(struct p
+@@ -760,7 +760,7 @@
  {
  	struct fman_mac *dtsec = pcs_to_dtsec(pcs);
  
@@ -37,7 +37,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  static int dtsec_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 --- a/drivers/net/ethernet/microchip/lan966x/lan966x_main.h
 +++ b/drivers/net/ethernet/microchip/lan966x/lan966x_main.h
-@@ -448,7 +448,7 @@ int lan966x_stats_init(struct lan966x *l
+@@ -448,7 +448,7 @@
  
  void lan966x_port_config_down(struct lan966x_port *port);
  void lan966x_port_config_up(struct lan966x_port *port);
@@ -48,7 +48,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  			 struct lan966x_port_config *config);
 --- a/drivers/net/ethernet/microchip/lan966x/lan966x_phylink.c
 +++ b/drivers/net/ethernet/microchip/lan966x/lan966x_phylink.c
-@@ -93,7 +93,7 @@ static void lan966x_pcs_get_state(struct
+@@ -93,7 +93,7 @@
  {
  	struct lan966x_port *port = lan966x_pcs_to_port(pcs);
  
@@ -59,7 +59,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  static int lan966x_pcs_config(struct phylink_pcs *pcs, unsigned int neg_mode,
 --- a/drivers/net/ethernet/microchip/lan966x/lan966x_port.c
 +++ b/drivers/net/ethernet/microchip/lan966x/lan966x_port.c
-@@ -284,7 +284,7 @@ void lan966x_port_config_up(struct lan96
+@@ -284,7 +284,7 @@
  	lan966x_port_link_up(port);
  }
  
@@ -68,7 +68,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  			     struct phylink_link_state *state)
  {
  	struct lan966x *lan966x = port->lan966x;
-@@ -314,7 +314,7 @@ void lan966x_port_status_get(struct lan9
+@@ -314,7 +314,7 @@
  		bmsr |= BMSR_ANEGCOMPLETE;
  
  		lp_adv = DEV_PCS1G_ANEG_STATUS_LP_ADV_GET(val);
@@ -79,7 +79,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  			return;
 --- a/drivers/net/ethernet/xilinx/xilinx_axienet_main.c
 +++ b/drivers/net/ethernet/xilinx/xilinx_axienet_main.c
-@@ -2356,7 +2356,7 @@ static void axienet_pcs_get_state(struct
+@@ -2388,7 +2388,7 @@
  {
  	struct mdio_device *pcs_phy = pcs_to_axienet_local(pcs)->pcs_phy;
  
@@ -90,7 +90,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  static void axienet_pcs_an_restart(struct phylink_pcs *pcs)
 --- a/drivers/net/pcs/pcs-lynx.c
 +++ b/drivers/net/pcs/pcs-lynx.c
-@@ -109,7 +109,7 @@ static void lynx_pcs_get_state(struct ph
+@@ -109,7 +109,7 @@
  	case PHY_INTERFACE_MODE_1000BASEX:
  	case PHY_INTERFACE_MODE_SGMII:
  	case PHY_INTERFACE_MODE_QSGMII:
@@ -101,10 +101,10 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  		lynx_pcs_get_state_2500basex(lynx->mdio, state);
 --- a/drivers/net/pcs/pcs-mtk-lynxi.c
 +++ b/drivers/net/pcs/pcs-mtk-lynxi.c
-@@ -149,7 +149,8 @@ static void mtk_pcs_lynxi_get_state(stru
+@@ -155,7 +155,8 @@
+ 		state->link = false;
+ 		return;
  	}
- 
- 	regmap_read(mpcs->regmap, SGMSYS_PCS_ADVERTISE, &adv);
 -	phylink_mii_c22_pcs_decode_state(state, bmsr, FIELD_GET(SGMII_LPA, adv));
 +	phylink_mii_c22_pcs_decode_state(state, neg_mode,
 +					 bmsr, FIELD_GET(SGMII_LPA, adv));
@@ -113,7 +113,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  static void mtk_sgmii_reset(struct mtk_pcs_lynxi *mpcs)
 --- a/drivers/net/pcs/pcs-xpcs.c
 +++ b/drivers/net/pcs/pcs-xpcs.c
-@@ -1044,6 +1044,7 @@ static int xpcs_get_state_c37_sgmii(stru
+@@ -1044,6 +1044,7 @@
  }
  
  static int xpcs_get_state_c37_1000basex(struct dw_xpcs *xpcs,
@@ -121,7 +121,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  					struct phylink_link_state *state)
  {
  	int lpa, bmsr;
-@@ -1072,7 +1073,7 @@ static int xpcs_get_state_c37_1000basex(
+@@ -1072,7 +1073,7 @@
  			}
  		}
  
@@ -130,7 +130,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  	}
  
  	return 0;
-@@ -1131,7 +1132,7 @@ static void xpcs_get_state(struct phylin
+@@ -1131,7 +1132,7 @@
  		}
  		break;
  	case DW_AN_C37_1000BASEX:
@@ -141,7 +141,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  			       ERR_PTR(ret));
 --- a/drivers/net/phy/phylink.c
 +++ b/drivers/net/phy/phylink.c
-@@ -3912,6 +3912,7 @@ static void phylink_decode_usgmii_word(s
+@@ -4296,6 +4296,7 @@
  /**
   * phylink_mii_c22_pcs_decode_state() - Decode MAC PCS state from MII registers
   * @state: a pointer to a &struct phylink_link_state.
@@ -149,7 +149,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
   * @bmsr: The value of the %MII_BMSR register
   * @lpa: The value of the %MII_LPA register
   *
-@@ -3924,7 +3925,7 @@ static void phylink_decode_usgmii_word(s
+@@ -4308,7 +4309,7 @@
   * accessing @bmsr and @lpa cannot be done with MDIO directly.
   */
  void phylink_mii_c22_pcs_decode_state(struct phylink_link_state *state,
@@ -158,7 +158,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  {
  	state->link = !!(bmsr & BMSR_LSTATUS);
  	state->an_complete = !!(bmsr & BMSR_ANEGCOMPLETE);
-@@ -3962,6 +3963,7 @@ EXPORT_SYMBOL_GPL(phylink_mii_c22_pcs_de
+@@ -4346,6 +4347,7 @@
  /**
   * phylink_mii_c22_pcs_get_state() - read the MAC PCS state
   * @pcs: a pointer to a &struct mdio_device.
@@ -166,7 +166,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
   * @state: a pointer to a &struct phylink_link_state.
   *
   * Helper for MAC PCS supporting the 802.3 clause 22 register set for
-@@ -3974,6 +3976,7 @@ EXPORT_SYMBOL_GPL(phylink_mii_c22_pcs_de
+@@ -4358,6 +4360,7 @@
   * structure.
   */
  void phylink_mii_c22_pcs_get_state(struct mdio_device *pcs,
@@ -174,7 +174,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  				   struct phylink_link_state *state)
  {
  	int bmsr, lpa;
-@@ -3985,7 +3988,7 @@ void phylink_mii_c22_pcs_get_state(struc
+@@ -4369,7 +4372,7 @@
  		return;
  	}
  
@@ -185,7 +185,7 @@ Signed-off-by: Jakub Kicinski <kuba@kernel.org>
  
 --- a/include/linux/phylink.h
 +++ b/include/linux/phylink.h
-@@ -690,8 +690,9 @@ static inline int phylink_get_link_timer
+@@ -721,8 +721,9 @@
  }
  
  void phylink_mii_c22_pcs_decode_state(struct phylink_link_state *state,

@@ -1,0 +1,45 @@
+libnl: quiet the three libtool advisories from the bundled ltmain.sh
+
+libnl ships its own build-aux/ltmain.sh in the release tarball. OpenWrt's
+tools/libtool patch 210 only fixes the host libtool, so a full build still
+emits 500+ warnings from this copy (libnl alone accounts for ~500 lines of
+"has not been installed in '/usr/lib'", "relinking ..." and
+"remember to run 'libtool --finish ...'").
+
+The staging install always uses prefix /usr but installs into a DESTDIR,
+so none of the three can be acted upon. Same change as tools/libtool/210:
+drop only the func_warning calls, keep finalize=false, the relink command
+and the --finish execution. The third hunk also removes the now-dangling
+`test -n "$future_libdirs" && \` continuation, otherwise it would swallow
+the following `if`.
+
+Verified: `sh -n` passes on the patched script, and the three strings are
+gone from build_dir/.../libnl-3.12.0/build-aux/ltmain.sh after a rebuild.
+
+--- a/build-aux/ltmain.sh
++++ b/build-aux/ltmain.sh
+@@ -4683,7 +4683,6 @@
+ 	    relink_command=`$ECHO "$relink_command" | $SED "s%@inst_prefix_dir@%%"`
+ 	  fi
+ 
+-	  func_warning "relinking '$file'"
+ 	  func_show_eval "$relink_command" \
+ 	    'func_fatal_error "error: relink '\''$file'\'' with the above command before installing it"'
+ 	fi
+@@ -4847,7 +4846,6 @@
+ 	    fi
+ 	    libfile=$libdir/`$ECHO "$lib" | $SED 's%^.*/%%g'`
+ 	    if test -n "$libdir" && test ! -f "$libfile"; then
+-	      func_warning "'$lib' has not been installed in '$libdir'"
+ 	      finalize=false
+ 	    fi
+ 	  done
+@@ -4932,8 +4930,6 @@
+       func_execute_cmds "$old_postinstall_cmds" 'exit $?'
+     done
+ 
+-    test -n "$future_libdirs" && \
+-      func_warning "remember to run '$progname --finish$future_libdirs'"
+ 
+     if test -n "$current_libdirs"; then
+       # Maybe just do a dry run.

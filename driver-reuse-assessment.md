@@ -3,7 +3,7 @@
 > 生成日期：2026-11-13　基线分支：`openwrt-25.12-6.12`（HEAD `22ab70e78e`）
 > 内核 `6.12.112`、U-Boot `2025.10`、配置栈 `mtwifi-cfg-ucode + iwinfo-ucode`
 > 评估范围：`/home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly`、`/home/potter-lgy/wt-medyma`（`dev/medyma-npu` @ `e285fae271`）、本机 7 棵同源树、项目记忆与 git 历史
-> 方法：全树只读盘点 + 构建产物/日志复核 + git 历史与官方规则核对。除本报告外未改动任何代码。
+> 方法：全树只读盘点 + 构建产物/日志复核 + git 历史与官方规则核对。初稿为只读评估；后续按「8 步流程」落地 M1/M2/M3 与阶段 2 编译验证（见第 4/6 节），相关代码改动以 git 提交为准，本报告同步记录证据。
 
 ---
 
@@ -56,8 +56,8 @@
 | # | 候选 | 来源 | 场景匹配 | 构建实证 | 稳定性记录 | 结论 |
 |---|---|---|---|---|---|---|
 | C1 | `mt_wifi / warp / conninfra / mediatek_hnat` | 本分支 git 跟踪 | 高（13 种子主力） | 6.12.112 `BUILD_EXIT=0` + 4 apk | 5 天基线、告警清零 | **已是基线，无需引入** |
-| C2 | `crypto-eip`（feed `r1`） | `feeds/mtk_openwrt_feed/feed/kernel/crypto-eip`，443 文件 | **低**（见 2.2） | 6.12 编过顶层容器，inline 子包从未启用 | feed 补丁修过 gcc15 头保护宏与 `DEFAULT:=y` | **条件化候选，需先修门控** |
-| C3 | `pce` / `mtk_npu`（feed `r1`） | 同 feed，17 / 148 文件 | 低（种子 0 选中） | 无 6.12 产物（仅残留 `*_6.6.161*.ipk`） | 无 | **不引入** |
+| C2 | `crypto-eip`（feed `r1`） | `feeds/mtk_openwrt_feed/feed/kernel/crypto-eip`，443 文件 | **低**（见 2.2） | 阶段 2 隔离配置下编出 `crypto-eip-inline.ko` 并打包（此前只编过顶层容器） | feed 补丁修过 gcc15 头保护宏与 `DEFAULT:=y`；阶段 2 又修 3 处 ABI 差异 | **条件化候选：门控已修、编译/打包已验证，仍缺实机** |
+| C3 | `pce` / `mtk_npu`（feed `r1`） | 同 feed，17 / 148 文件 | 低（种子 0 选中） | 阶段 2 作为 C2 依赖编出 `pce.ko`（314,536 B）；`mtk_npu` 仍无 6.12 产物（旧 `*_6.6.161*.ipk` 为残留） | 无 | **不独立引入**（仅作 C2 编译依赖） |
 | C4 | MedyMa 9 个私有包 | `wt-medyma` | 不兼容 | 6.6.159 `BUILD_EXIT=0`（full5/full6） | 本轮 3 提交 + 4 自检 | **禁止跨树搬运** |
 | C5 | MedyMa 21 个自有内核补丁「思路」 | `patches-6.6/` | 部分通用 | 6.6 专属锚点 | 无 6.12 复核 | **只作线索，按 6.12 重导出** |
 
@@ -79,10 +79,10 @@
 
 | 维度 | 结论 |
 |---|---|
-| 6.12 接口兼容性 | 源码级部分兼容（feed 补丁已修 gcc15 头保护宏）；但 EIP197 inline 依赖 `<mtk_hnat/...>` 私有头与 `kmod-pce`，[crypto-eip.mk:27-28](file:///home/potter-lgy/immortalwrt-mt798x-6.6-padavanonly/feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/crypto-eip.mk#L27) 的 `-I$(KERNEL_BUILD_DIR)/pce/inc/` 要求 pce 先编；且 `CRYPTO_OFFLOAD_INLINE_FLOWBLOCK` 与 `kmod-mediatek_hnat` 互斥（Config.in:45）。**未做 6.12 端到端链接验证** |
+| 6.12 接口兼容性 | **阶段 2 已完成 6.12 端到端编译/打包验证（见 4.3）**：修 `CRYPTO_OFFLOAD_INLINE` depends 设备符号、`mtk_crypto_set_dec_secpath` 悬空 hook、`skb_hnat_cdrt(skb)` 直写三处 feed/内核 ABI 差异后，`crypto-eip-inline.ko`（454,256 B、`vermagic=6.12.112`、`depends=crypto-eip-ddk-engine,mtkhnat,pce`）编出并进 `kmod-crypto-eip-inline` apk。仍需先编 `kmod-pce`（`-I$(KERNEL_BUILD_DIR)/pce/inc/`）；`CRYPTO_OFFLOAD_INLINE_FLOWBLOCK` 与 `kmod-mediatek_hnat` 互斥（Config.in:45）。**编译通过 ≠ 行为可用**：本树 `filogic` 是 `NETSYS_V2`（`CONFIG_MEDIATEK_NETSYS_V3` not set），`skb_hnat_set_cdrt()` 在该配置下为空操作，实机 IPsec offload 未验证 |
 | 依赖冲突风险 | 高：与 `kmod-mediatek_hnat`（6/13 种子已选）在 flowblock 路径冲突；`CONFLICTS:=kmod-crypto-hw-safexcel`；`kmod-crypto-eip-inline` 还 select 5 个 ddk 子包与 `strongswan` |
 | 性能表现 | **无可引用数据**。无任何实机 IPsec/crypto 吞吐测试，不能据 14.98 秒编译时间推断性能 |
-| 维护状态 | 上游 MediaTek feed 持续维护（本仓库用 `apply-feed-patches.sh` 做幂等适配）；但本分支**从未启用**、13 种子 0 选中、无运行时记录，成熟度 = 「编译过空包」 |
+| 维护状态 | 上游 MediaTek feed 持续维护（本仓库用 `apply-feed-patches.sh` 做幂等适配）；13 种子 0 选中，EIP197 inline 仅在阶段 2 隔离配置里按需启用（不进种子）。成熟度从「编译过空容器包」升到**「隔离配置下编出真实 `.ko` 并打包」**，但仍无运行时记录 |
 
 **判定：C2 属「有源码候选但无成熟运行验证」，不满足第 1 条「生产环境运行验证时长 / 稳定性记录」的筛选门槛，不纳入可直接复用清单。**
 
@@ -175,7 +175,27 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 
 ### 4.3 C2 `crypto-eip` 条件化集成流程（仅在确需 EIP197 inline IPsec 时执行）
 
-前提：目标必须是 `TARGET_mediatek_mt7988` 或 `mt7988a-rfb`/`mt7988d-rfb`（当前 13 种子全是 `filogic`，**默认不满足**），且先修 `Config.in:12` 的 depends 或新增对应设备种子。
+前提：目标必须是 `TARGET_mediatek_mt7988` 或 `mt7988a-rfb`/`mt7988d-rfb`（当前 13 种子全是 `filogic`，**默认不满足**），且先修 `Config.in:12` 的 depends 或新增对应设备种子。阶段 2 用隔离 `.config`（`mt7988a-rfb` + inline）实跑了一遍，下面 7 步已按证据落地；隔离配置不进种子、跑完恢复。
+
+**阶段 2 额外发现并修掉的 3 处 feed↔6.12 ABI 差异**（全部幂等固化到 `scripts/apply-feed-patches.sh`，`feeds/` 非 git 跟踪，每次 `feeds update/install` 后重跑即补回）：
+
+| # | 阻塞 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | `CRYPTO_OFFLOAD_INLINE` choice 不可达，inline 子包连同 5 个 ddk/strongswan 一起被 kconfig 丢弃 | 本树 25.12 profile 生成的设备符号是 `TARGET_mediatek_filogic_DEVICE_mediatek_mt7988a-rfb`，而 feed `Config.in:12` 写的是 `TARGET_DEVICE_mediatek_filogic_DEVICE_...`（多一个 `DEVICE_`），旧 depends 永远为假 | 追加本树真实符号到 depends；用真实 `scripts/config/conf` 前后对比证明 before `False` / after `True` |
+| 2 | `init.c:335/358` 报 `mtk_crypto_set_dec_secpath` undeclared | feed 比本树 6.12 私有 ABI 新：`mtk_hnat/hnat.h` 只有 `mtk_crypto_offloadable`，没有该 hook，内核侧 0 消费者 | 用 `#if 0` 包住两处悬空赋值，保留原文，不伪造没人调用的 hook |
+| 3 | `xfrm-offload.c:642` `lvalue required as left operand of assignment` | 本树 `nf_hnat_mtk.h` 在 `!CONFIG_MEDIATEK_NETSYS_V3` 时把 `skb_hnat_cdrt(skb)` 定义成 `(0)`，不可赋值 | 改用 6.12 提供的 setter `skb_hnat_set_cdrt(skb, cdrt)`；相邻的 `skb_hnat_magic_tag(skb)` 在三种 `hnat_desc` 里都是真实位域，不动 |
+
+> 语义边界：本树 `filogic/config-6.12` 是 `CONFIG_MEDIATEK_NETSYS_V2=y` + `# CONFIG_MEDIATEK_NETSYS_V3 is not set`，故 `skb_hnat_set_cdrt()` 在此配置下解析为空操作（V2 的 `hnat_desc` 无 `cdrt` 位域）。`xfrm-offload.c` 自身注释已声明不依赖 headroom/cdrt 决定 offload（改用 `skb->inner_protocol = IPPROTO_ESP`），因此这一 no-op 与驱动设计一致、不是伪造行为；但 **V3 上真正写 `cdrt` 位域后的运行时正确性未做实机验证**。
+
+**阶段 2 实测证据**：
+- 全量隔离构建：`.buildlogs/stage2-full.log` → `make -j6 world BUILD_EXIT=0`（2026-11-14 09:45:42），无致命行；`mt7988a-rfb` 的 sysupgrade/initramfs/sdcard/fip/preloader 镜像全部产出。
+- `kmod-pce`：`pce.ko` 314,536 B 先编出（此前 `kmod-ipsec` 因 `xfrm_ipcomp.ko` 缺失打包失败，先 `make -j6 target/linux/compile` 重算内核后解决）。
+- `crypto-eip`：`.buildlogs/stage2-eip4.log` → `EIP_EXIT=0`、0 条 `error`/`Error`/`undefined reference`/`WARNING`；全量构建日志的真实 `make -C … modules` 命令行含 `-DCONFIG_MTK_CRYPTO_EIP_INLINE=1` 与 `CONFIG_MTK_CRYPTO_EIP_INLINE=m`（核对第 4 步 `EXTRA_KCONFIG` 注入）。
+- 镜像清单：`mt7988a-rfb.manifest` 含 `kmod-crypto-eip-inline`、5 个 ddk 子包、`kmod-pce`、`strongswan` 与 `crypto-eip-inline-fw`，依赖链在最终 rootfs 层闭合。
+- 产物：`crypto-eip-inline.ko` 454,256 B，`vermagic=6.12.112 SMP mod_unload aarch64`、`license=GPL`、`depends=crypto-eip-ddk-engine,mtkhnat,pce`。
+- 打包：`kmod-crypto-eip-inline-6.12.112-r1.apk` 的 `apk adbdump` 含 `lib/modules/6.12.112/crypto-eip-inline.ko`，依赖链 `kernel=6.12.112~…` + `kmod-crypto-eip` + 5 个 ddk + `kmod-pce` 齐全。
+- 未解析符号（第 6 步复核）：`nm -u crypto-eip-inline.ko` 共 138 个符号，**不含** `mtk_crypto_set_dec_secpath` 或任何 `skb_hnat*`（证明 `#if 0` 与宏 setter 编译干净）；关键 provider 齐全——`hnat_bind_crypto_entry` / `mtk_crypto_offloadable` 由内核 `mtkhnat` 在 `Module.symvers` 导出，`mtk_pce_cdrt_entry_{alloc,free}` / `mtk_pce_cls_entry_write` 由 `pce.ko` 的 `T` 符号导出。
+- 回归：`mtk-driver-intro-selftest.py` 17/0、`check-driver-integration.py` 7/0、两个 shell 脚本 `sh -n` 通过；`apply-feed-patches.sh` 连跑两次对 3 处 crypto-eip 修补幂等。
 
 | 步 | 动作 | 验收点 |
 |---|---|---|
@@ -196,8 +216,8 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 | 优先级 | 对象 | 动作 | 依据 | 风险 |
 |---|---|---|---|---|
 | **P0** | 四块核心闭源驱动（C1） | **保持不动**，仅作回归基线 | 6.12.112 构建实证、13 种子主力 | 任何改动都可能破坏 `BUILD_EXIT=0`；16 MB NOR 体积上限 |
-| **P1** | `crypto-eip`（C2） | **已修 `DEFAULT:=y` 与分片缓存**（本次落地）；真正启用仍需 MT7988 设备 + inline 子包 | 唯一有 6.12 编译记录 | 与 `kmod-mediatek_hnat` 冲突；ddk/strongswan 依赖链；无实机数据 |
-| **P2** | `pce` / `mtk_npu` feed 版（C3） | **不引入**；仅保留 feed 副本供对照 | 13 种子 0 选中、无 6.12 产物 | feed 非 git 跟踪、`feeds install` 会覆盖；与本轮 MedyMa 修复版本不同，勿 cherry-pick |
+| **P1** | `crypto-eip`（C2） | **已修 `DEFAULT:=y` 与分片缓存；阶段 2 已在隔离配置编出 `crypto-eip-inline.ko` 并打包**（3 处 ABI 差异幂等固化到 `apply-feed-patches.sh`） | 唯一有 6.12 编译记录，现 upgrade 到真实 `.ko` 产物 | 与 `kmod-mediatek_hnat` 冲突；ddk/strongswan 依赖链；V2 下 cdrt setter 为 no-op；无实机数据 |
+| **P2** | `pce` / `mtk_npu` feed 版（C3） | **不独立引入**；`pce` 仅作 C2 编译依赖（阶段 2 已编出 `pce.ko`），`mtk_npu` 保留 feed 副本供对照 | 13 种子 0 选中、`mtk_npu` 仍无 6.12 产物 | feed 非 git 跟踪、`feeds install` 会覆盖；与本轮 MedyMa 修复版本不同，勿 cherry-pick |
 | **P3** | MedyMa 21 个自有补丁「思路」（C5） | 只作线索索引，按 6.12 锚点重新导出 | AGENTS.md:48、project_memory.md:45 | 锚点偏移；netfilter/conntrack/mtk_eth 在 6.12 结构已变；需逐条复核 |
 | **P4** | MedyMa 9 个私有包（C4） | **明确排除**（独立分支 `origin/dev/medyma-npu` 保留） | merge-base rc=1、14419 文件差异、私有头/DTS/固件 | 强 merge 会摧毁主线；vermagic 不兼容；私有 ABI 无 6.12 provider |
 
@@ -230,7 +250,7 @@ feed 版 `mtk_npu/Config.in:68` 只有 `config MTK_NPU_HNAT`（无 `default y if
 - 三类可复用工程判据已固化为主线的自动回归：隐藏门控 kconfig 求解（M1/本轮 MedyMa `0fa7a92ef6`）、补丁与 vendored 源码重复（`e285fae271`）、自检脚本与生产代码契约漂移（`6af5a04bca`）。
 - 清理 `bin/targets/.../packages/` 里 24.10 时代 `*_6.6.*.ipk` 残留，避免误读为 6.12 产物（尚未做，属维护项）。
 
-**阶段 2（按需，中风险，仅在确需 EIP197 时）**：按 4.3 的 7 步执行；先补 `mt7988` 目标种子与 `CRYPTO_OFFLOAD_INLINE` depends，再单包→全量→实机。未通过第 7 步不得宣称成熟。
+**阶段 2（按需，中风险，仅在确需 EIP197 时）— 已完成编译/打包/全量构建部分**：按 4.3 在隔离 `.config`（`mt7988a-rfb`）实跑，修掉 3 处 feed↔6.12 ABI 差异并幂等固化到 `apply-feed-patches.sh`，`CRYPTO_OFFLOAD_INLINE` choice 可达 → `kmod-pce` → `crypto-eip-inline.ko`（454,256 B）→ apk 含 `.ko` 与完整依赖链 → 全量 `make -j6 world BUILD_EXIT=0`、`mt7988a-rfb` 镜像与最终 manifest 依赖链齐全；单包 `EIP_EXIT=0`、宿主回归全过。隔离配置**不进 13 份种子**，跑完恢复 `.config`。**仍未完成第 7 步的实机 IPsec 吞吐/长稳，且 NETSYS_V2 下 cdrt setter 为 no-op，不得宣称成熟或性能可用**。
 
 **阶段 3（研究，高风险，不承诺落地）**：若将来需要 `mtk_npu/hnat` 类能力，以 C5 的 21 个补丁为线索，按 6.12 锚点逐条重导出，每条都做「单包编译 + 宿主自检 + 实机」三重验证；禁止整包搬运。
 

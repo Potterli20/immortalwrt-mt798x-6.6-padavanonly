@@ -93,6 +93,57 @@ if [ -f "$eip_mk" ] && grep -qF -- '  DEFAULT:=y' "$eip_mk"; then
 	echo "把 $eip_mk 的 kmod-crypto-eip 改为 opt-in（DEFAULT:=n）"
 fi
 
+# CRYPTO_OFFLOAD_INLINE 的 depends 只写了
+# TARGET_DEVICE_mediatek_filogic_DEVICE_mediatek_mt7988{a,d}-rfb 与
+# TARGET_mediatek_mt7988；但本树 25.12 的 profile choice 生成的是
+# TARGET_mediatek_filogic_DEVICE_mediatek_mt7988a-rfb（少一个 DEVICE_）。
+# 用真实 conf 求解验证过：只留旧 depends 时即使选中 MT7988 设备，整个
+# choice 仍不可达、CRYPTO_OFFLOAD_INLINE 连同 inline 子包一起被丢弃。
+# 追加本树符号（保留原有 depends，不改动上游语义），让 EIP197 inline 可启用。
+eip_cfg=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/Config.in
+old_dep='depends on TARGET_mediatek_mt7988 || TARGET_DEVICE_mediatek_filogic_DEVICE_mediatek_mt7988a-rfb || TARGET_DEVICE_mediatek_filogic_DEVICE_mediatek_mt7988d-rfb'
+new_dep="$old_dep || TARGET_mediatek_filogic_DEVICE_mediatek_mt7988a-rfb || TARGET_mediatek_filogic_DEVICE_mediatek_mt7988d-rfb"
+if [ -f "$eip_cfg" ] && grep -qF -- "$old_dep" "$eip_cfg" && ! grep -qF -- "$new_dep" "$eip_cfg"; then
+	# 用 # 作分隔符：depends 串本身含 |，不能用 s|old|new|。
+	sed -i "s#${old_dep}#${new_dep}#" "$eip_cfg"
+	echo "给 $eip_cfg 的 CRYPTO_OFFLOAD_INLINE 补上 25.12 设备符号"
+fi
+
+# feed 的 src/init.c 在 xfrm offload init/deinit 里给内核侧函数指针
+# mtk_crypto_set_dec_secpath 赋值；但本树 6.12 的 mtk_hnat/hnat.h 只提供
+# mtk_crypto_offloadable，没有这个 hook，内核侧也没有任何消费者（全树
+# grep 0 命中）。这是 feed 比 25.12 私有 ABI 新导致的 -Werror 编译失败。
+# 用 #if 0 包住这两处悬空赋值，保留原文便于回溯；不伪造一个没人调用
+# 的 hook，也不改动 HNAT/XFRM 实际转发逻辑。
+eip_init=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/src/init.c
+if [ -f "$eip_init" ] && grep -qF -- 'mtk_crypto_set_dec_secpath = NULL;' "$eip_init" &&
+   ! grep -qF -- '25.12: secpath hook not provided' "$eip_init"; then
+	awk '
+		/^[[:space:]]*mtk_crypto_set_dec_secpath =/ {
+			print "\t/* 25.12: secpath hook not provided */"
+			print "#if 0"
+			print $0
+			print "#endif"
+			next
+		}
+		{ print }
+	' "$eip_init" > "$eip_init.tmp" && mv "$eip_init.tmp" "$eip_init"
+	echo "排除 $eip_init 里 6.12 未提供的 secpath hook"
+fi
+
+# feed 的 xfrm-offload.c 把 skb_hnat_cdrt(skb) 当左值直接赋值；本树 6.12 的
+# mtk_hnat/nf_hnat_mtk.h 在 !CONFIG_MEDIATEK_NETSYS_V3 时把它定义成 (0)
+# （NETSYS_V3 才在 hnat_desc 里有 cdrt 位域），直接赋值触发
+# "lvalue required as left operand of assignment"。6.12 提供了统一 setter
+# skb_hnat_set_cdrt(skb, cdrt)：V3 写位域，非 V3 为空操作，正是这里需要的
+# 语义。相邻的 skb_hnat_magic_tag(skb) 在三种 hnat_desc 里都是真实位域，
+# 保持原样。
+eip_xfrm=feeds/mtk_openwrt_feed/feed/kernel/crypto-eip/src/xfrm-offload.c
+if [ -f "$eip_xfrm" ] && grep -qF -- 'skb_hnat_cdrt(skb) = xfrm_params->cdrt->idx;' "$eip_xfrm"; then
+	sed -i 's/skb_hnat_cdrt(skb) = xfrm_params->cdrt->idx;/skb_hnat_set_cdrt(skb, xfrm_params->cdrt->idx);/' "$eip_xfrm"
+	echo "把 $eip_xfrm 的 cdrt 直写改为 6.12 skb_hnat_set_cdrt()"
+fi
+
 # 下面是 make menuconfig 的 "recursive dependency detected"，成因两类：同一个包名被两个
 # feed 定义，或者 PROVIDES/CONFLICTS 与 select/depends 两条边互相指。
 
